@@ -12,22 +12,31 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-x^ps%ysd^tq#y7x_49bv1nc7djlv#5iv#bfsa2afak7b5idy8q'
+DJANGO_ENV = os.getenv('DJANGO_ENV', 'build')
+
+# Use temporary secret key for build environment and environment variable for others
+if DJANGO_ENV == 'build':
+    SECRET_KEY = 'temp-secret-key'
+else:
+    SECRET_KEY = os.getenv('SECRET_KEY')
+
+# Verify that the secret key is set in the environment variables
+if not SECRET_KEY and DJANGO_ENV != 'build':
+    raise ValueError("SECRET_KEY must be set in the environment variables.")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(',')
 
 
 # Application definition
@@ -50,6 +59,12 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# CORS dynamic settings
+if os.getenv("DJANGO_ENV") == "production":
+    CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS").split(",")
+else:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'config.urls'
 
