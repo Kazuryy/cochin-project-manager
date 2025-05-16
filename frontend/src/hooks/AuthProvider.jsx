@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { AuthContext, getCookie } from './authContext';
 
@@ -10,36 +10,6 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
-  
-  // Vérification du statut d'authentification au chargement
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('/api/auth/check/', {
-          credentials: 'include',
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data.user);
-          setIsAuthenticated(true);
-        } else {
-          setUser(null);
-          setIsAuthenticated(false);
-        }
-      } catch (error) {
-        console.error('Erreur lors de la vérification de l\'authentification', error);
-        setAuthError('Impossible de vérifier votre statut d\'authentification');
-        setUser(null);
-        setIsAuthenticated(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    checkAuthStatus();
-  }, []);
   
   // Fonction pour obtenir le token CSRF
   const getCsrfToken = useCallback(async () => {
@@ -56,7 +26,7 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       // Vérifiez si le token est présent dans la réponse
       if (data?.csrfToken) {
-        // Retourner le token (vous pouvez l'utiliser directement dans les requêtes)
+        // Retourner le token
         return data.csrfToken;
       }
       
@@ -65,6 +35,52 @@ export function AuthProvider({ children }) {
       console.error('Erreur lors de l\'obtention du token CSRF', error);
       return null;
     }
+  }, []);
+  
+  // Vérification du statut d'authentification au chargement
+  useEffect(() => {
+    let isMounted = true;
+    
+    const checkAuthStatus = async () => {
+      try {
+        if (!isMounted) return;
+        
+        setIsLoading(true);
+        
+        const response = await fetch('/api/auth/check/', {
+          credentials: 'include',
+        });
+        
+        if (!isMounted) return;
+        
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data.user);
+          setIsAuthenticated(true);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        
+        console.error('Erreur lors de la vérification de l\'authentification', error);
+        setAuthError('Impossible de vérifier votre statut d\'authentification');
+        setUser(null);
+        setIsAuthenticated(false);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    checkAuthStatus();
+    
+    // Cleanup function pour éviter les mises à jour sur un composant démonté
+    return () => {
+      isMounted = false;
+    };
   }, []);
   
   // Fonction de connexion
@@ -83,7 +99,7 @@ export function AuthProvider({ children }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken, // Utilisez directement le token retourné
+          'X-CSRFToken': csrfToken,
         },
         credentials: 'include',
         body: JSON.stringify(credentials),
@@ -102,16 +118,22 @@ export function AuthProvider({ children }) {
       setAuthError(error.message || 'Une erreur est survenue lors de la connexion');
       throw error;
     }
-  }, [getCsrfToken, setUser, setIsAuthenticated, setAuthError]);
+  }, [getCsrfToken]);
   
   // Fonction de déconnexion
   const logout = useCallback(async () => {
     try {
+      const csrfToken = await getCsrfToken();
+      
+      if (!csrfToken) {
+        throw new Error('Impossible d\'obtenir un token CSRF pour la déconnexion');
+      }
+      
       const response = await fetch('/api/auth/logout/', {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'X-CSRFToken': getCookie('csrftoken'),
+          'X-CSRFToken': csrfToken,
         },
       });
       
@@ -126,7 +148,7 @@ export function AuthProvider({ children }) {
       setUser(null);
       setIsAuthenticated(false);
     }
-  }, [setUser, setIsAuthenticated]);
+  }, [getCsrfToken]);
   
   // Valeur du contexte d'authentification
   const authValue = useMemo(() => ({

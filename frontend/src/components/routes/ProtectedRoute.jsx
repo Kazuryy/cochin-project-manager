@@ -1,36 +1,41 @@
+import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
 import PropTypes from 'prop-types';
+import { useAuth } from '../../hooks/useAuth';
 
 /**
  * Composant pour protéger les routes nécessitant une authentification
- * Redirige vers la page de connexion si l'utilisateur n'est pas authentifié
- * 
- * @param {React.ReactNode} children - Composant enfant à afficher si authentifié
- * @param {boolean} requireAdmin - Si la route nécessite des droits d'administrateur
+ * Version améliorée qui évite le "flash" de contenu avant la redirection
  */
 function ProtectedRoute({ children, requireAdmin = false }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
+  const [isReady, setIsReady] = useState(false);
   
-  // Afficher un indicateur de chargement pendant la vérification de l'authentification
-  if (isLoading) {
+  // Utiliser useEffect pour confirmer la fin de la vérification d'authentification
+  useEffect(() => {
+    // Ne définir isReady à true que lorsque isLoading devient false
+    if (!isLoading) {
+      setIsReady(true);
+    }
+  }, [isLoading]);
+  
+  // Ne rien afficher tant que nous n'avons pas terminé la vérification d'authentification
+  if (isLoading || !isReady) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <span className="loading loading-spinner loading-lg"></span>
+        <div className="loading loading-spinner loading-lg"></div>
       </div>
     );
   }
   
-  // Vérifier si l'utilisateur est authentifié
+  // Si l'utilisateur n'est pas authentifié, rediriger vers la page de connexion
   if (!isAuthenticated) {
-    // Rediriger vers la page de connexion avec l'URL de destination
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   
-  // Vérifier si la route nécessite des droits d'administrateur
-  if (requireAdmin && !user?.is_staff) {
-    // Rediriger vers la page d'accueil si l'utilisateur n'est pas administrateur
+  // Si la route nécessite des droits d'administrateur et que l'utilisateur n'en a pas
+  if (requireAdmin && user && !user.is_staff) {
     return <Navigate to="/" replace />;
   }
   
@@ -41,6 +46,10 @@ function ProtectedRoute({ children, requireAdmin = false }) {
 ProtectedRoute.propTypes = {
   children: PropTypes.node.isRequired,
   requireAdmin: PropTypes.bool
+};
+
+ProtectedRoute.defaultProps = {
+  requireAdmin: false
 };
 
 export default ProtectedRoute;
