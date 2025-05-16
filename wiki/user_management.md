@@ -112,7 +112,6 @@ pbkdf2_sha256$390000$SAlt123456wXyZ$HashedPasswordValue123456789
 Django gère automatiquement tout ce processus via les méthodes :
 - `set_password(raw_password)` : Applique le hashage avant stockage
 - `check_password(raw_password)` : Compare le mot de passe en clair avec le hash stocké
-```
 
 **Méthodes principales** :
 
