@@ -15,10 +15,10 @@ export const AuthContext = createContext({
 // Fonction pour récupérer le token CSRF des cookies
 export const getCookie = (name) => {
   const cookies = document.cookie.split(';');
-  for (let i = 0; i < cookies.length; i++) {
-    const cookie = cookies[i].trim();
-    if (cookie.startsWith(name + '=')) {
-      return cookie.substring(name.length + 1);
+  for (const cookie of cookies) {
+    const trimmed = cookie.trim();
+    if (trimmed.startsWith(name + '=')) {
+      return trimmed.substring(name.length + 1);
     }
   }
   return null;

@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+// Correction de PasswordChangeCheck.jsx
 import PropTypes from 'prop-types';
 import { useAuth } from '../../hooks/useAuth';
-import { Modal } from '../ui';
 import PasswordChangeForm from '../auth/PasswordChangeForm';
 
 /**
@@ -12,45 +11,33 @@ import PasswordChangeForm from '../auth/PasswordChangeForm';
  */
 function PasswordChangeCheck({ children }) {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
-  
-  // Vérifier si l'utilisateur doit changer son mot de passe
-  useEffect(() => {
-    if (isAuthenticated && !isLoading && user?.require_password_change) {
-      setShowPasswordChangeModal(true);
-    } else {
-      setShowPasswordChangeModal(false);
-    }
-  }, [isAuthenticated, isLoading, user]);
-  
-  // Gérer la soumission réussie du formulaire de changement de mot de passe
-  const handlePasswordChangeSuccess = () => {
-    // Le modal se fermera automatiquement lorsque l'état de l'utilisateur sera mis à jour
-  };
-  
-  return (
-    <>
-      {children}
-      
-      {/* Modal de changement de mot de passe */}
-      <Modal
-        isOpen={showPasswordChangeModal}
-        onClose={() => {}} // Ne rien faire, car la fermeture est empêchée
-        title="Changement de mot de passe requis"
-        preventClosing={true}
-        showCloseButton={false}
-        size="md"
-      >
-        <div className="p-2">
-          <p className="mb-4 text-base-content/70">
+
+  // Afficher un loader pendant le chargement
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="loading loading-spinner loading-lg"></div>
+      </div>
+    );
+  }
+
+  // Si l'utilisateur doit changer son mot de passe, afficher le formulaire à la place du contenu
+  if (isAuthenticated && user?.require_password_change) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-base-200">
+        <div className="max-w-md w-full">
+          <h2 className="text-xl font-bold mb-4 text-center">Changement de mot de passe requis</h2>
+          <p className="mb-4 text-base-content/70 text-center">
             Pour des raisons de sécurité, vous devez changer votre mot de passe avant de pouvoir continuer.
           </p>
-          
-          <PasswordChangeForm onSuccess={handlePasswordChangeSuccess} />
+          <PasswordChangeForm onSuccess={() => window.location.reload()} />
         </div>
-      </Modal>
-    </>
-  );
+      </div>
+    );
+  }
+
+  // Sinon, afficher le contenu normal
+  return <>{children}</>;
 }
 
 PasswordChangeCheck.propTypes = {
