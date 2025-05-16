@@ -45,14 +45,25 @@ export function AuthProvider({ children }) {
   const getCsrfToken = useCallback(async () => {
     try {
       const response = await fetch('/api/auth/csrf/', {
+        method: 'GET',
         credentials: 'include',
       });
       
-      // Le token est automatiquement défini dans les cookies
-      return response.ok;
+      if (!response.ok) {
+        throw new Error('Échec de l\'obtention du token CSRF');
+      }
+      
+      const data = await response.json();
+      // Vérifiez si le token est présent dans la réponse
+      if (data?.csrfToken) {
+        // Retourner le token (vous pouvez l'utiliser directement dans les requêtes)
+        return data.csrfToken;
+      }
+      
+      throw new Error('Token CSRF non trouvé dans la réponse');
     } catch (error) {
       console.error('Erreur lors de l\'obtention du token CSRF', error);
-      return false;
+      return null;
     }
   }, []);
   
@@ -62,13 +73,17 @@ export function AuthProvider({ children }) {
     
     try {
       // Obtenir un token CSRF avant la connexion
-      await getCsrfToken();
+      const csrfToken = await getCsrfToken();
+      
+      if (!csrfToken) {
+        throw new Error('Impossible d\'obtenir un token CSRF');
+      }
       
       const response = await fetch('/api/auth/login/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': getCookie('csrftoken'),
+          'X-CSRFToken': csrfToken, // Utilisez directement le token retourné
         },
         credentials: 'include',
         body: JSON.stringify(credentials),

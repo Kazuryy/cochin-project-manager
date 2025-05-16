@@ -24,7 +24,7 @@ function App() {
                 path="/dashboard" 
                 element={
                   <ProtectedRoute>
-                    {/* Ici, vous importerez votre composant Dashboard */}
+                    <Dashboard />
                     <div className="p-6">
                       <h1 className="text-2xl font-bold">Tableau de bord</h1>
                       <p>Cette page n'est accessible qu'aux utilisateurs authentifiés.</p>
