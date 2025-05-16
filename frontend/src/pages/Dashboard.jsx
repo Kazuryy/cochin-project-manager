@@ -206,11 +206,12 @@ function Dashboard() {
                           <span>0 /year</span>
                         </div>
                       </td>
-                      <td>23 days ago</td>
-                    </tr>
+                      <td>23 days ago</td></tr>
                   </tbody>
                 </table>
               </div>
+
+              
 
               {/* Pagination */}
               <div className="flex justify-center mt-4">
@@ -219,6 +220,12 @@ function Dashboard() {
                   <button className="join-item btn btn-active">1</button>
                   <button className="join-item btn">»</button>
                 </div>
+              </div>
+              {/* Bouton Save to TSV */}
+              <div className="flex justify-end mt-4 mb-4">
+                <button className="btn btn-primary">
+                  Save to TSV
+                </button>
               </div>
             </div>
           </div>

@@ -49,7 +49,7 @@ function Navbar() {
   };
 
   return (
-    <div className="navbar bg-base-100 shadow-sm">
+    <div className="navbar bg-base-100 shadow-sm fixed top-0 z-50">
       <div className="navbar-start">
         <Link to="/" className="btn btn-ghost text-xl">Cochin Project Manager</Link>
       </div>

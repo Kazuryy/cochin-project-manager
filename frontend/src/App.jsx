@@ -9,17 +9,18 @@ import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
 import { AuthProvider } from './hooks/AuthProvider';
 import './App.css';
-
-
+import DashboardAdmin from './pages/DashboardAdmin';
+import Footer from './components/global/Footer';
 
 // Contenu principal de l'application
 function MainContent() {
   return (
-    <div className="min-h-screen bg-base-100">
+    <div className="flex flex-col min-h-screen bg-base-100">
       <Navbar />
-      <div className="container mx-auto px-4">
-        <Routes>
-          <Route path="/" element={<Home />} />
+      <div className="flex-1 pt-16 pb-16">
+        <div className="container mx-auto px-4">
+          <Routes>
+            <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           
           {/* Routes protégées */}
@@ -37,10 +38,7 @@ function MainContent() {
             path="/admin-dashboard" 
             element={
               <ProtectedRoute requireAdmin={true}>
-                <div className="p-6">
-                  <h1 className="text-2xl font-bold">Administration</h1>
-                  <p>Cette page n'est accessible qu'aux administrateurs.</p>
-                </div>
+                <DashboardAdmin />
               </ProtectedRoute>
             } 
           />
@@ -48,7 +46,9 @@ function MainContent() {
           {/* Redirection pour les routes inconnues */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
       </div>
+      <Footer />
     </div>
   );
 }

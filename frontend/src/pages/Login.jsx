@@ -39,7 +39,6 @@ function Login() {
   
   // Fonction de soumission du formulaire
   const handleSubmit = async (values) => {
-    // Vérifier si le nombre de tentatives est trop élevé
     if (loginAttempts >= 5) {
       setFormError('Trop de tentatives de connexion. Veuillez réessayer plus tard.');
       return;
@@ -48,8 +47,9 @@ function Login() {
     setFormError('');
     
     try {
+      // Ajout d'un délai artificiel de 1.5 secondes
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await login(values);
-      // La redirection se fait via l'effet useEffect
     } catch (error) {
       setLoginAttempts(prev => prev + 1);
       setFormError(error.message || 'Erreur lors de la connexion');
@@ -71,7 +71,7 @@ function Login() {
   
   return (
     <Page>
-      <div className="flex min-h-screen items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-center py-2 pt-30">
         <Card
           title="Connexion"
           subtitle="Veuillez vous connecter pour accéder au tableau de bord"
@@ -122,25 +122,23 @@ function Login() {
               error={errors.password}
             />
 
-            <div className="mt-6">
+            <div className="mt-6 space-y-4">
+              {isSubmitting && (
+                <div className="flex justify-center">
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+              )}
+              
               <Button
                 type="submit"
-                variant="primary"
-                isLoading={isSubmitting}
+                variant="neutral"
                 isDisabled={isSubmitting || loginAttempts >= 5}
-                className="w-full"
+                className="w-full transition-all duration-300"
               >
-                Se connecter
+                {isSubmitting ? 'Connexion en cours...' : 'Se connecter'}
               </Button>
             </div>
           </form>
-          
-          <div className="text-sm text-center mt-6">
-            <p className="text-base-content/70">
-              Mot de passe oublié ou compte verrouillé?
-              <br />Contactez votre administrateur système
-            </p>
-          </div>
         </Card>
       </div>
     </Page>
