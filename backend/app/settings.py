@@ -11,21 +11,27 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+import secrets
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv()
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+DJANGO_ENV = os.getenv("DJANGO_ENV", "development")
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-whi5wh(ylx)p@g3%-y7a0^-a8$u!*(fikm@lq3!e=97@k89#5a'
+# Use a temporary secret key if we are in build phase
+if DJANGO_ENV == "build":
+    SECRET_KEY = secrets.token_urlsafe(50)
+else:
+    SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -37,6 +43,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'crispy_forms',
+    'crispy_bootstrap5',
+    'crispy_tailwind',
+    # 'debug_toolbar',
+    'authentication',
+    'app',
 ]
 
 MIDDLEWARE = [
@@ -49,15 +61,19 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
 ROOT_URLCONF = 'app.urls'
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
@@ -79,16 +95,22 @@ DATABASES = {
     }
 }
 
+# Utilisation du modèle User personnalisé
+AUTH_USER_MODEL = 'authentication.User'
 
-# Password validation
+
+# Validation des mots de passe
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {
+            'min_length': 12,
+        }
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -102,13 +124,17 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'fr-fr'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Paris'
 
 USE_I18N = True
 
 USE_TZ = True
+
+# Configuration de crispy-forms
+CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
+CRISPY_TEMPLATE_PACK = "tailwind"
 
 
 # Static files (CSS, JavaScript, Images)
@@ -120,3 +146,86 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Configuration de la session - MODIFIÉ POUR LE DÉVELOPPEMENT
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+]
+# En développement, ne pas utiliser les paramètres de sécurité stricts
+SESSION_COOKIE_SECURE = False  # Désactivé pour le développement (pas de HTTPS)
+CSRF_COOKIE_SECURE = False  # Désactivé pour le développement (pas de HTTPS)
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False  # Autorise JavaScript à accéder au cookie CSRF
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_AGE = 3600  # 1 heure
+
+# Configuration de sécurité
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+# Paramètres de sécurité recommandés par l'ANSSI
+PASSWORD_RESET_TIMEOUT = 3600
+ACCOUNT_LOCKOUT_DURATION = 15
+MAX_LOGIN_ATTEMPTS = 5
+PASSWORD_EXPIRY_DAYS = 90
+
+# Configuration des logs
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'app.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'security': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'security.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.security': {
+            'handlers': ['security'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'authentication': {
+            'handlers': ['file', 'security'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# Créer le dossier de logs s'il n'existe pas
+os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+
+# Configuration pour le debug toolbar
+INTERNAL_IPS = [
+    '127.0.0.1',
+]
