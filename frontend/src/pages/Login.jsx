@@ -106,7 +106,7 @@ function Login() {
               required
               value={values.username}
               onChange={handleChange}
-              placeholder="nom.prenom"
+              placeholder="username"
               error={errors.username}
             />
 
