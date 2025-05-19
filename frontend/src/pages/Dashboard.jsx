@@ -1,11 +1,26 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState } from 'react';
 import { FiFilter, FiHeart, FiRefreshCw } from 'react-icons/fi';
+import MultipleSelector from '../components/filters/MultiSelector';
 
 function Dashboard() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFavorites, setShowFavorites] = useState(false);
+  const [selectedNiches, setSelectedNiches] = useState([]);
+
+  const niches = [
+    'Gaming',
+    'Tech',
+    'Food',
+    'Travel',
+    'Fashion',
+    'Beauty',
+    'Fitness',
+    'Education',
+    'Business',
+    'Entertainment'
+  ];
 
   return (
     <div className="p-4">
@@ -32,12 +47,12 @@ function Dashboard() {
 
       <div className="flex gap-4">
         {/* Left Sidebar */}
-        <div className="w-72">
-          <div className="card bg-base-100 shadow-xl">
+        <div className="w-82">
+          <div className="fieldset bg-base-200 border-base-300 rounded-box w-xs border p-3">
             <div className="card-body p-4">
               <div className="tabs tabs-boxed mb-4">
-                <a className="tab tab-active">Filters</a>
-                <a className="tab">My templates</a>
+                <a className="tab tab-active" href='/dashboard'>Filters</a>
+                <a className="tab" href='/dashboard'>My templates</a>
               </div>
 
               <h3 className="font-medium mb-3">brand informations</h3>
@@ -62,11 +77,12 @@ function Dashboard() {
 
               {/* Filter by niches */}
               <div className="mb-4">
-                <h4 className="text-sm font-medium mb-2">Filter by niches</h4>
-                <div className="flex items-center gap-2 bg-base-200 p-2 rounded">
-                  <span>Tech</span>
-                  <button className="btn btn-xs btn-ghost">×</button>
-                </div>
+                  <span className="label-text">Niches</span>
+                  <MultipleSelector 
+                  options={niches}
+                  onChange={setSelectedNiches}
+                />
+                
               </div>
 
               {/* Languages */}
@@ -84,7 +100,7 @@ function Dashboard() {
                 <label className="label">
                   <span className="label-text">YouTuber speaking</span>
                 </label>
-                <select className="select select-bordered w-full">
+                <select className="select w-full">
                   <option>Choose a language</option>
                 </select>
               </div>
