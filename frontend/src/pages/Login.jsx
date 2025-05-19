@@ -71,11 +71,12 @@ function Login() {
   
   return (
     <Page>
-      <div className="flex items-center justify-center py-2 pt-30">
+      <fieldset className="flex items-center justify-center py-2 pt-30">
         <Card
           title="Connexion"
-          subtitle="Veuillez vous connecter pour accéder au tableau de bord"
+          subtitle="Veuillez vous connecter pour accéder au dashboard"
           width="md"
+          className="bg-base-200 border-base-300 rounded-box w-md border p-4"
         >
           {/* Afficher les erreurs */}
           {(formError || authError) && (
@@ -140,7 +141,7 @@ function Login() {
             </div>
           </form>
         </Card>
-      </div>
+      </fieldset>
     </Page>
   );
 }

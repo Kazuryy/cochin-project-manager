@@ -5,6 +5,7 @@ import Navbar from './components/global/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import DatabaseManager from './pages/Admin/DatabaseManager';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
 import { AuthProvider } from './hooks/AuthProvider';
@@ -44,6 +45,7 @@ function MainContent() {
           />
           
           {/* Redirection pour les routes inconnues */}
+          <Route path="/admin/database" element={<DatabaseManager />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </div>
