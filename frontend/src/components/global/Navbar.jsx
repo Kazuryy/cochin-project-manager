@@ -25,12 +25,11 @@ function Navbar() {
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="inline-block h-5 w-5 stroke-current"> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path> </svg>
           </button>
           <ul className="mt-3 z-10 p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
-            <li className="menu-title font-medium px-2 pt-2">
-              <span>{user?.username}</span>
-            </li>
-            <li><Link to="/profile">Profil</Link></li>
             {user?.is_staff && (
-              <li><Link to="/admin-dashboard">Administration</Link></li>
+              <>
+                <li><Link to="/admin/settings">Settings</Link></li>
+                <li><Link to="/admin-dashboard">Database</Link></li>
+              </>
             )}
             <li className="mt-2">
               <button onClick={handleLogout} className="text-error">
