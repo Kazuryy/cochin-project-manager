@@ -208,9 +208,9 @@ function Dashboard() {
                               SBMMOFF isn't a traditional VPN like Nord VPN, SBMMOFF is a COD VPN gaming...
                             </div>
                             <div className="mt-2">
-                              <div className="badge badge-outline mr-2">Cyber Security</div>
+                              <div className="badge badge-neutral mr-2">Cyber Security</div>
                               <div className="badge badge-outline mr-2">Software</div>
-                              <div className="badge badge-outline">Network Security</div>
+                              <div className="badge badge-outline mr-2">Network Security</div>
                             </div>
                           </div>
                         </div>
