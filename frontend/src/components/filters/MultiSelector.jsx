@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
-function MultipleSelector({ options = [], onChange }) {
+function MultipleSelector({ 
+  options = [], 
+  onChange,
+  placeholder = "Sélectionnez des options..."
+}) {
   const [selected, setSelected] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -28,54 +32,86 @@ function MultipleSelector({ options = [], onChange }) {
   return (
     <div className="relative w-full" ref={containerRef}>
       <div
-        className="border rounded px-3 py-2 cursor-pointer min-h-[44px] flex flex-wrap gap-2 items-center bg-white"
+        role="combobox"
+        aria-controls="options-list"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        className="relative flex items-center flex-wrap w-full min-h-[2.75rem] border border-base-300 rounded-lg bg-base-100 text-base-content px-2 pr-8 py-1 cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
         onClick={() => setIsOpen(!isOpen)}
       >
         {selected.length === 0 ? (
-          <span className="text-gray-400">Sélectionnez des options...</span>
+          <span className="text-base-content/50 py-1.5 px-1">{placeholder}</span>
         ) : (
-          selected.map((item) => (
-            <span
-              key={item}
-              className="bg-primary/10 text-primary px-2 py-1 rounded flex items-center gap-1 text-sm"
-            >
-              {item}
-              <button
-                type="button"
-                className="text-xs hover:text-error"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOptionClick(item);
-                }}
+          <div className="flex flex-wrap gap-1 w-full py-0.5">
+            {selected.map((item) => (
+              <div 
+                key={item}
+                className="flex items-center bg-base-100 border border-base-300 rounded-full p-1 m-0.5"
               >
-                &times;
-              </button>
-            </span>
-          ))
+                <span className="text-sm text-base-content whitespace-nowrap px-1.5">
+                  {item}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex justify-center items-center size-5 rounded-full text-base-content bg-base-200 hover:bg-base-300 focus:outline-none focus:ring-2 focus:ring-base-300"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOptionClick(item);
+                  }}
+                >
+                  <svg className="size-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6 6 18"/>
+                    <path d="m6 6 12 12"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
         )}
+        
+        <div className="absolute top-1/2 right-3 -translate-y-1/2 pointer-events-none">
+          <svg className="size-3.5 text-base-content/70" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m7 15 5 5 5-5"/>
+            <path d="m7 9 5-5 5 5"/>
+          </svg>
+        </div>
       </div>
 
       {isOpen && (
-        <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
-          {options.map((option) => (
-            <div
-              key={option}
-              role="option"
-              tabIndex={0}
-              aria-selected={selected.includes(option)}
-              className={`px-3 py-2 hover:bg-primary/10 ${
-                selected.includes(option) ? 'bg-primary/5 font-semibold' : ''
-              }`}
-              onClick={() => handleOptionClick(option)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  handleOptionClick(option);
-                }
-              }}
-            >
-              {option}
-            </div>
-          ))}
+        <div className="absolute z-50 w-full max-h-72 p-1 mt-2 space-y-0.5 bg-base-100 border border-base-300 rounded-lg overflow-hidden overflow-y-auto shadow-lg">
+          {options.map((option) => {
+            const isSelected = selected.includes(option);
+            return (
+              <div
+                key={option}
+                role="option"
+                tabIndex={0}
+                aria-selected={isSelected}
+                className={`py-2 px-2 w-full text-sm cursor-pointer hover:bg-base-200 rounded-lg focus:outline-none ${
+                  isSelected ? 'bg-base-200' : ''
+                }`}
+                onClick={() => handleOptionClick(option)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    handleOptionClick(option);
+                  }
+                }}
+              >
+                <div className="flex items-center">
+                  <div>
+                    <div className={`text-sm ${isSelected ? 'font-bold' : 'font-normal'} text-base-content`}>{option}</div>
+                  </div>
+                  <div className="ml-auto">
+                    {isSelected && (
+                      <svg className="size-4 text-primary" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/>
+                      </svg>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -84,7 +120,8 @@ function MultipleSelector({ options = [], onChange }) {
 
 MultipleSelector.propTypes = {
   options: PropTypes.arrayOf(PropTypes.string).isRequired,
-  onChange: PropTypes.func
+  onChange: PropTypes.func,
+  placeholder: PropTypes.string
 };
 
 export default MultipleSelector;
