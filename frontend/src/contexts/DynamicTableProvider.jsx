@@ -233,6 +233,35 @@ export function DynamicTableProvider({ children }) {
     }
   }, []);
 
+  // Fonction pour supprimer un champ
+  const deleteField = useCallback(async (tableId, fieldId) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/database/tables/${tableId}/fields/${fieldId}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
+      }
+      
+      return true;
+    } catch (err) {
+      console.error(`Erreur lors de la suppression du champ ${fieldId}:`, err);
+      setError(err.message || `Une erreur est survenue lors de la suppression du champ`);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Fonction pour récupérer les enregistrements d'une table
   const fetchRecords = useCallback(async (tableId, filters = {}) => {
     setIsLoading(true);
@@ -343,10 +372,21 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
+      // Récupérer le token CSRF du cookie
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1];
+
+      if (!csrfToken) {
+        throw new Error('Token CSRF non trouvé');
+      }
+
       const response = await fetch(`/api/database/records/${recordId}/`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
         },
         credentials: 'include',
       });
@@ -382,6 +422,7 @@ export function DynamicTableProvider({ children }) {
     updateTable,
     deleteTable,
     addFieldToTable,
+    deleteField,
     fetchRecords,
     createRecord,
     updateRecord,
@@ -396,6 +437,7 @@ export function DynamicTableProvider({ children }) {
     updateTable,
     deleteTable,
     addFieldToTable,
+    deleteField,
     fetchRecords,
     createRecord,
     updateRecord,

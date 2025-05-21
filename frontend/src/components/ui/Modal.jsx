@@ -65,44 +65,69 @@ function Modal({
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleEscapeKey);
-      document.body.style.overflow = 'hidden'; // Bloquer le défilement du body
+      // Sauvegarder le style overflow actuel
+      const currentOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('keydown', handleEscapeKey);
+        // Restaurer le style overflow précédent
+        document.body.style.overflow = currentOverflow;
+      };
     }
     
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscapeKey);
-      document.body.style.overflow = ''; // Rétablir le défilement
+      // S'assurer que overflow est restauré même si le composant est démonté
+      document.body.style.overflow = '';
     };
-  }, [isOpen, preventClosing, handleClickOutside, handleEscapeKey]);
+  }, [isOpen, handleClickOutside, handleEscapeKey]);
   
   // Ne rien rendre si le modal est fermé
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <>
+      {/* Overlay */}
       <div 
-        ref={modalRef}
-        className={`modal-box bg-base-100 ${sizeClasses[size] || 'max-w-md'} ${className}`}
-      >
-        <div className="flex justify-between items-center mb-4">
-          {title && <h3 className="font-bold text-lg">{title}</h3>}
-          
-          {showCloseButton && !preventClosing && (
-            <button 
-              onClick={onClose}
-              className="btn btn-sm btn-circle btn-ghost"
-              aria-label="Fermer"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-        
-        <div>
-          {children}
+        className="fixed inset-0 bg-black/50" 
+        onClick={handleClickOutside}
+        role="button"
+        tabIndex={0}
+        aria-label="Fermer le modal"
+        onKeyDown={(e) => e.key === 'Enter' && handleClickOutside(e)}
+      />
+      
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div 
+          ref={modalRef}
+          className={`relative bg-white rounded-lg shadow-xl ${sizeClasses[size] || 'max-w-md'} ${className}`}
+        >
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-4">
+              {title && <h3 className="font-bold text-lg">{title}</h3>}
+              
+              {showCloseButton && !preventClosing && (
+                <button 
+                  onClick={onClose}
+                  className="absolute top-4 right-4 btn btn-sm btn-circle btn-ghost"
+                  aria-label="Fermer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            
+            <div className="mt-4">
+              {children}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -62,13 +62,22 @@ function TableList() {
               <div className="divider my-2"></div>
               
               <div className="flex justify-between mt-2">
-                <Link to={`/admin/database/tables/${table.id}/records`}>
-                  <Button variant="ghost" size="sm">
-                    <FiDatabase className="mr-1" />
-                    Données
-                  </Button>
-                </Link>
-                
+                <div className="space-x-2">
+                  <Link to={`/admin/database/tables/${table.id}/records`}>
+                    <Button variant="ghost" size="sm">
+                      <FiDatabase className="mr-1" />
+                      Données
+                    </Button>
+                  </Link>
+
+                  <Link to={`/admin/database/tables/${table.id}/fields`}>
+                    <Button variant="ghost" size="sm">
+                      <FiEdit2 className="mr-1" />
+                      Champs
+                    </Button>
+                  </Link>
+                </div>
+
                 <div className="space-x-2">
                   <Link to={`/admin/database/tables/${table.id}/edit`}>
                     <Button variant="ghost" size="sm">

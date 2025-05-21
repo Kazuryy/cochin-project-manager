@@ -4,19 +4,22 @@ import PropTypes from 'prop-types';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 import { Button, FormField, Alert, Modal } from '../ui';
 import { FiPlus, FiEdit, FiTrash2, FiArrowUp, FiArrowDown } from 'react-icons/fi';
+import api from '../../services/api';
 
 function FieldsManager({ tableId }) {
   const { 
     fetchTableWithFields, 
-    addFieldToTable, 
+    deleteField,
     isLoading, 
     error 
   } = useDynamicTables();
   
   const [table, setTable] = useState(null);
+  const [tables, setTables] = useState([]);
   const [fields, setFields] = useState([]);
   const [isFieldModalOpen, setIsFieldModalOpen] = useState(false);
   const [selectedField, setSelectedField] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [fieldFormData, setFieldFormData] = useState({
     name: '',
     field_type: 'text',
@@ -25,11 +28,13 @@ function FieldsManager({ tableId }) {
     is_unique: false,
     is_searchable: false,
     default_value: '',
-    options: ''
+    options: '',
+    related_table: ''
   });
   
   const [fieldFormErrors, setFieldFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [tablesLoading, setTablesLoading] = useState(false);
   
   const fieldTypes = [
     { value: 'text', label: 'Texte' },
@@ -58,12 +63,47 @@ function FieldsManager({ tableId }) {
     loadTable();
   }, [tableId, fetchTableWithFields]);
   
+  // Charger toutes les tables directement depuis l'API
+  useEffect(() => {
+    const loadAllTables = async () => {
+      try {
+        setTablesLoading(true);
+        const response = await api.get('/api/database/tables/');
+        if (response) {
+          // Filtrer la table actuelle pour éviter l'auto-référence
+          setTables(response.filter(t => t.id.toString() !== tableId.toString()));
+          console.log("Tables chargées:", response);
+          console.log("Tables filtrées:", response.filter(t => t.id.toString() !== tableId.toString()));
+        } else {
+          console.error("Aucune table reçue de l'API");
+        }
+      } catch (err) {
+        console.error("Erreur lors du chargement des tables:", err);
+      } finally {
+        setTablesLoading(false);
+      }
+    };
+    
+    loadAllTables();
+  }, [tableId]);
+  
   const handleFieldChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFieldFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    
+    // Gestion spéciale pour le changement de type
+    if (name === 'field_type' && value !== 'foreign_key') {
+      // Si le type n'est plus 'foreign_key', réinitialiser related_table
+      setFieldFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+        ...(name === 'field_type' && value !== 'foreign_key' ? { related_table: '' } : {})
+      }));
+    } else {
+      setFieldFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      }));
+    }
     
     // Effacer l'erreur pour ce champ
     if (fieldFormErrors[name]) {
@@ -85,6 +125,10 @@ function FieldsManager({ tableId }) {
       errors.options = 'Les options sont requises pour un champ de type liste de choix';
     }
     
+    if (fieldFormData.field_type === 'foreign_key' && !fieldFormData.related_table) {
+      errors.related_table = 'Une table liée est requise pour un champ de type clé étrangère';
+    }
+    
     return errors;
   };
   
@@ -98,7 +142,8 @@ function FieldsManager({ tableId }) {
       is_unique: false,
       is_searchable: false,
       default_value: '',
-      options: ''
+      options: '',
+      related_table: ''
     });
     setIsFieldModalOpen(true);
   };
@@ -113,11 +158,75 @@ function FieldsManager({ tableId }) {
       is_unique: field.is_unique,
       is_searchable: field.is_searchable,
       default_value: field.default_value || '',
-      options: field.options ? JSON.stringify(field.options) : ''
+      options: field.options ? JSON.stringify(field.options) : '',
+      related_table: field.related_table || ''
     });
     setIsFieldModalOpen(true);
   };
   
+  const prepareFieldData = (formData) => {
+    const fieldData = {
+      ...formData,
+      slug: formData.name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/(^_+)|(_+$)/g, '')
+    };
+
+    // Traitement pour les champs de type choix
+    if (fieldData.field_type === 'choice' && fieldData.options) {
+      try {
+        // Vérifier si c'est déjà un JSON valide
+        JSON.parse(fieldData.options);
+      } catch {
+        // Sinon, convertir la liste séparée par des virgules en JSON
+        fieldData.options = JSON.stringify(
+          fieldData.options.split(',').map(option => option.trim())
+        );
+      }
+    }
+    
+    console.log("Données du champ préparées:", fieldData);
+    return fieldData;
+  };
+
+  const saveField = async (fieldData) => {
+    console.log("Données à envoyer à l'API:", fieldData);
+    try {
+      // Obtenir un token CSRF
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1];
+
+      if (!csrfToken) {
+        throw new Error('Token CSRF non trouvé');
+      }
+
+      const response = await fetch(`/api/database/tables/${tableId}/add_field/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify(fieldData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (err) {
+      console.error("Erreur lors de la sauvegarde du champ:", err);
+      throw err;
+    }
+  };
+
   const handleSaveField = async () => {
     const errors = validateFieldForm();
     if (Object.keys(errors).length > 0) {
@@ -126,58 +235,28 @@ function FieldsManager({ tableId }) {
     }
     
     try {
-      // Préparer les données du champ
-      const fieldData = {
-        ...fieldFormData
-      };
-      
-      // Convertir les options en JSON si nécessaire
-      if (fieldData.field_type === 'choice' && fieldData.options) {
-        try {
-          // Vérifier si c'est déjà un objet JSON valide
-          JSON.parse(fieldData.options);
-        } catch {
-          // Si ce n'est pas un JSON valide, essayer de le formater comme une liste
-          fieldData.options = JSON.stringify(
-            fieldData.options.split(',').map(option => option.trim())
-          );
-        }
-      }
-      
-      let result;
-      if (selectedField) {
-        // Mode édition de champ
-        // Implémenter l'appel API pour mettre à jour un champ existant
-        // result = await updateFieldInTable(tableId, selectedField.id, fieldData);
-        alert('Fonction non implémentée: Mise à jour de champ');
-      } else {
-        // Mode création de champ
-        result = await addFieldToTable(tableId, fieldData);
-      }
-      
+      const fieldData = prepareFieldData(fieldFormData);
+      const result = selectedField
+        ? alert('Fonction non implémentée: Mise à jour de champ')
+        : await saveField(fieldData);
+
       if (result) {
-        setSuccessMessage(
-          selectedField 
-            ? 'Champ mis à jour avec succès' 
-            : 'Champ ajouté avec succès'
-        );
+        setSuccessMessage(selectedField ? 'Champ mis à jour avec succès' : 'Champ ajouté avec succès');
+        setIsFieldModalOpen(false);
         
-        // Recharger les champs
         const updatedTable = await fetchTableWithFields(tableId);
         if (updatedTable) {
           setTable(updatedTable);
           setFields(updatedTable.fields || []);
         }
         
-        setIsFieldModalOpen(false);
-        
-        // Effacer le message après quelques secondes
-        setTimeout(() => {
-          setSuccessMessage('');
-        }, 3000);
+        setTimeout(() => setSuccessMessage(''), 3000);
       }
     } catch (err) {
       console.error('Erreur lors de la sauvegarde du champ:', err);
+      setFieldFormErrors({
+        submit: err.message || 'Une erreur est survenue lors de la sauvegarde du champ'
+      });
     }
   };
   
@@ -214,8 +293,180 @@ function FieldsManager({ tableId }) {
     alert('Fonction non implémentée: Mise à jour de l\'ordre des champs');
   };
   
+  const handleCloseModal = () => {
+    setIsFieldModalOpen(false);
+    setFieldFormErrors({});
+    setSelectedField(null);
+    setFieldFormData({
+      name: '',
+      field_type: 'text',
+      description: '',
+      is_required: false,
+      is_unique: false,
+      is_searchable: false,
+      default_value: '',
+      options: '',
+      related_table: ''
+    });
+  };
+  
+  const handleDeleteField = async (field) => {
+    try {
+      const success = await deleteField(tableId, field.id);
+      if (success) {
+        setSuccessMessage('Champ supprimé avec succès');
+        // Mettre à jour la liste des champs
+        const updatedTable = await fetchTableWithFields(tableId);
+        if (updatedTable) {
+          setTable(updatedTable);
+          setFields(updatedTable.fields || []);
+        }
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (err) {
+      console.error('Erreur lors de la suppression du champ:', err);
+      setFieldFormErrors({
+        submit: err.message || 'Une erreur est survenue lors de la suppression du champ'
+      });
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+  
+  const getTableName = (tableId) => {
+    const foundTable = tables.find(t => t.id.toString() === tableId.toString());
+    return foundTable ? foundTable.name : `Table #${tableId}`;
+  };
+  
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex justify-center items-center min-h-[200px]">
+          <div className="loading loading-spinner loading-lg"></div>
+        </div>
+      );
+    }
+
+    if (!table) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-gray-500">Table non trouvée</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="table w-full">
+          <thead>
+            <tr>
+              <th>Ordre</th>
+              <th>Nom</th>
+              <th>Type</th>
+              <th>Description</th>
+              <th>Requis</th>
+              <th>Unique</th>
+              <th>Recherche</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fields.length > 0 ? (
+              fields.map((field, index) => (
+                <tr key={field.id}>
+                  <td className="w-20">
+                    <div className="flex items-center space-x-1">
+                      <span className="badge">{index + 1}</span>
+                      <div className="flex flex-col">
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          isDisabled={index === 0}
+                          onClick={() => handleMoveField(field.id, 'up')}
+                        >
+                          <FiArrowUp />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          isDisabled={index === fields.length - 1}
+                          onClick={() => handleMoveField(field.id, 'down')}
+                        >
+                          <FiArrowDown />
+                        </Button>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="font-medium">{field.name}</div>
+                    <div className="text-xs opacity-60">{field.slug}</div>
+                  </td>
+                  <td>
+                    {fieldTypes.find(t => t.value === field.field_type)?.label || field.field_type}
+                    {field.field_type === 'foreign_key' && field.related_table && (
+                      <div className="text-xs opacity-60">
+                        → {getTableName(field.related_table)}
+                      </div>
+                    )}
+                  </td>
+                  <td>{field.description || '-'}</td>
+                  <td>{field.is_required ? '✓' : '-'}</td>
+                  <td>{field.is_unique ? '✓' : '-'}</td>
+                  <td>{field.is_searchable ? '✓' : '-'}</td>
+                  <td>
+                    <div className="flex space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => handleEditField(field)}
+                      >
+                        <FiEdit />
+                      </Button>
+                      {confirmDelete === field.id ? (
+                        <div className="flex space-x-1">
+                          <Button
+                            variant="error"
+                            size="xs"
+                            onClick={() => handleDeleteField(field)}
+                          >
+                            Oui
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => setConfirmDelete(null)}
+                          >
+                            Non
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setConfirmDelete(field.id)}
+                        >
+                          <FiTrash2 />
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="8" className="text-center py-4">
+                  Aucun champ défini pour cette table
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+  
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 bg-white p-6 rounded-lg shadow">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">
           Gestion des champs {table ? `- ${table.name}` : ''}
@@ -226,107 +477,15 @@ function FieldsManager({ tableId }) {
         </Button>
       </div>
       
-      {error && (
-        <Alert type="error" message={error} />
-      )}
+      {error && <Alert type="error" message={error} />}
+      {successMessage && <Alert type="success" message={successMessage} />}
       
-      {successMessage && (
-        <Alert type="success" message={successMessage} />
-      )}
-      
-      {isLoading && !table ? (
-        <div className="flex justify-center p-8">
-          <span className="loading loading-spinner loading-lg"></span>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="table w-full">
-            <thead>
-              <tr>
-                <th>Ordre</th>
-                <th>Nom</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Requis</th>
-                <th>Unique</th>
-                <th>Recherche</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fields.length > 0 ? (
-                fields.map((field, index) => (
-                  <tr key={field.id}>
-                    <td className="w-20">
-                      <div className="flex items-center space-x-1">
-                        <span className="badge">{index + 1}</span>
-                        <div className="flex flex-col">
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            isDisabled={index === 0}
-                            onClick={() => handleMoveField(field.id, 'up')}
-                          >
-                            <FiArrowUp />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            isDisabled={index === fields.length - 1}
-                            onClick={() => handleMoveField(field.id, 'down')}
-                          >
-                            <FiArrowDown />
-                          </Button>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="font-medium">{field.name}</div>
-                      <div className="text-xs opacity-60">{field.slug}</div>
-                    </td>
-                    <td>
-                      {fieldTypes.find(t => t.value === field.field_type)?.label || field.field_type}
-                    </td>
-                    <td>{field.description || '-'}</td>
-                    <td>{field.is_required ? '✓' : '-'}</td>
-                    <td>{field.is_unique ? '✓' : '-'}</td>
-                    <td>{field.is_searchable ? '✓' : '-'}</td>
-                    <td>
-                      <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => handleEditField(field)}
-                        >
-                          <FiEdit />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => alert('Fonction non implémentée: Suppression de champ')}
-                        >
-                          <FiTrash2 />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="8" className="text-center py-4">
-                    Aucun champ défini pour cette table
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {renderContent()}
       
       {/* Modal pour l'ajout/édition de champ */}
       <Modal
         isOpen={isFieldModalOpen}
-        onClose={() => setIsFieldModalOpen(false)}
+        onClose={handleCloseModal}
         title={selectedField ? 'Modifier un champ' : 'Ajouter un champ'}
         size="lg"
       >
@@ -369,6 +528,7 @@ function FieldsManager({ tableId }) {
             onChange={handleFieldChange}
           />
           
+          {/* Options pour le type liste de choix */}
           {fieldFormData.field_type === 'choice' && (
             <FormField
               id="options"
@@ -382,6 +542,55 @@ function FieldsManager({ tableId }) {
             />
           )}
           
+          {/* Sélecteur de table pour le type clé étrangère */}
+          {fieldFormData.field_type === 'foreign_key' && (
+            <div className="form-control w-full">
+              <label className="label" htmlFor="related_table">
+                <span className="label-text">Table liée</span>
+                <span className="text-error ml-1">*</span>
+              </label>
+              {tablesLoading ? (
+                <div className="flex items-center space-x-2">
+                  <span className="loading loading-spinner loading-sm"></span>
+                  <span>Chargement des tables...</span>
+                </div>
+              ) : (
+                <>
+                  <select
+                    id="related_table"
+                    name="related_table"
+                    value={fieldFormData.related_table || ''}
+                    onChange={handleFieldChange}
+                    className={`select select-bordered w-full ${
+                      fieldFormErrors.related_table ? 'select-error' : ''
+                    }`}
+                    required
+                  >
+                    <option value="">Sélectionner une table</option>
+                    {tables.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldFormErrors.related_table && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{fieldFormErrors.related_table}</span>
+                    </label>
+                  )}
+                  {tables.length === 0 && (
+                    <label className="label">
+                      <span className="label-text-alt text-warning">
+                        Aucune autre table disponible. Créez d'abord d'autres tables.
+                      </span>
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* Valeur par défaut pour certains types */}
           {(fieldFormData.field_type === 'text' || 
             fieldFormData.field_type === 'long_text' || 
             fieldFormData.field_type === 'number' || 
@@ -395,6 +604,7 @@ function FieldsManager({ tableId }) {
             />
           )}
           
+          {/* Options générales pour tous les types */}
           <div className="form-control">
             <label className="label cursor-pointer">
               <span className="label-text">Champ obligatoire</span>
@@ -434,10 +644,15 @@ function FieldsManager({ tableId }) {
             </label>
           </div>
           
+          {/* Message d'erreur global */}
+          {fieldFormErrors.submit && (
+            <Alert type="error" message={fieldFormErrors.submit} />
+          )}
+          
           <div className="flex justify-end space-x-2 pt-4">
             <Button
               variant="ghost"
-              onClick={() => setIsFieldModalOpen(false)}
+              onClick={handleCloseModal}
             >
               Annuler
             </Button>

@@ -9,7 +9,6 @@ function RecordForm({ tableId, recordId }) {
   const navigate = useNavigate();
   const { 
     fetchTableWithFields, 
-    createRecord, 
     updateRecord, 
     isLoading, 
     error 
@@ -125,12 +124,43 @@ function RecordForm({ tableId, recordId }) {
     try {
       let result;
       
+      // Obtenir le token CSRF
+      const csrfResponse = await fetch('/api/auth/csrf/', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!csrfResponse.ok) {
+        throw new Error(`Erreur lors de l'obtention du token CSRF : ${csrfResponse.status}`);
+      }
+
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrfToken;
+      
       if (recordId) {
         // Mode édition
         result = await updateRecord(recordId, formData);
       } else {
-        // Mode création
-        result = await createRecord(tableId, formData);
+        // Mode création avec CSRF token
+        const response = await fetch('/api/database/records/create_with_values/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            table_id: tableId,
+            values: formData
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
+        }
+
+        result = await response.json();
       }
       
       if (result) {
@@ -142,7 +172,7 @@ function RecordForm({ tableId, recordId }) {
         
         // Redirection après un court délai
         setTimeout(() => {
-          navigate(`/admin/tables/${tableId}/records`);
+          navigate(`/admin/database/tables/${tableId}/records`);
         }, 1500);
       }
     } catch (err) {
@@ -354,7 +384,7 @@ function RecordForm({ tableId, recordId }) {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => navigate(`/admin/tables/${tableId}/records`)}
+              onClick={() => navigate(`/admin/database/tables/${tableId}/records`)}
             >
               Annuler
             </Button>

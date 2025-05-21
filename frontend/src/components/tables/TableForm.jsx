@@ -185,7 +185,7 @@ function TableForm({ tableId }) {
           <Button
             type="button"
             variant="ghost"
-            onClick={() => navigate('/admin/tables')}
+            onClick={() => navigate('/admin/database/tables')}
           >
             Annuler
           </Button>

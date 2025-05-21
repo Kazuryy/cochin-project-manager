@@ -12,7 +12,7 @@ function RecordList({ tableId }) {
     fetchRecords, 
     deleteRecord, 
     isLoading, 
-    error 
+    error: contextError 
   } = useDynamicTables();
   
   const [table, setTable] = useState(null);
@@ -23,6 +23,7 @@ function RecordList({ tableId }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   
   // Charger les données de la table et ses champs
   useEffect(() => {
@@ -67,21 +68,36 @@ function RecordList({ tableId }) {
     setIsFilterModalOpen(false);
   };
   
-  const handleDelete = async (recordId) => {
-    const success = await deleteRecord(recordId);
-    if (success) {
-      setSuccessMessage('Enregistrement supprimé avec succès');
+  const handleDeleteRecord = async (recordId) => {
+    try {
+      console.log("Suppression de l'enregistrement:", recordId); // Pour debugging
       
-      // Mettre à jour la liste des enregistrements
-      const updatedRecords = records.filter(record => record.id !== recordId);
-      setRecords(updatedRecords);
+      // Utiliser directement la fonction du contexte
+      const success = await deleteRecord(recordId);
       
-      // Effacer le message après quelques secondes
+      if (success) {
+        console.log("Suppression réussie");
+        // Mettre à jour l'état local pour refléter la suppression
+        setRecords(prevRecords => prevRecords.filter(record => record.id !== recordId));
+        setSuccessMessage('Enregistrement supprimé avec succès');
+        
+        setTimeout(() => {
+          setSuccessMessage('');
+        }, 3000);
+      } else {
+        throw new Error("Échec de la suppression de l'enregistrement");
+      }
+    } catch (err) {
+      console.error('Erreur lors de la suppression:', err);
+      setDeleteError(err.message || "Une erreur s'est produite lors de la suppression");
+      
       setTimeout(() => {
-        setSuccessMessage('');
+        setDeleteError('');
       }, 3000);
+    } finally {
+      // Toujours réinitialiser l'état de confirmation
+      setConfirmDelete(null);
     }
-    setConfirmDelete(null);
   };
   
   const exportToCSV = () => {
@@ -201,7 +217,7 @@ function RecordList({ tableId }) {
             Exporter CSV
           </Button>
           
-          <Link to={`/admin/tables/${tableId}/records/create`}>
+          <Link to={`/admin/database/tables/${tableId}/records/create`}>
             <Button variant="primary">
               <FiPlus className="mr-2" />
               Ajouter
@@ -210,8 +226,12 @@ function RecordList({ tableId }) {
         </div>
       </div>
       
-      {error && (
-        <Alert type="error" message={error} />
+      {contextError && (
+        <Alert type="error" message={contextError} />
+      )}
+      
+      {deleteError && (
+        <Alert type="error" message={deleteError} />
       )}
       
       {successMessage && (
@@ -262,46 +282,23 @@ function RecordList({ tableId }) {
                     ))}
                     <td>
                       <div className="flex space-x-1">
-                        <Link to={`/admin/tables/${tableId}/records/${record.id}/edit`}>
+                        <Link to={`/admin/database/tables/${tableId}/records/${record.id}/edit`}>
                           <Button
                             variant="ghost"
+                            className="text-primary"
                             size="xs"
                           >
                             <FiEdit />
                           </Button>
                         </Link>
                         
-                        {confirmDelete === record.id ? (
-                          <div className="dropdown dropdown-end">
-                            <div className="dropdown-content z-[1] bg-base-100 border border-base-300 rounded-box shadow-xl p-2">
-                              <p className="text-sm mb-2">Confirmer la suppression ?</p>
-                              <div className="flex space-x-2">
-                                <Button
-                                  variant="error"
-                                  size="xs"
-                                  onClick={() => handleDelete(record.id)}
-                                >
-                                  Oui
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="xs"
-                                  onClick={() => setConfirmDelete(null)}
-                                >
-                                  Non
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setConfirmDelete(record.id)}
-                          >
-                            <FiTrash2 />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setConfirmDelete(record.id)}
+                        >
+                          <FiTrash2 />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -350,6 +347,34 @@ function RecordList({ tableId }) {
               onClick={applyFilters}
             >
               Appliquer
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      
+      {/* Modal de confirmation de suppression */}
+      <Modal
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        title="Confirmation de suppression"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p>Êtes-vous sûr de vouloir supprimer cet enregistrement ?</p>
+          <p className="text-sm text-error">Cette action est irréversible.</p>
+          
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmDelete(null)}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="error"
+              onClick={() => handleDeleteRecord(confirmDelete)}
+            >
+              Supprimer
             </Button>
           </div>
         </div>

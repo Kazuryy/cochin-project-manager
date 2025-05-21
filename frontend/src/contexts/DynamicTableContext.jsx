@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
+import api from '../services/api';
 
 // Provider du contexte
 export function DynamicTableProvider({ children }) {
@@ -15,19 +16,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch('/api/database/tables/', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
+      const data = await api.get('/api/database/tables/');
       setTables(data);
     } catch (err) {
       console.error('Erreur lors de la récupération des tables:', err);
@@ -44,34 +33,10 @@ export function DynamicTableProvider({ children }) {
     
     try {
       // Récupération de la table
-      const tableResponse = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!tableResponse.ok) {
-        throw new Error(`Erreur HTTP ${tableResponse.status}`);
-      }
-      
-      const table = await tableResponse.json();
+      const table = await api.get(`/api/database/tables/${tableId}/`);
       
       // Récupération des champs
-      const fieldsResponse = await fetch(`/api/database/tables/${tableId}/fields/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!fieldsResponse.ok) {
-        throw new Error(`Erreur HTTP ${fieldsResponse.status}`);
-      }
-      
-      const fields = await fieldsResponse.json();
+      const fields = await api.get(`/api/database/tables/${tableId}/fields/`);
       
       // Combiner la table et ses champs
       return { ...table, fields };
@@ -90,35 +55,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
 
     try {
-      const csrfResponse = await fetch('/api/auth/csrf/', {
-        method: 'GET',
-        credentials: 'include'
-      });
-
-      if (!csrfResponse.ok) {
-        throw new Error (`Erreur lors de l'obtension d'un token CSRF : ${csrfResponse.status}`)
-      }
-
-      const csrfData = await csrfResponse.json();
-      const csrfToken = csrfData.csrfToken;
-
-      // Utilisation du token pour la requête
-      const response = await fetch('/api/database/tables/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-        credentials: 'include',
-        body: JSON.stringify(tableData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const newTable = await response.json();
+      const newTable = await api.post('/api/database/tables/', tableData);
       
       // Mettre à jour la liste des tables
       setTables((prevTables) => [...prevTables, newTable]);
@@ -139,21 +76,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(tableData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const updatedTable = await response.json();
+      const updatedTable = await api.patch(`/api/database/tables/${tableId}/`, tableData);
       
       // Mettre à jour la liste des tables
       setTables((prevTables) =>
@@ -176,18 +99,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
+      await api.delete(`/api/database/tables/${tableId}/`);
       
       // Mettre à jour la liste des tables
       setTables((prevTables) => prevTables.filter((table) => table.id !== tableId));
@@ -208,21 +120,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/add_field/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(fieldData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const newField = await response.json();
+      const newField = await api.post(`/api/database/tables/${tableId}/add_field/`, fieldData);
       
       return newField;
     } catch (err) {
@@ -249,19 +147,7 @@ export function DynamicTableProvider({ children }) {
         }
       });
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP ${response.status}`);
-      }
-      
-      const records = await response.json();
+      const records = await api.get(url);
       
       return records;
     } catch (err) {
@@ -279,24 +165,10 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch('/api/database/records/create_with_values/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          table_id: tableId,
-          values: values,
-        }),
+      const newRecord = await api.post('/api/database/records/create_with_values/', {
+        table_id: tableId,
+        values: values,
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const newRecord = await response.json();
       
       return newRecord;
     } catch (err) {
@@ -314,23 +186,9 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/records/${recordId}/update_with_values/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          values: values,
-        }),
+      const updatedRecord = await api.patch(`/api/database/records/${recordId}/update_with_values/`, {
+        values: values,
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const updatedRecord = await response.json();
       
       return updatedRecord;
     } catch (err) {
@@ -348,19 +206,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/records/${recordId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
+      await api.delete(`/api/database/records/${recordId}/`);
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression de l'enregistrement ${recordId}:`, err);
