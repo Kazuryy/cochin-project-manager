@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { DynamicTableContext } from '../DynamicTableContext';
+import { DynamicTableContext } from '../context';
 
 export function useDynamicTables() {
   const context = useContext(DynamicTableContext);

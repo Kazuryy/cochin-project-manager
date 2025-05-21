@@ -1,9 +1,7 @@
-// frontend/src/components/database/DynamicTableContext.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
 
-// Provider du contexte
 export function DynamicTableProvider({ children }) {
   const [tables, setTables] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,7 +41,6 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Récupération de la table
       const tableResponse = await fetch(`/api/database/tables/${tableId}/`, {
         method: 'GET',
         headers: {
@@ -58,7 +55,6 @@ export function DynamicTableProvider({ children }) {
       
       const table = await tableResponse.json();
       
-      // Récupération des champs
       const fieldsResponse = await fetch(`/api/database/tables/${tableId}/fields/`, {
         method: 'GET',
         headers: {
@@ -72,8 +68,6 @@ export function DynamicTableProvider({ children }) {
       }
       
       const fields = await fieldsResponse.json();
-      
-      // Combiner la table et ses champs
       return { ...table, fields };
     } catch (err) {
       console.error(`Erreur lors de la récupération de la table ${tableId}:`, err);
@@ -105,10 +99,7 @@ export function DynamicTableProvider({ children }) {
       }
       
       const newTable = await response.json();
-      
-      // Mettre à jour la liste des tables
       setTables((prevTables) => [...prevTables, newTable]);
-      
       return newTable;
     } catch (err) {
       console.error('Erreur lors de la création de la table:', err);
@@ -140,12 +131,9 @@ export function DynamicTableProvider({ children }) {
       }
       
       const updatedTable = await response.json();
-      
-      // Mettre à jour la liste des tables
       setTables((prevTables) =>
         prevTables.map((table) => (table.id === tableId ? updatedTable : table))
       );
-      
       return updatedTable;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour de la table ${tableId}:`, err);
@@ -175,9 +163,7 @@ export function DynamicTableProvider({ children }) {
         throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
       }
       
-      // Mettre à jour la liste des tables
       setTables((prevTables) => prevTables.filter((table) => table.id !== tableId));
-      
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression de la table ${tableId}:`, err);
@@ -209,7 +195,6 @@ export function DynamicTableProvider({ children }) {
       }
       
       const newField = await response.json();
-      
       return newField;
     } catch (err) {
       console.error(`Erreur lors de l'ajout d'un champ à la table ${tableId}:`, err);
@@ -228,7 +213,6 @@ export function DynamicTableProvider({ children }) {
     try {
       let url = `/api/database/records/by_table/?table_id=${tableId}`;
       
-      // Ajouter les filtres à l'URL
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
           url += `&field_${key}=${encodeURIComponent(value)}`;
@@ -248,7 +232,6 @@ export function DynamicTableProvider({ children }) {
       }
       
       const records = await response.json();
-      
       return records;
     } catch (err) {
       console.error(`Erreur lors de la récupération des enregistrements de la table ${tableId}:`, err);
@@ -283,7 +266,6 @@ export function DynamicTableProvider({ children }) {
       }
       
       const newRecord = await response.json();
-      
       return newRecord;
     } catch (err) {
       console.error(`Erreur lors de la création d'un enregistrement dans la table ${tableId}:`, err);
@@ -317,7 +299,6 @@ export function DynamicTableProvider({ children }) {
       }
       
       const updatedRecord = await response.json();
-      
       return updatedRecord;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour de l'enregistrement ${recordId}:`, err);
@@ -356,7 +337,7 @@ export function DynamicTableProvider({ children }) {
       setIsLoading(false);
     }
   }, []);
-  
+
   // Charger les tables au montage du composant
   useEffect(() => {
     fetchTables();
@@ -402,4 +383,4 @@ export function DynamicTableProvider({ children }) {
 
 DynamicTableProvider.propTypes = {
   children: PropTypes.node.isRequired,
-};
+}; 

@@ -1,1 +1,1 @@
-default_app_config = 'dyndb.apps.DynamicDatabaseConfig'
+default_app_config = 'database.apps.DynamicDatabaseConfig'

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
 import { FiDatabase, FiTable, FiHardDrive, FiCheckSquare, FiFileText } from 'react-icons/fi';
-import { DynamicTableProvider } from '../../contexts/DynamicTableContext';
+import { DynamicTableProvider } from '../../contexts/DynamicTableProvider';
 import TableManagement from './Database/TableManagement';
 import CreateTablePage from './Database/CreateTablePage';
 import EditTablePage from './Database/EditTablePage';
