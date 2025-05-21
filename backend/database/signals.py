@@ -9,18 +9,30 @@ from .models import DynamicTable, DynamicField
 def create_table_slug(sender, instance, **kwargs):
     """
     Génère automatiquement le slug de la table s'il n'est pas défini
+    ou assure son unicité s'il est fourni
     """
     if not instance.slug:
-        base_slug = slugify(instance.name)
-        slug = base_slug
-        counter = 1
+        from django.utils.text import slugify
+        instance.slug = slugify(instance.name)
         
-        # Vérifier si le slug existe déjà
-        while DynamicTable.objects.filter(slug=slug).exists():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-            
-        instance.slug = slug
+        # Fallback si le slug est vide après slugify
+        if not instance.slug:
+            instance.slug = 'table'
+    
+    # Vérifier l'unicité du slug actuel
+    original_slug = instance.slug
+    query = DynamicTable.objects.filter(slug=instance.slug)
+    
+    # Exclure l'instance actuelle si on met à jour
+    if instance.pk:
+        query = query.exclude(pk=instance.pk)
+        
+    # Si le slug existe déjà, générer un identifiant aléatoire
+    if query.exists():
+        import uuid
+        # Utiliser les 6 premiers caractères d'un UUID
+        suffix = str(uuid.uuid4())[:6]
+        instance.slug = f"{original_slug}-{suffix}"
 
 @receiver(pre_save, sender=DynamicField)
 def create_field_slug(sender, instance, **kwargs):

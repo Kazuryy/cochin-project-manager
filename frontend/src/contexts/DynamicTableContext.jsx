@@ -88,12 +88,26 @@ export function DynamicTableProvider({ children }) {
   const createTable = useCallback(async (tableData) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
+      const csrfResponse = await fetch('/api/auth/csrf/', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!csrfResponse.ok) {
+        throw new Error (`Erreur lors de l'obtension d'un token CSRF : ${csrfResponse.status}`)
+      }
+
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrfToken;
+
+      // Utilisation du token pour la requête
       const response = await fetch('/api/database/tables/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
         },
         credentials: 'include',
         body: JSON.stringify(tableData),

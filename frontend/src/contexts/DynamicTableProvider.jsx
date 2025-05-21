@@ -84,18 +84,46 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
+      // Obtenir un token CSRF
+      const csrfResponse = await fetch('/api/auth/csrf/', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!csrfResponse.ok) {
+        throw new Error(`Erreur lors de l'obtention du token CSRF: ${csrfResponse.status}`);
+      }
+      
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrfToken;
+      
+      // S'assurer que les données sont complètes
+      const completeTableData = {
+        ...tableData,
+        // Ajouter d'autres champs par défaut si nécessaire
+      };
+      
+      console.log("Données complètes à envoyer:", completeTableData);
+      
       const response = await fetch('/api/database/tables/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
         },
         credentials: 'include',
-        body: JSON.stringify(tableData),
+        body: JSON.stringify(completeTableData),
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
+        // Essayer de récupérer des informations d'erreur plus détaillées
+        try {
+          const errorData = await response.json();
+          console.error("Détails de l'erreur du serveur:", errorData);
+          throw new Error(errorData.detail || JSON.stringify(errorData) || `Erreur HTTP ${response.status}`);
+        } catch {
+          throw new Error(`Erreur HTTP ${response.status}`);
+        }
       }
       
       const newTable = await response.json();

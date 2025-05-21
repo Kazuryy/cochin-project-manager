@@ -82,6 +82,23 @@ function TableForm({ tableId }) {
       setFormErrors(errors);
       return;
     }
+
+    // Créer une copie des données du formulaire
+    const dataToSubmit = { ...formData };
+    
+    // Générer automatiquement le slug si on est en mode création
+    if (!tableId) {
+      // Version simple : juste le nom en minuscules avec traitement basique
+      dataToSubmit.slug = formData.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')  // Caractères non alphanumériques → tirets
+        .replace(/(^-|-$)/g, '');     // Enlever tirets au début/fin
+        
+      // Fallback pour les cas extrêmes
+      if (!dataToSubmit.slug) {
+        dataToSubmit.slug = 'table';
+      }
+    }
     
     let result;
     if (tableId) {
@@ -89,7 +106,8 @@ function TableForm({ tableId }) {
       result = await updateTable(tableId, formData);
     } else {
       // Mode création
-      result = await createTable(formData);
+      result = await createTable(dataToSubmit);
+      console.log(dataToSubmit)
     }
     
     if (result) {
