@@ -14,13 +14,6 @@ function Dashboard() {
     'Tech',
     'Food',
     'Travel',
-    'Fashion',
-    'Beauty',
-    'Fitness',
-    'Education',
-    'Business',
-    'Entertainment',
-    'Thebestoptionofevereeee',
   ];
 
   return (

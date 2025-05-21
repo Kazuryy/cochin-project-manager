@@ -13,6 +13,7 @@ import './App.css';
 import DashboardAdmin from './pages/DashboardAdmin';
 import Footer from './components/global/Footer';
 
+
 // Contenu principal de l'application
 function MainContent() {
   return (
@@ -44,8 +45,17 @@ function MainContent() {
             } 
           />
           
+          {/* Routes pour la gestion des tables */}
+          <Route
+            path="/admin/database/*"
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <DatabaseManager />
+              </ProtectedRoute>
+            }
+          />
+          
           {/* Redirection pour les routes inconnues */}
-          <Route path="/admin/database" element={<DatabaseManager />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </div>

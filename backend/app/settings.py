@@ -46,9 +46,10 @@ INSTALLED_APPS = [
     'crispy_forms',
     'crispy_bootstrap5',
     'crispy_tailwind',
-    # 'debug_toolbar',
     'authentication',
     'app',
+    'database',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
