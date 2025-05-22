@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
+import api from '../services/api';
 
 export function DynamicTableProvider({ children }) {
   const [tables, setTables] = useState([]);
@@ -13,19 +14,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch('/api/database/tables/', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
+      const data = await api.get('/api/database/tables/');
       setTables(data);
     } catch (err) {
       console.error('Erreur lors de la récupération des tables:', err);
@@ -41,33 +30,13 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const tableResponse = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
+      // Récupération de la table
+      const table = await api.get(`/api/database/tables/${tableId}/`);
       
-      if (!tableResponse.ok) {
-        throw new Error(`Erreur HTTP ${tableResponse.status}`);
-      }
+      // Récupération des champs
+      const fields = await api.get(`/api/database/tables/${tableId}/fields/`);
       
-      const table = await tableResponse.json();
-      
-      const fieldsResponse = await fetch(`/api/database/tables/${tableId}/fields/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!fieldsResponse.ok) {
-        throw new Error(`Erreur HTTP ${fieldsResponse.status}`);
-      }
-      
-      const fields = await fieldsResponse.json();
+      // Combiner la table et ses champs
       return { ...table, fields };
     } catch (err) {
       console.error(`Erreur lors de la récupération de la table ${tableId}:`, err);
@@ -84,50 +53,13 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Obtenir un token CSRF
-      const csrfResponse = await fetch('/api/auth/csrf/', {
-        method: 'GET',
-        credentials: 'include',
-      });
+      console.log("Données à envoyer:", tableData);
       
-      if (!csrfResponse.ok) {
-        throw new Error(`Erreur lors de l'obtention du token CSRF: ${csrfResponse.status}`);
-      }
+      const newTable = await api.post('/api/database/tables/', tableData);
       
-      const csrfData = await csrfResponse.json();
-      const csrfToken = csrfData.csrfToken;
-      
-      // S'assurer que les données sont complètes
-      const completeTableData = {
-        ...tableData,
-        // Ajouter d'autres champs par défaut si nécessaire
-      };
-      
-      console.log("Données complètes à envoyer:", completeTableData);
-      
-      const response = await fetch('/api/database/tables/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-        credentials: 'include',
-        body: JSON.stringify(completeTableData),
-      });
-      
-      if (!response.ok) {
-        // Essayer de récupérer des informations d'erreur plus détaillées
-        try {
-          const errorData = await response.json();
-          console.error("Détails de l'erreur du serveur:", errorData);
-          throw new Error(errorData.detail || JSON.stringify(errorData) || `Erreur HTTP ${response.status}`);
-        } catch {
-          throw new Error(`Erreur HTTP ${response.status}`);
-        }
-      }
-      
-      const newTable = await response.json();
+      // Mettre à jour la liste des tables
       setTables((prevTables) => [...prevTables, newTable]);
+      
       return newTable;
     } catch (err) {
       console.error('Erreur lors de la création de la table:', err);
@@ -144,24 +76,13 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(tableData),
-      });
+      const updatedTable = await api.patch(`/api/database/tables/${tableId}/`, tableData);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const updatedTable = await response.json();
+      // Mettre à jour la liste des tables
       setTables((prevTables) =>
         prevTables.map((table) => (table.id === tableId ? updatedTable : table))
       );
+      
       return updatedTable;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour de la table ${tableId}:`, err);
@@ -178,20 +99,11 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
+      await api.delete(`/api/database/tables/${tableId}/`);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
+      // Mettre à jour la liste des tables
       setTables((prevTables) => prevTables.filter((table) => table.id !== tableId));
+      
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression de la table ${tableId}:`, err);
@@ -208,21 +120,8 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/add_field/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(fieldData),
-      });
+      const newField = await api.post(`/api/database/tables/${tableId}/add_field/`, fieldData);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
-      const newField = await response.json();
       return newField;
     } catch (err) {
       console.error(`Erreur lors de l'ajout d'un champ à la table ${tableId}:`, err);
@@ -239,19 +138,12 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/tables/${tableId}/fields/${fieldId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
+      console.log('Suppression du champ:', fieldId);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
+      // Utiliser le service API centralisé
+      await api.delete(`/api/database/fields/${fieldId}/`);
       
+      console.log('Champ supprimé avec succès');
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression du champ ${fieldId}:`, err);
@@ -270,25 +162,15 @@ export function DynamicTableProvider({ children }) {
     try {
       let url = `/api/database/records/by_table/?table_id=${tableId}`;
       
+      // Ajouter les filtres à l'URL
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
           url += `&field_${key}=${encodeURIComponent(value)}`;
         }
       });
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
+      const records = await api.get(url);
       
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP ${response.status}`);
-      }
-      
-      const records = await response.json();
       return records;
     } catch (err) {
       console.error(`Erreur lors de la récupération des enregistrements de la table ${tableId}:`, err);
@@ -305,24 +187,27 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch('/api/database/records/create_with_values/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          table_id: tableId,
-          values: values,
-        }),
+      // Préparer les données au format attendu par le backend
+      const dataToSend = {
+        table_id: parseInt(tableId),
+        values: {}
+      };
+      
+      // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
+      Object.entries(values).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          if (typeof value === 'boolean') {
+            dataToSend.values[key] = value ? 'true' : 'false';
+          } else {
+            dataToSend.values[key] = value.toString();
+          }
+        }
       });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
+      console.log('Création - Données envoyées:', dataToSend);
       
-      const newRecord = await response.json();
+      const newRecord = await api.post('/api/database/records/create_with_values/', dataToSend);
+      
       return newRecord;
     } catch (err) {
       console.error(`Erreur lors de la création d'un enregistrement dans la table ${tableId}:`, err);
@@ -339,26 +224,41 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/database/records/${recordId}/update_with_values/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          values: values,
-        }),
+      // Préparer les données au format attendu par le backend
+      const dataToSend = {
+        values: {}
+      };
+      
+      // Filtrer les champs système et ne garder que les champs de la table dynamique
+      const systemFields = ['id', 'created_at', 'updated_at'];
+      
+      // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
+      Object.entries(values).forEach(([key, value]) => {
+        // Ignorer les champs système
+        if (systemFields.includes(key)) {
+          return;
+        }
+        
+        if (value !== undefined && value !== null && value !== '') {
+          if (typeof value === 'boolean') {
+            dataToSend.values[key] = value ? 'true' : 'false';
+          } else {
+            dataToSend.values[key] = value.toString();
+          }
+        }
       });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
+      console.log('Mise à jour - Record ID:', recordId);
+      console.log('Mise à jour - Données envoyées:', dataToSend);
       
-      const updatedRecord = await response.json();
+      const updatedRecord = await api.patch(`/api/database/records/${recordId}/update_with_values/`, dataToSend);
+      
+      console.log('Mise à jour - Réponse reçue:', updatedRecord);
+      
       return updatedRecord;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour de l'enregistrement ${recordId}:`, err);
+      console.error('Détails de l\'erreur:', err);
       setError(err.message || `Une erreur est survenue lors de la mise à jour de l'enregistrement ${recordId}`);
       return null;
     } finally {
@@ -372,30 +272,7 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Récupérer le token CSRF du cookie
-      const csrfToken = document.cookie
-        .split('; ')
-        .find(row => row.startsWith('csrftoken='))
-        ?.split('=')[1];
-
-      if (!csrfToken) {
-        throw new Error('Token CSRF non trouvé');
-      }
-
-      const response = await fetch(`/api/database/records/${recordId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-      }
-      
+      await api.delete(`/api/database/records/${recordId}/`);
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression de l'enregistrement ${recordId}:`, err);
@@ -453,4 +330,4 @@ export function DynamicTableProvider({ children }) {
 
 DynamicTableProvider.propTypes = {
   children: PropTypes.node.isRequired,
-}; 
+};
