@@ -14,8 +14,9 @@ import EditRecordPage from './Database/EditRecordPage';
 function DatabaseManager() {
     return (
       <DynamicTableProvider>
+        <div className="container mx-auto px-4 py-8">
         <Routes>
-          <Route path="/" element={<Navigate to="tables" replace />} />
+          <Route path="/" element={<DatabaseOverview />} />
           <Route path="/tables" element={<TableManagement />} />
           <Route path="/tables/create" element={<CreateTablePage />} />
           <Route path="/tables/:tableId/edit" element={<EditTablePage />} />
@@ -24,6 +25,7 @@ function DatabaseManager() {
           <Route path="/tables/:tableId/records/create" element={<CreateRecordPage />} />
           <Route path="/tables/:tableId/records/:recordId/edit" element={<EditRecordPage />} />
         </Routes>
+        </div>
       </DynamicTableProvider>
     );
 }

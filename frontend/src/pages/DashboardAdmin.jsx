@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/ui/Card';
-import { FiDatabase, FiSettings, FiTable, FiUsers } from 'react-icons/fi';
+import { FiDatabase, FiSettings } from 'react-icons/fi';
 
 function AdminDashboard() {
   return (
@@ -41,34 +41,6 @@ function AdminDashboard() {
                 </div>
                 <Link to="/admin/database">
                     <button className="btn btn-accent w-full">Gérer</button>
-                </Link>
-            </Card>
-            
-            <Card 
-              title="Tables dynamiques"
-              subtitle="Créer, configurer et gérer des tables personnalisées."
-              className="w-full"
-              withShadow={true}
-            >
-                <div className="flex items-center justify-center text-5xl mb-4 text-primary">
-                  <FiTable />
-                </div>
-                <Link to="/admin/tables">
-                    <button className="btn btn-accent w-full">Gérer les tables</button>
-                </Link>
-            </Card>
-            
-            <Card 
-              title="Utilisateurs"
-              subtitle="Gérer les utilisateurs et leurs permissions."
-              className="w-full"
-              withShadow={true}
-            >
-                <div className="flex items-center justify-center text-5xl mb-4 text-primary">
-                  <FiUsers />
-                </div>
-                <Link to="/admin/users">
-                    <button className="btn btn-accent w-full">Gérer les utilisateurs</button>
                 </Link>
             </Card>
         </div>

@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 import { Card, Button, Alert } from '../ui';
 import { FiEdit2, FiTrash2, FiPlus, FiDatabase } from 'react-icons/fi';
+import api from '../../services/api'; // Import du service API
 
 function TableList() {
-  const { tables, fetchTables, deleteTable, isLoading, error } = useDynamicTables();
+  const { tables, fetchTables, isLoading, error } = useDynamicTables();
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -15,12 +16,17 @@ function TableList() {
   }, [fetchTables]);
 
   const handleDelete = async (tableId) => {
-    const success = await deleteTable(tableId);
-    if (success) {
+    try {
+      await api.delete(`/api/database/tables/${tableId}/`); // Appel direct à l'API pour supprimer la table
       setSuccessMessage('Table supprimée avec succès');
       setTimeout(() => setSuccessMessage(''), 3000);
+      fetchTables(); // Rafraîchit la liste des tables après suppression
+    } catch (err) {
+      console.error('Erreur lors de la suppression de la table :', err);
+      alert('Une erreur est survenue lors de la suppression de la table.');
+    } finally {
+      setConfirmDelete(null);
     }
-    setConfirmDelete(null);
   };
 
   return (
@@ -35,13 +41,8 @@ function TableList() {
         </Link>
       </div>
 
-      {error && (
-        <Alert type="error" message={error} />
-      )}
-
-      {successMessage && (
-        <Alert type="success" message={successMessage} />
-      )}
+      {error && <Alert type="error" message={error} />}
+      {successMessage && <Alert type="success" message={successMessage} />}
 
       {isLoading ? (
         <div className="flex justify-center p-8">
@@ -58,9 +59,9 @@ function TableList() {
                 </div>
                 <div className="badge badge-primary">{table.is_active ? 'Active' : 'Inactive'}</div>
               </div>
-              
+
               <div className="divider my-2"></div>
-              
+
               <div className="flex justify-between mt-2">
                 <div className="space-x-2">
                   <Link to={`/admin/database/tables/${table.id}/records`}>
@@ -85,27 +86,25 @@ function TableList() {
                       Modifier
                     </Button>
                   </Link>
-                  
+
                   {confirmDelete === table.id ? (
-                    <div className="dropdown dropdown-end">
-                      <div className="dropdown-content z-[1] bg-base-100 border border-base-300 rounded-box shadow-xl p-2">
-                        <p className="text-sm mb-2">Confirmer la suppression ?</p>
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="error"
-                            size="xs"
-                            onClick={() => handleDelete(table.id)}
-                          >
-                            Oui
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setConfirmDelete(null)}
-                          >
-                            Non
-                          </Button>
-                        </div>
+                    <div className="flex flex-col items-end space-y-2">
+                      <p className="text-sm mb-2">Confirmer la suppression ?</p>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="error"
+                          size="xs"
+                          onClick={() => handleDelete(table.id)}
+                        >
+                          Oui
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setConfirmDelete(null)}
+                        >
+                          Non
+                        </Button>
                       </div>
                     </div>
                   ) : (
