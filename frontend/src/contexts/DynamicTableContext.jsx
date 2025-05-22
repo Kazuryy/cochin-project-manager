@@ -1,4 +1,4 @@
-// frontend/src/components/database/DynamicTableContext.jsx
+// frontend/src/contexts/DynamicTableContext.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
@@ -165,10 +165,26 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const newRecord = await api.post('/api/database/records/create_with_values/', {
-        table_id: tableId,
-        values: values,
+      // Préparer les données au format attendu par le backend
+      const dataToSend = {
+        table_id: parseInt(tableId),
+        values: {}
+      };
+      
+      // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
+      Object.entries(values).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          if (typeof value === 'boolean') {
+            dataToSend.values[key] = value ? 'true' : 'false';
+          } else {
+            dataToSend.values[key] = value.toString();
+          }
+        }
       });
+      
+      console.log('Création - Données envoyées:', dataToSend);
+      
+      const newRecord = await api.post('/api/database/records/create_with_values/', dataToSend);
       
       return newRecord;
     } catch (err) {
@@ -186,13 +202,41 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      const updatedRecord = await api.patch(`/api/database/records/${recordId}/update_with_values/`, {
-        values: values,
+      // Préparer les données au format attendu par le backend
+      const dataToSend = {
+        values: {}
+      };
+      
+      // Filtrer les champs système et ne garder que les champs de la table dynamique
+      const systemFields = ['id', 'created_at', 'updated_at'];
+      
+      // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
+      Object.entries(values).forEach(([key, value]) => {
+        // Ignorer les champs système
+        if (systemFields.includes(key)) {
+          return;
+        }
+        
+        if (value !== undefined && value !== null && value !== '') {
+          if (typeof value === 'boolean') {
+            dataToSend.values[key] = value ? 'true' : 'false';
+          } else {
+            dataToSend.values[key] = value.toString();
+          }
+        }
       });
+      
+      console.log('Mise à jour - Record ID:', recordId);
+      console.log('Mise à jour - Données envoyées:', dataToSend);
+      
+      const updatedRecord = await api.patch(`/api/database/records/${recordId}/update_with_values/`, dataToSend);
+      
+      console.log('Mise à jour - Réponse reçue:', updatedRecord);
       
       return updatedRecord;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour de l'enregistrement ${recordId}:`, err);
+      console.error('Détails de l\'erreur:', err);
       setError(err.message || `Une erreur est survenue lors de la mise à jour de l'enregistrement ${recordId}`);
       return null;
     } finally {

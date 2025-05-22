@@ -9,7 +9,8 @@ function RecordForm({ tableId, recordId }) {
   const navigate = useNavigate();
   const { 
     fetchTableWithFields, 
-    updateRecord, 
+    createRecord,
+    updateRecord,
     isLoading, 
     error 
   } = useDynamicTables();
@@ -45,8 +46,8 @@ function RecordForm({ tableId, recordId }) {
     if (recordId && table) {
       const loadRecord = async () => {
         try {
-          // Récupérer l'enregistrement spécifique
-          const response = await fetch(`/api/dynamic/records/${recordId}/`, {
+          // Utiliser le service API centralisé
+          const response = await fetch(`/api/database/records/${recordId}/`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -124,43 +125,12 @@ function RecordForm({ tableId, recordId }) {
     try {
       let result;
       
-      // Obtenir le token CSRF
-      const csrfResponse = await fetch('/api/auth/csrf/', {
-        method: 'GET',
-        credentials: 'include'
-      });
-
-      if (!csrfResponse.ok) {
-        throw new Error(`Erreur lors de l'obtention du token CSRF : ${csrfResponse.status}`);
-      }
-
-      const csrfData = await csrfResponse.json();
-      const csrfToken = csrfData.csrfToken;
-      
       if (recordId) {
-        // Mode édition
+        // Mode édition - Utiliser la fonction du contexte
         result = await updateRecord(recordId, formData);
       } else {
-        // Mode création avec CSRF token
-        const response = await fetch('/api/database/records/create_with_values/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            table_id: tableId,
-            values: formData
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
-        }
-
-        result = await response.json();
+        // Mode création - Utiliser la fonction du contexte
+        result = await createRecord(tableId, formData);
       }
       
       if (result) {
@@ -182,6 +152,11 @@ function RecordForm({ tableId, recordId }) {
           : `Erreur lors de la création d'un enregistrement dans la table ${tableId}:`,
         err
       );
+      
+      // Afficher l'erreur dans le formulaire
+      setFormErrors({
+        submit: err.message || 'Une erreur est survenue lors de la sauvegarde'
+      });
     }
   };
   
@@ -366,6 +341,10 @@ function RecordForm({ tableId, recordId }) {
     >
       {error && (
         <Alert type="error" message={error} className="mb-4" />
+      )}
+      
+      {formErrors.submit && (
+        <Alert type="error" message={formErrors.submit} className="mb-4" />
       )}
       
       {successMessage && (
