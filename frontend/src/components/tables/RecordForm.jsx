@@ -4,6 +4,7 @@ import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 import { Card, Button, FormField, Alert } from '../ui';
+import api from '../../services/api';
 
 function RecordForm({ tableId, recordId }) {
   const navigate = useNavigate();
@@ -20,6 +21,10 @@ function RecordForm({ tableId, recordId }) {
   const [formData, setFormData] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // NOUVEAU: États pour gérer les choix FK
+  const [fkChoices, setFkChoices] = useState({}); // {fieldId: [choices]}
+  const [fkLoading, setFkLoading] = useState({}); // {fieldId: boolean}
   
   // Charger les données de la table et ses champs
   useEffect(() => {
@@ -40,6 +45,86 @@ function RecordForm({ tableId, recordId }) {
     
     loadTable();
   }, [tableId, fetchTableWithFields]);
+  
+  // NOUVEAU: Charger les choix FK pour tous les champs FK
+  useEffect(() => {
+    const loadAllFkChoices = async () => {
+      const fkFields = fields.filter(field => field.field_type === 'foreign_key');
+      
+      for (const field of fkFields) {
+        if (field.related_table && !fkChoices[field.id]) {
+          await loadFkChoicesForField(field);
+        }
+      }
+    };
+    
+    if (fields.length > 0) {
+      loadAllFkChoices();
+    }
+  }, [fields]);
+  
+  // Fonction pour charger les choix FK d'un champ spécifique
+  const loadFkChoicesForField = async (field) => {
+    setFkLoading(prev => ({ ...prev, [field.id]: true }));
+    
+    try {
+      // Récupérer tous les enregistrements de la table liée
+      const records = await api.get(`/api/database/records/by_table/?table_id=${field.related_table}`);
+      
+      // Transformer en choix avec affichage intelligent
+      const choices = records.map(record => {
+        // Trouver le meilleur champ à afficher (nom, titre, etc.)
+        const displayValue = findBestDisplayValue(record);
+        
+        return {
+          value: record.id.toString(), // ID Django (système actuel)
+          display: displayValue ? `${displayValue} (ID: ${record.id})` : `Enregistrement #${record.id}`
+        };
+      });
+      
+      setFkChoices(prev => ({
+        ...prev,
+        [field.id]: choices.sort((a, b) => a.display.localeCompare(b.display))
+      }));
+      
+    } catch (err) {
+      console.error(`Erreur lors du chargement des choix FK pour ${field.name}:`, err);
+      setFkChoices(prev => ({ ...prev, [field.id]: [] }));
+    } finally {
+      setFkLoading(prev => ({ ...prev, [field.id]: false }));
+    }
+  };
+  
+  // Fonction pour trouver la meilleure valeur d'affichage
+  const findBestDisplayValue = (record) => {
+    // Priorité des noms de champs pour l'affichage
+    const priorityFields = [
+      'nom', 'name', 'title', 'titre', 'libelle', 'label',
+      'designation', 'description', 'nom_contact', 'nom_client'
+    ];
+    
+    // Chercher par priorité
+    for (const fieldName of priorityFields) {
+      for (const [key, value] of Object.entries(record)) {
+        if (key.toLowerCase().includes(fieldName.toLowerCase()) && 
+            value && typeof value === 'string') {
+          return value;
+        }
+      }
+    }
+    
+    // Sinon, prendre la première valeur texte non-système
+    const systemFields = ['id', 'created_at', 'updated_at'];
+    for (const [key, value] of Object.entries(record)) {
+      if (!systemFields.includes(key) && 
+          value && typeof value === 'string' && 
+          value.trim() !== '') {
+        return value;
+      }
+    }
+    
+    return null;
+  };
   
   // Si on est en mode édition, charger les données de l'enregistrement
   useEffect(() => {
@@ -307,6 +392,56 @@ function RecordForm({ tableId, recordId }) {
     }
   };
 
+  // CORRIGÉ: Rendu pour les champs de clé étrangère (sans hooks internes)
+  const renderForeignKeyField = (field, value, error) => {
+    const choices = fkChoices[field.id] || [];
+    const loading = fkLoading[field.id] || false;
+    
+    return (
+      <div key={field.id} className="form-control w-full">
+        <label className="label">
+          <span className="label-text">
+            {field.name}
+            {field.is_required && <span className="text-error ml-1">*</span>}
+          </span>
+        </label>
+        
+        {loading ? (
+          <div className="flex items-center space-x-2 p-3 border border-base-300 rounded-lg">
+            <span className="loading loading-spinner loading-sm"></span>
+            <span>Chargement des options...</span>
+          </div>
+        ) : (
+          <select
+            id={field.slug}
+            name={field.slug}
+            value={value || ''}
+            onChange={handleChange}
+            required={field.is_required}
+            className={`select select-bordered w-full ${error ? 'select-error' : ''}`}
+          >
+            <option value="">Sélectionner une option</option>
+            {choices.map(choice => (
+              <option key={choice.value} value={choice.value}>
+                {choice.display}
+              </option>
+            ))}
+          </select>
+        )}
+        
+        {(error || field.description) && (
+          <label className="label">
+            {error ? (
+              <span className="label-text-alt text-error">{error}</span>
+            ) : (
+              <span className="label-text-alt">{field.description}</span>
+            )}
+          </label>
+        )}
+      </div>
+    );
+  };
+
   // Fonction principale de rendu des champs
   const renderField = (field) => {
     const value = formData[field.slug] !== undefined ? formData[field.slug] : '';
@@ -328,12 +463,15 @@ function RecordForm({ tableId, recordId }) {
         return renderBooleanField(field, value, error);
       case 'choice':
         return renderChoiceField(field, value, error);
+      case 'foreign_key':
+        return renderForeignKeyField(field, value, error);
       default:
         return renderTextField(field, value, error);
     }
   };
   
   return (
+    
     <Card
       title={recordId ? 'Modifier un enregistrement' : 'Créer un enregistrement'}
       subtitle={table ? `Table: ${table.name}` : 'Chargement...'}

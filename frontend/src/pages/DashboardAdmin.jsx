@@ -14,35 +14,36 @@ function AdminDashboard() {
         <div className="flex w-full flex-col">
             <div className="divider pl-40 pr-40"></div>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
-            <Card 
-              title="Paramètres"
-              subtitle="Utilisateurs, groupes, permissions."
-              className="w-full"
-              withShadow={true}
-            >
-                <div className="flex items-center justify-center text-5xl mb-4 text-primary">
-                  <FiSettings />
-                </div>
-                <Link to="/admin/settings">
-                    <button className="btn btn-accent w-full">Modifier</button>
-                </Link>
-            </Card>
-            
-            <Card 
-              title="Base de données"
-              subtitle="Modifier, supprimer, créer des tables."
-              className="w-full"
-              withShadow={true}
-            >
-                <div className="flex items-center justify-center text-5xl mb-4 text-primary">
-                  <FiDatabase />
-                </div>
-                <Link to="/admin/database">
-                    <button className="btn btn-accent w-full">Gérer</button>
-                </Link>
-            </Card>
+        <div className="flex justify-center gap-4 mt-8">
+          <div className="grid grid-cols-1 gap-4">
+              <Card
+                title="Paramètres"
+                subtitle="Utilisateurs, groupes, permissions."
+                className="w-full"
+                withShadow={true}
+              >
+                  <div className="flex items-center justify-center text-5xl mb-4 text-primary">
+                    <FiSettings />
+                  </div>
+                  <Link to="/admin/settings">
+                      <button className="btn btn-accent w-full">Modifier</button>
+                  </Link>
+              </Card>
+              
+              <Card 
+                title="Base de données"
+                subtitle="Modifier, supprimer, créer des tables."
+                className="w-full"
+                withShadow={true}
+              >
+                  <div className="flex items-center justify-center text-5xl mb-4 text-primary">
+                    <FiDatabase />
+                  </div>
+                  <Link to="/admin/database">
+                      <button className="btn btn-accent w-full">Gérer</button>
+                  </Link>
+              </Card>
+          </div>
         </div>
       </div>
     </div>

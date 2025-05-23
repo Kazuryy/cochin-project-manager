@@ -102,6 +102,72 @@ class DynamicField(models.Model):
             except (json.JSONDecodeError, TypeError):
                 return []
         return []
+    
+    def get_foreign_key_choices(self):
+        """
+        Retourne les choix disponibles pour une clé étrangère avec affichage intelligent
+        """
+        if self.field_type != 'foreign_key' or not self.related_table:
+            return []
+        
+        choices = []
+        related_records = DynamicRecord.objects.filter(
+            table=self.related_table,
+            is_active=True
+        )
+        
+        # Trouver le meilleur champ pour l'affichage
+        display_field = self._find_best_display_field()
+        
+        for record in related_records:
+            # La valeur stockée reste l'ID Django (système actuel)
+            record_id = record.id
+            
+            # Améliorer l'affichage
+            if display_field:
+                display_value = record.get_value(display_field.slug)
+                if display_value:
+                    display_text = f"{display_value} (ID: {record_id})"
+                else:
+                    display_text = f"Enregistrement #{record_id}"
+            else:
+                display_text = f"Enregistrement #{record_id}"
+            
+            choices.append({
+                'value': record_id,      # ✅ Garde l'ID Django (système actuel)
+                'display': display_text  # ✅ Affichage amélioré
+            })
+        
+        return sorted(choices, key=lambda x: x['display'])
+    
+    def _find_best_display_field(self):
+        """
+        Trouve le meilleur champ pour afficher la FK (nom, titre, etc.)
+        """
+        if not self.related_table:
+            return None
+        
+        # Priorité des noms de champs pour l'affichage
+        priority_names = [
+            'nom', 'name', 'title', 'titre', 'libelle', 'label', 
+            'designation', 'description', 'nom_contact', 'nom_client'
+        ]
+        
+        # Chercher par priorité
+        for name in priority_names:
+            field = self.related_table.fields.filter(
+                slug__icontains=name,
+                field_type__in=['text', 'long_text'],
+                is_active=True
+            ).first()
+            if field:
+                return field
+        
+        # Sinon, prendre le premier champ texte
+        return self.related_table.fields.filter(
+            field_type__in=['text', 'long_text'],
+            is_active=True
+        ).order_by('order').first()
 
 class DynamicRecord(models.Model):
     """
@@ -163,6 +229,42 @@ class DynamicRecord(models.Model):
                 value_obj.value = value
                 value_obj.save()
             return value_obj
+        except DynamicField.DoesNotExist:
+            return None
+        
+    def get_foreign_key_display(self, field_slug):
+        """
+        Retourne une version lisible d'une clé étrangère pour l'affichage
+        """
+        try:
+            field = self.table.fields.get(slug=field_slug, is_active=True)
+            if field.field_type != 'foreign_key':
+                return None
+            
+            fk_id = self.get_value(field_slug)
+            if not fk_id:
+                return None
+            
+            try:
+                # Récupérer l'enregistrement lié par son ID Django
+                related_record = DynamicRecord.objects.get(
+                    table=field.related_table,
+                    id=int(fk_id),
+                    is_active=True
+                )
+                
+                # Trouver le meilleur champ d'affichage
+                display_field = field._find_best_display_field()
+                if display_field:
+                    display_value = related_record.get_value(display_field.slug)
+                    if display_value:
+                        return f"{display_value} (ID: {fk_id})"
+                
+                return f"Enregistrement #{fk_id}"
+                
+            except (DynamicRecord.DoesNotExist, ValueError):
+                return f"Référence invalide: {fk_id}"
+                
         except DynamicField.DoesNotExist:
             return None
 
