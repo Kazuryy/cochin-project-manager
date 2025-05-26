@@ -227,6 +227,41 @@ function FieldsManager({ tableId }) {
     }
   };
 
+  const updateField = async (fieldId, fieldData) => {
+    console.log("Données à mettre à jour:", fieldData);
+    try {
+      // Obtenir un token CSRF
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1];
+
+      if (!csrfToken) {
+        throw new Error('Token CSRF non trouvé');
+      }
+
+      const response = await fetch(`/api/database/fields/${fieldId}/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify(fieldData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Erreur HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (err) {
+      console.error("Erreur lors de la mise à jour du champ:", err);
+      throw err;
+    }
+  };
+
   const handleSaveField = async () => {
     const errors = validateFieldForm();
     if (Object.keys(errors).length > 0) {
@@ -237,7 +272,7 @@ function FieldsManager({ tableId }) {
     try {
       const fieldData = prepareFieldData(fieldFormData);
       const result = selectedField
-        ? alert('Fonction non implémentée: Mise à jour de champ')
+        ? await updateField(selectedField.id, fieldData)
         : await saveField(fieldData);
 
       if (result) {

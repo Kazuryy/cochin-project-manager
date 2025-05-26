@@ -154,6 +154,27 @@ export function DynamicTableProvider({ children }) {
     }
   }, []);
 
+  // Fonction pour mettre à jour un champ
+  const updateField = useCallback(async (fieldId, fieldData) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log('Mise à jour du champ:', fieldId, fieldData);
+      
+      const updatedField = await api.put(`/api/database/fields/${fieldId}/`, fieldData);
+      
+      console.log('Champ mis à jour avec succès');
+      return updatedField;
+    } catch (err) {
+      console.error(`Erreur lors de la mise à jour du champ ${fieldId}:`, err);
+      setError(err.message || `Une erreur est survenue lors de la mise à jour du champ`);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Fonction pour récupérer les enregistrements d'une table
   const fetchRecords = useCallback(async (tableId, filters = {}) => {
     setIsLoading(true);
@@ -300,6 +321,7 @@ export function DynamicTableProvider({ children }) {
     deleteTable,
     addFieldToTable,
     deleteField,
+    updateField,
     fetchRecords,
     createRecord,
     updateRecord,
@@ -315,6 +337,7 @@ export function DynamicTableProvider({ children }) {
     deleteTable,
     addFieldToTable,
     deleteField,
+    updateField,
     fetchRecords,
     createRecord,
     updateRecord,
