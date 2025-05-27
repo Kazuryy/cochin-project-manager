@@ -6,7 +6,6 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CreateProject from './pages/CreateProject';
-import DatabaseManager from './pages/Admin/DatabaseManager';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
 import { AuthProvider } from './hooks/AuthProvider';
@@ -61,7 +60,7 @@ function MainContent() {
             path="/admin/database/*"
             element={
               <ProtectedRoute requireAdmin={true}>
-                <DatabaseManager />
+                <DashboardAdmin />
               </ProtectedRoute>
             }
           />
