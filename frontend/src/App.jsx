@@ -5,6 +5,7 @@ import Navbar from './components/global/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import CreateProject from './pages/CreateProject';
 import DatabaseManager from './pages/Admin/DatabaseManager';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
@@ -31,6 +32,16 @@ function MainContent() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* Route pour créer un nouveau projet */}
+          <Route 
+            path="/projects/create" 
+            element={
+              <ProtectedRoute>
+                <CreateProject />
               </ProtectedRoute>
             } 
           />

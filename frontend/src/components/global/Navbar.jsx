@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../ui';
+import { FiPlus } from 'react-icons/fi';
 
 function Navbar() {
   const { isAuthenticated, user, logout, isLoading } = useAuth();
@@ -73,6 +74,16 @@ function Navbar() {
       </div>
       
       <div className="navbar-end">
+        {/* Bouton Nouveau Projet - affiché seulement si connecté */}
+        {isAuthenticated && (
+          <Link to="/projects/create" className="mr-4">
+            <Button variant="primary" size="sm">
+              <FiPlus className="mr-2" />
+              Nouveau Projet
+            </Button>
+          </Link>
+        )}
+        
         <label className="swap swap-rotate pr-4">
           <input
             type="checkbox"

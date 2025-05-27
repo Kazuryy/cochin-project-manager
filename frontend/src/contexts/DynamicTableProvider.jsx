@@ -211,14 +211,23 @@ export function DynamicTableProvider({ children }) {
       // Préparer les données au format attendu par le backend
       const dataToSend = {
         table_id: parseInt(tableId),
-        values: {}
+        values: {},
+        contact_principal: values.contact_principal_id ? parseInt(values.contact_principal_id) : null
       };
       
-      // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
+      // Nettoyer les valeurs
       Object.entries(values).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
+          // Ne pas inclure contact_principal_id dans values car il est géré séparément
+          if (key === 'contact_principal_id') {
+            return;
+          }
+          
           if (typeof value === 'boolean') {
             dataToSend.values[key] = value ? 'true' : 'false';
+          } else if (key.endsWith('_id') || key === 'id') {
+            // Garder les IDs en tant que nombres
+            dataToSend.values[key] = parseInt(value);
           } else {
             dataToSend.values[key] = value.toString();
           }
@@ -232,8 +241,7 @@ export function DynamicTableProvider({ children }) {
       return newRecord;
     } catch (err) {
       console.error(`Erreur lors de la création d'un enregistrement dans la table ${tableId}:`, err);
-      setError(err.message || `Une erreur est survenue lors de la création d'un enregistrement dans la table ${tableId}`);
-      return null;
+      throw err; // Propager l'erreur pour une meilleure gestion
     } finally {
       setIsLoading(false);
     }

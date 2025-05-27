@@ -2,3 +2,9 @@
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark;
 }
+
+/* Focus visible pour les champs de formulaire */
+.input:focus, .select:focus, .textarea:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
