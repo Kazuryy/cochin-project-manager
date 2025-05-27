@@ -608,7 +608,7 @@ function DashboardContent() {
               {/* Filter by project types */}
               <div className="mb-4">
                 <span className="label-text">Types de projet ({projectTypes.length})</span>
-                <MultipleSelector 
+                  <MultipleSelector 
                   options={projectTypes}
                   onChange={setSelectedTypes}
                 />
@@ -768,8 +768,8 @@ function DashboardContent() {
                         
                         return (
                           <tr key={project.id}>
-                            <td>
-                              <div className="flex items-center gap-4">
+                      <td>
+                        <div className="flex items-center gap-4">
                                 <div>
                                   <div className="font-bold">{projectName}</div>
                                   <div className="text-sm opacity-70 max-w-md">
@@ -777,21 +777,21 @@ function DashboardContent() {
                                       ? `${projectDescription.substring(0, 100)}...` 
                                       : projectDescription
                                     }
-                                  </div>
+                            </div>
                                   <div className="text-xs opacity-50 mt-1">
                                     N° {projectNumber}
-                                  </div>
-                                  <div className="mt-2">
+                            </div>
+                            <div className="mt-2">
                                     <div className="badge badge-primary mr-2">{projectType}</div>
                                     <div className="badge badge-outline mr-2">{equipe}</div>
-                                  </div>
+                            </div>
                                   
 
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="flex flex-col">
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                   <FiUser className="text-sm" />
                                   <span className="font-medium">{contactInfo.nom}</span>
@@ -810,8 +810,8 @@ function DashboardContent() {
                                     Créé le {formatDate(project.created_at)}
                                   </span>
                                 </div>
-                              </div>
-                            </td>
+                        </div>
+                      </td>
                           </tr>
                         );
                       })
@@ -833,8 +833,8 @@ function DashboardContent() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex justify-center mt-4">
-                  <div className="join">
+              <div className="flex justify-center mt-4">
+                <div className="join">
                     <button 
                       className="join-item btn"
                       disabled={currentPage === 0}
@@ -868,7 +868,7 @@ function DashboardContent() {
                   Affichage de {startIndex + 1} à {Math.min(startIndex + rowsPerPage, filteredProjects.length)} sur {filteredProjects.length} projet(s)
                 </span>
                 
-                {/* Bouton Save to TSV */}
+              {/* Bouton Save to TSV */}
                 <button className="btn btn-primary btn-sm">
                   Exporter en TSV
                 </button>
