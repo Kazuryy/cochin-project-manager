@@ -1,7 +1,6 @@
 // frontend/src/pages/DashboardAdmin.jsx
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link, Routes, Route, useNavigate } from 'react-router-dom';
-import Card from '../components/ui/Card';
 import { FiDatabase, FiSettings, FiTable, FiHardDrive, FiCheckSquare, FiFileText } from 'react-icons/fi';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import Breadcrumb from '../components/ui/Breadcrumb';
@@ -17,14 +16,13 @@ import EditRecordPage from './Admin/Database/EditRecordPage';
 function DatabaseOverview() {
   const navigate = useNavigate();
 
-  // Fonction pour naviguer
-  const goToTables = () => {
+  const goToTables = useCallback(() => {
     navigate('/admin/database/tables');
-  };
+  }, [navigate]);
 
-  const goToMaintenance = () => {
+  const goToMaintenance = useCallback(() => {
     navigate('/admin/database/maintenance');
-  };
+  }, [navigate]);
 
   return (
     <div className="space-y-8">

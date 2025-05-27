@@ -1,5 +1,5 @@
 // frontend/src/components/tables/RecordForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
@@ -21,11 +21,64 @@ function RecordForm({ tableId, recordId }) {
   const [formData, setFormData] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
-  
-  // NOUVEAU: États pour gérer les choix FK
-  const [fkChoices, setFkChoices] = useState({}); // {fieldId: [choices]}
-  const [fkLoading, setFkLoading] = useState({}); // {fieldId: boolean}
-  
+  const [fkChoices, setFkChoices] = useState({});
+  const [fkLoading, setFkLoading] = useState({});
+
+  const findBestDisplayValue = useCallback((record) => {
+    const priorityFields = [
+      'nom', 'name', 'title', 'titre', 'libelle', 'label',
+      'designation', 'description', 'nom_contact', 'nom_client'
+    ];
+    
+    for (const fieldName of priorityFields) {
+      const matchingField = Object.entries(record).find(([key, value]) => 
+        key.toLowerCase().includes(fieldName.toLowerCase()) && 
+        value && 
+        typeof value === 'string'
+      );
+      if (matchingField) return matchingField[1];
+    }
+    
+    const systemFields = ['id', 'created_at', 'updated_at'];
+    const firstNonSystemField = Object.entries(record).find(([key, value]) => 
+      !systemFields.includes(key) && 
+      value && 
+      typeof value === 'string' && 
+      value.trim() !== ''
+    );
+    
+    return firstNonSystemField ? firstNonSystemField[1] : null;
+  }, []);
+
+  const createChoice = useCallback((record) => ({
+    value: record.id.toString(),
+    display: findBestDisplayValue(record) 
+      ? `${findBestDisplayValue(record)} (ID: ${record.id})` 
+      : `Enregistrement #${record.id}`
+  }), [findBestDisplayValue]);
+
+  const sortChoices = useCallback((choices) => {
+    return [...choices].sort((a, b) => a.display.localeCompare(b.display));
+  }, []);
+
+  const loadFkChoicesForField = useCallback(async (field) => {
+    setFkLoading(prev => ({ ...prev, [field.id]: true }));
+    
+    try {
+      const records = await api.get(`/api/database/records/by_table/?table_id=${field.related_table}`);
+      const choices = records.map(createChoice);
+      setFkChoices(prev => ({
+        ...prev,
+        [field.id]: sortChoices(choices)
+      }));
+    } catch (err) {
+      console.error(`Erreur lors du chargement des choix FK pour ${field.name}:`, err);
+      setFkChoices(prev => ({ ...prev, [field.id]: [] }));
+    } finally {
+      setFkLoading(prev => ({ ...prev, [field.id]: false }));
+    }
+  }, [createChoice, sortChoices]);
+
   // Charger les données de la table et ses champs
   useEffect(() => {
     const loadTable = async () => {
@@ -34,7 +87,6 @@ function RecordForm({ tableId, recordId }) {
         setTable(tableData);
         setFields(tableData.fields || []);
         
-        // Initialiser le formulaire avec les valeurs par défaut
         const initialFormData = {};
         tableData.fields?.forEach(field => {
           initialFormData[field.slug] = field.default_value || '';
@@ -45,12 +97,11 @@ function RecordForm({ tableId, recordId }) {
     
     loadTable();
   }, [tableId, fetchTableWithFields]);
-  
-  // NOUVEAU: Charger les choix FK pour tous les champs FK
+
+  // Charger les choix FK pour tous les champs FK
   useEffect(() => {
     const loadAllFkChoices = async () => {
       const fkFields = fields.filter(field => field.field_type === 'foreign_key');
-      
       for (const field of fkFields) {
         if (field.related_table && !fkChoices[field.id]) {
           await loadFkChoicesForField(field);
@@ -61,70 +112,7 @@ function RecordForm({ tableId, recordId }) {
     if (fields.length > 0) {
       loadAllFkChoices();
     }
-  }, [fields]);
-  
-  // Fonction pour charger les choix FK d'un champ spécifique
-  const loadFkChoicesForField = async (field) => {
-    setFkLoading(prev => ({ ...prev, [field.id]: true }));
-    
-    try {
-      // Récupérer tous les enregistrements de la table liée
-      const records = await api.get(`/api/database/records/by_table/?table_id=${field.related_table}`);
-      
-      // Transformer en choix avec affichage intelligent
-      const choices = records.map(record => {
-        // Trouver le meilleur champ à afficher (nom, titre, etc.)
-        const displayValue = findBestDisplayValue(record);
-        
-        return {
-          value: record.id.toString(), // ID Django (système actuel)
-          display: displayValue ? `${displayValue} (ID: ${record.id})` : `Enregistrement #${record.id}`
-        };
-      });
-      
-      setFkChoices(prev => ({
-        ...prev,
-        [field.id]: choices.sort((a, b) => a.display.localeCompare(b.display))
-      }));
-      
-    } catch (err) {
-      console.error(`Erreur lors du chargement des choix FK pour ${field.name}:`, err);
-      setFkChoices(prev => ({ ...prev, [field.id]: [] }));
-    } finally {
-      setFkLoading(prev => ({ ...prev, [field.id]: false }));
-    }
-  };
-  
-  // Fonction pour trouver la meilleure valeur d'affichage
-  const findBestDisplayValue = (record) => {
-    // Priorité des noms de champs pour l'affichage
-    const priorityFields = [
-      'nom', 'name', 'title', 'titre', 'libelle', 'label',
-      'designation', 'description', 'nom_contact', 'nom_client'
-    ];
-    
-    // Chercher par priorité
-    for (const fieldName of priorityFields) {
-      for (const [key, value] of Object.entries(record)) {
-        if (key.toLowerCase().includes(fieldName.toLowerCase()) && 
-            value && typeof value === 'string') {
-          return value;
-        }
-      }
-    }
-    
-    // Sinon, prendre la première valeur texte non-système
-    const systemFields = ['id', 'created_at', 'updated_at'];
-    for (const [key, value] of Object.entries(record)) {
-      if (!systemFields.includes(key) && 
-          value && typeof value === 'string' && 
-          value.trim() !== '') {
-        return value;
-      }
-    }
-    
-    return null;
-  };
+  }, [fields, fkChoices, loadFkChoicesForField]);
   
   // Si on est en mode édition, charger les données de l'enregistrement
   useEffect(() => {

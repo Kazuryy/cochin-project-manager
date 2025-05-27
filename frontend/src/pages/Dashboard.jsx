@@ -69,7 +69,7 @@ function DashboardContent() {
         console.log(`  ${index + 1}. ID: ${table.id}, Name: "${table.name}", Slug: "${table.slug}"`);
       });
     }
-  }, [tables]);
+  }, [tables, debugInfo.rawData]);
 
   // Trouver les IDs des tables nécessaires
   useEffect(() => {
@@ -197,112 +197,38 @@ function DashboardContent() {
     return '';
   };
 
-  // Fonction améliorée pour obtenir les informations de contact
+  const findContact = (contactId, contacts) => {
+    if (!contactId || !contacts.length) return null;
+    return contacts.find(c => c.id === contactId) ||
+           contacts.find(c => c.id.toString() === contactId.toString()) ||
+           contacts.find(c => parseInt(c.id) === parseInt(contactId));
+  };
+
+  const findFieldValue = (contact, fields) => {
+    for (const field of fields) {
+      const value = getFieldValue(contact, field);
+      if (value) return value;
+    }
+    return '';
+  };
+
   const getContactInfo = (contactId) => {
-    console.log('DEBUG getContactInfo: contactId reçu:', contactId, 'Type:', typeof contactId);
-    console.log('DEBUG getContactInfo: Nombre de contacts disponibles:', contacts.length);
-    
-    if (!contactId || !contacts.length) {
-      console.log('DEBUG getContactInfo: contactId vide ou pas de contacts');
-      return { nom: 'Contact inconnu', email: '' };
-    }
-    
-    // Essayer de trouver le contact avec différentes méthodes de comparaison
-    let contact = contacts.find(c => c.id === contactId);
-    if (!contact) {
-      contact = contacts.find(c => c.id.toString() === contactId.toString());
-    }
-    if (!contact) {
-      contact = contacts.find(c => parseInt(c.id) === parseInt(contactId));
-    }
-    
-    console.log('DEBUG getContactInfo: Contact trouvé:', contact);
+    const contact = findContact(contactId, contacts);
     
     if (!contact) {
-      console.log('DEBUG getContactInfo: Contact non trouvé, contacts disponibles:');
-      contacts.forEach(c => {
-        console.log(`  - Contact ID: ${c.id} (${typeof c.id})`);
-      });
       return { nom: `Contact #${contactId} (non trouvé)`, email: '' };
     }
+
+    const prenom = findFieldValue(contact, ['prenom', 'first_name', 'firstname', 'fname']);
+    const nom = findFieldValue(contact, ['nom', 'last_name', 'lastname', 'name']);
+    const email = findFieldValue(contact, ['email', 'mail', 'e_mail', 'courriel']);
+
+    const displayName = `${prenom} ${nom.toUpperCase()}`.trim() || `Contact #${contactId}`;
     
-    // Essayer tous les champs possibles pour le nom avec debug
-    console.log('DEBUG getContactInfo: Structure du contact trouvé:', contact);
-    
-    const possibleNameFields = ['nom', 'last_name', 'lastname', 'name', 'nom_complet', 'full_name'];
-    const possibleFirstNameFields = ['prenom', 'first_name', 'firstname', 'fname'];
-    const possibleEmailFields = ['email', 'mail', 'e_mail', 'courriel'];
-    
-    let nom = '';
-    let prenom = '';
-    let email = '';
-    
-    // Chercher le nom
-    for (const field of possibleNameFields) {
-      const value = getFieldValue(contact, field);
-      if (value) {
-        nom = value;
-        console.log(`DEBUG getContactInfo: Nom trouvé via champ '${field}':`, value);
-        break;
-      }
-    }
-    
-    // Chercher le prénom
-    for (const field of possibleFirstNameFields) {
-      const value = getFieldValue(contact, field);
-      if (value) {
-        prenom = value;
-        console.log(`DEBUG getContactInfo: Prénom trouvé via champ '${field}':`, value);
-        break;
-      }
-    }
-    
-    // Chercher l'email
-    for (const field of possibleEmailFields) {
-      const value = getFieldValue(contact, field);
-      if (value) {
-        email = value;
-        console.log(`DEBUG getContactInfo: Email trouvé via champ '${field}':`, value);
-        break;
-      }
-    }
-    
-    let displayName = `${prenom} ${nom.toUpperCase()}`.trim();
-    
-    if (!displayName) {
-      // Si aucun nom trouvé, afficher tous les champs disponibles du contact
-      console.log('DEBUG getContactInfo: Aucun nom trouvé, analyse complète du contact...');
-      const availableData = [];
-      
-      // Champs directs
-      Object.keys(contact).forEach(key => {
-        if (contact[key] && key !== 'id' && key !== 'values' && typeof contact[key] === 'string') {
-          availableData.push(`${key}: ${contact[key]}`);
-          console.log(`DEBUG getContactInfo: Champ direct '${key}':`, contact[key]);
-        }
-      });
-      
-      // Champs dans values
-      if (contact.values && Array.isArray(contact.values)) {
-        contact.values.forEach(v => {
-          if (v.value && typeof v.value === 'string') {
-            availableData.push(`${v.field_slug}: ${v.value}`);
-            console.log(`DEBUG getContactInfo: Champ value '${v.field_slug}':`, v.value);
-          }
-        });
-      }
-      
-      displayName = availableData.length > 0 ? availableData.slice(0, 2).join(', ') : `Contact #${contactId}`;
-      console.log('DEBUG getContactInfo: displayName généré:', displayName);
-    }
-    
-    const result = {
-      nom: displayName || `Contact #${contactId}`,
-      email: email || ''
+    return {
+      nom: displayName,
+      email: email
     };
-    
-    console.log('DEBUG getContactInfo: Résultat final:', result);
-    return result;
   };
 
   // Fonction améliorée pour obtenir le type de projet
@@ -434,6 +360,12 @@ function DashboardContent() {
     setSelectedTypes([]);
     setShowFavorites(false);
     setCurrentPage(0);
+  };
+
+  const getEmptyProjectsMessage = (filteredCount, totalCount) => {
+    if (filteredCount === 0 && totalCount > 0) return 'Aucun projet ne correspond aux filtres';
+    if (totalCount === 0) return 'Aucun projet trouvé - Ajoutez des projets via les actions rapides ci-dessus';
+    return 'Aucun projet à afficher';
   };
 
   if (isLoading) {
@@ -581,8 +513,8 @@ function DashboardContent() {
           <div className="fieldset bg-base-200 border-base-300 rounded-box w-xs border p-3">
             <div className="card-body p-4">
               <div className="tabs tabs-boxed mb-4">
-                <a className="tab tab-active">Filtres</a>
-                <a className="tab">Mes modèles</a>
+                <a href='/' className="tab tab-active">Filtres</a>
+                <a href='/' className="tab">Mes modèles</a>
               </div>
 
               <h3 className="font-medium mb-3">Informations projet</h3>
@@ -633,7 +565,7 @@ function DashboardContent() {
               </button>
 
               <button className="btn btn-neutral w-full">
-                Créer un nouveau modèle de recherche
+                Créer un preset de recherche
               </button>
             </div>
           </div>
@@ -644,9 +576,9 @@ function DashboardContent() {
           <div className="card bg-base-100 shadow-xl">
             <div className="card-body">
               {/* Table Controls */}
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                  <span>Lignes par page :</span>
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex justify-between items-center gap-4">
+                  <span className='w-full'>Lignes par page :</span>
                   <select 
                     className="select select-bordered select-sm"
                     value={rowsPerPage}
@@ -771,7 +703,7 @@ function DashboardContent() {
                       <td>
                         <div className="flex items-center gap-4">
                                 <div>
-                                  <div className="font-bold">{projectName}</div>
+                                  <div className="font-bold text-lg">{projectName}</div>
                                   <div className="text-sm opacity-70 max-w-md">
                                     {projectDescription.length > 100 
                                       ? `${projectDescription.substring(0, 100)}...` 
@@ -782,8 +714,8 @@ function DashboardContent() {
                                     N° {projectNumber}
                             </div>
                             <div className="mt-2">
-                                    <div className="badge badge-primary mr-2">{projectType}</div>
-                                    <div className="badge badge-outline mr-2">{equipe}</div>
+                                    <div className="badge badge-accent mr-2">{projectType}</div>
+                                    <div className="badge badge-outline badge-secondary mr-2">{equipe}</div>
                             </div>
                                   
 
@@ -818,12 +750,7 @@ function DashboardContent() {
                     ) : (
                       <tr>
                         <td colSpan="3" className="text-center py-8">
-                          {filteredProjects.length === 0 && projects.length > 0 
-                            ? 'Aucun projet ne correspond aux filtres'
-                            : projects.length === 0 
-                              ? 'Aucun projet trouvé - Ajoutez des projets via les actions rapides ci-dessus'
-                              : 'Aucun projet à afficher'
-                          }
+                          {getEmptyProjectsMessage(filteredProjects.length, projects.length)}
                         </td>
                       </tr>
                     )}
