@@ -67,14 +67,18 @@ class DynamicValueSerializer(serializers.ModelSerializer):
 class DynamicRecordSerializer(serializers.ModelSerializer):
     values = DynamicValueSerializer(many=True, read_only=True)
     table_name = serializers.CharField(source='table.name', read_only=True)
+    custom_id_field_name = serializers.CharField(source='get_custom_id_field_name', read_only=True)
+    primary_identifier = serializers.IntegerField(source='get_primary_identifier', read_only=True)
     
     class Meta:
         model = DynamicRecord
         fields = [
-            'id', 'table', 'table_name', 'created_at', 'updated_at',
+            'id', 'custom_id', 'primary_identifier', 'custom_id_field_name',
+            'table', 'table_name', 'created_at', 'updated_at',
             'created_by', 'updated_by', 'is_active', 'values'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'values', 'table_name']
+        read_only_fields = ['id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 
+                           'created_at', 'updated_at', 'values', 'table_name']
     
     def create(self, validated_data):
         # Définir l'utilisateur qui crée l'enregistrement
@@ -208,16 +212,24 @@ class FlatDynamicRecordSerializer(serializers.ModelSerializer):
     avec les valeurs directement accessibles par leur clé de champ.
     """
     id = serializers.IntegerField(read_only=True)
+    custom_id = serializers.IntegerField(read_only=True)
+    primary_identifier = serializers.IntegerField(source='get_primary_identifier', read_only=True)
+    custom_id_field_name = serializers.CharField(source='get_custom_id_field_name', read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     
     class Meta:
         model = DynamicRecord
-        fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 'created_at', 'updated_at']
     
     def to_representation(self, instance):
         # Commencer avec les champs de base
         ret = super().to_representation(instance)
+        
+        # Ajouter le custom_id avec son nom de champ spécifique à la table
+        if instance.custom_id:
+            custom_field_name = instance.get_custom_id_field_name()
+            ret[custom_field_name] = instance.custom_id
         
         # Ajouter toutes les valeurs des champs dynamiques
         values = instance.values.select_related('field').all()

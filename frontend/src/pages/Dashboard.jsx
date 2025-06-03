@@ -1,6 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiCalendar, FiPlus, FiDatabase, FiEye } from 'react-icons/fi';
+import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiCalendar, FiPlus, FiDatabase } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import MultipleSelector from '../components/filters/MultiSelector';
@@ -17,67 +17,27 @@ function DashboardContent() {
   const [contacts, setContacts] = useState([]);
   const [tableNames, setTableNames] = useState([]);
   const [currentPage, setCurrentPage] = useState(0);
-  const [showFieldExplorer, setShowFieldExplorer] = useState(false);
-  
-  // Debug states
-  const [debugInfo, setDebugInfo] = useState({
-    tablesLoaded: false,
-    tablesFound: {},
-    projectsLoaded: false,
-    contactsLoaded: false,
-    tableNamesLoaded: false,
-    rawData: {},
-    fieldMappings: {}
-  });
 
   // Tables IDs
   const [projectTableId, setProjectTableId] = useState(null);
   const [contactTableId, setContactTableId] = useState(null);
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
 
-  // DEBUG: Fonction pour logger les informations de debug
-  const updateDebugInfo = (key, value) => {
-    setDebugInfo(prev => ({
-      ...prev,
-      [key]: value
-    }));
-    console.log(`DEBUG [${key}]:`, value);
-  };
-
   // Charger les tables et identifier les IDs
   useEffect(() => {
     const loadTables = async () => {
-      console.log('DEBUG: Début du chargement des tables...');
       try {
         await fetchTables();
       } catch (err) {
-        console.error('DEBUG: Erreur lors du chargement des tables:', err);
+        console.error('Erreur lors du chargement des tables:', err);
       }
     };
     loadTables();
   }, [fetchTables]);
 
-  // DEBUG: Analyser les tables chargées
-  useEffect(() => {
-    console.log('DEBUG: Tables reçues:', tables);
-    updateDebugInfo('tablesLoaded', tables.length > 0);
-    updateDebugInfo('rawData', { ...debugInfo.rawData, allTables: tables });
-
-    if (tables.length > 0) {
-      console.log('DEBUG: Liste des tables disponibles:');
-      tables.forEach((table, index) => {
-        console.log(`  ${index + 1}. ID: ${table.id}, Name: "${table.name}", Slug: "${table.slug}"`);
-      });
-    }
-  }, [tables, debugInfo.rawData]);
-
   // Trouver les IDs des tables nécessaires
   useEffect(() => {
     if (tables.length > 0) {
-      console.log('=== DEBUG DASHBOARD - Tables disponibles ===');
-      console.log('Nombre de tables:', tables.length);
-      console.log('Tables:', tables.map(t => ({ id: t.id, name: t.name, slug: t.slug })));
-      
       // Harmonisation avec CreateProject.jsx
       const projectTable = tables.find(t => 
         t.name === 'Projet' ||
@@ -93,10 +53,6 @@ function DashboardContent() {
       const contactTable = tables.find(t => t.name.toLowerCase().includes('contact') || t.slug === 'contacts');
       const tableNamesTable = tables.find(t => t.name.toLowerCase().includes('tablenames') || t.slug === 'table_names');
       
-      console.log('Table Projet trouvée:', projectTable);
-      console.log('Table Contacts trouvée:', contactTable);
-      console.log('Table TableNames trouvée:', tableNamesTable);
-      
       if (projectTable) setProjectTableId(projectTable.id);
       if (contactTable) setContactTableId(contactTable.id);
       if (tableNamesTable) setTableNamesTableId(tableNamesTable.id);
@@ -108,21 +64,11 @@ function DashboardContent() {
     const loadProjects = async () => {
       if (projectTableId) {
         try {
-          console.log('=== DEBUG DASHBOARD - Chargement des projets ===');
-          console.log('ID de la table projet:', projectTableId);
           const projectData = await fetchRecords(projectTableId);
-          console.log('Données projets reçues:', projectData);
-          console.log('Nombre de projets:', projectData?.length || 0);
-          if (projectData && projectData.length > 0) {
-            console.log('Premier projet:', projectData[0]);
-            console.log('Structure values du premier projet:', projectData[0].values);
-          }
           setProjects(projectData || []);
         } catch (err) {
           console.error('Erreur lors du chargement des projets:', err);
         }
-      } else {
-        console.log('=== DEBUG DASHBOARD - Pas d\'ID de table projet ===');
       }
     };
     loadProjects();
@@ -133,11 +79,7 @@ function DashboardContent() {
     const loadContacts = async () => {
       if (contactTableId) {
         try {
-          console.log('=== DEBUG DASHBOARD - Chargement des contacts ===');
-          console.log('ID de la table contact:', contactTableId);
           const contactData = await fetchRecords(contactTableId);
-          console.log('Données contacts reçues:', contactData);
-          console.log('Nombre de contacts:', contactData?.length || 0);
           setContacts(contactData || []);
         } catch (err) {
           console.error('Erreur lors du chargement des contacts:', err);
@@ -152,18 +94,13 @@ function DashboardContent() {
     const loadTableNames = async () => {
       if (tableNamesTableId) {
         try {
-          console.log('=== DEBUG DASHBOARD - Chargement des types ===');
-          console.log('ID de la table types:', tableNamesTableId);
           const tableNamesData = await fetchRecords(tableNamesTableId);
-          console.log('Données types reçues:', tableNamesData);
-          console.log('Nombre de types:', tableNamesData?.length || 0);
           setTableNames(tableNamesData || []);
           
           // Extraire les types uniques pour les filtres
           const types = tableNamesData?.map(item => 
             getFieldValue(item, 'nom') || 'Type inconnu'
           ).filter(Boolean) || [];
-          console.log('Types extraits pour filtres:', types);
           setProjectTypes([...new Set(types)]);
         } catch (err) {
           console.error('Erreur lors du chargement des types:', err);
@@ -381,120 +318,6 @@ function DashboardContent() {
 
   return (
     <div className="p-4">
-      {/* DEBUG PANEL - Amélioré */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-        <h3 className="font-bold text-yellow-800 mb-2">🐛 Informations de Debug</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <p><strong>Tables chargées:</strong> {debugInfo.tablesLoaded ? '✅' : '❌'}</p>
-            <p><strong>Tables trouvées:</strong></p>
-            <ul className="ml-4">
-              <li>Projet: {debugInfo.tablesFound?.project ? `✅ ${debugInfo.tablesFound.project.name} (ID: ${debugInfo.tablesFound.project.id})` : '❌'}</li>
-              <li>Contact: {debugInfo.tablesFound?.contact ? `✅ ${debugInfo.tablesFound.contact.name} (ID: ${debugInfo.tablesFound.contact.id})` : '❌'}</li>
-              <li>TableNames: {debugInfo.tablesFound?.tableNames ? `✅ ${debugInfo.tablesFound.tableNames.name} (ID: ${debugInfo.tablesFound.tableNames.id})` : '❌'}</li>
-            </ul>
-          </div>
-          <div>
-            <p><strong>Données chargées:</strong></p>
-            <ul className="ml-4">
-              <li>Projets: {debugInfo.projectsLoaded ? `✅ (${projects.length})` : '❌'}</li>
-              <li>Contacts: {debugInfo.contactsLoaded ? `✅ (${contacts.length})` : '❌'}</li>
-              <li>Types: {debugInfo.tableNamesLoaded ? `✅ (${tableNames.length})` : '❌'}</li>
-            </ul>
-            <p><strong>Projets filtrés:</strong> {filteredProjects.length}</p>
-            <p><strong>Projets paginés:</strong> {paginatedProjects.length}</p>
-          </div>
-        </div>
-        
-        {/* Explorateur de champs */}
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <div className="flex justify-between items-center mb-2">
-            <h4 className="font-semibold text-blue-800">🔍 Explorateur de Champs</h4>
-            <button 
-              onClick={() => setShowFieldExplorer(!showFieldExplorer)}
-              className="btn btn-xs btn-outline"
-            >
-              <FiEye className="mr-1" />
-              {showFieldExplorer ? 'Masquer' : 'Afficher'}
-            </button>
-          </div>
-          
-          {showFieldExplorer && debugInfo.fieldMappings.fullProjectStructure && (
-            <div className="space-y-3">
-              {/* Structure du projet */}
-              <div>
-                <h5 className="font-medium text-blue-700">Structure du Premier Projet:</h5>
-                <div className="bg-white p-2 rounded text-xs overflow-auto max-h-40">
-                  <pre>{JSON.stringify(debugInfo.fieldMappings.fullProjectStructure, null, 2)}</pre>
-                </div>
-              </div>
-              
-              {/* Structure du contact */}
-              {debugInfo.fieldMappings.fullContactStructure && (
-                <div>
-                  <h5 className="font-medium text-blue-700">Structure du Premier Contact:</h5>
-                  <div className="bg-white p-2 rounded text-xs overflow-auto max-h-40">
-                    <pre>{JSON.stringify(debugInfo.fieldMappings.fullContactStructure, null, 2)}</pre>
-                  </div>
-                </div>
-              )}
-              
-              {/* Structure des types */}
-              {debugInfo.fieldMappings.fullTableNameStructure && (
-                <div>
-                  <h5 className="font-medium text-blue-700">Structure du Premier Type:</h5>
-                  <div className="bg-white p-2 rounded text-xs overflow-auto max-h-40">
-                    <pre>{JSON.stringify(debugInfo.fieldMappings.fullTableNameStructure, null, 2)}</pre>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Actions rapides */}
-        <div className="mt-4 p-3 bg-green-50 rounded-lg">
-          <h4 className="font-semibold text-green-800 mb-2">🚀 Actions Rapides</h4>
-          <div className="flex flex-wrap gap-2">
-            {debugInfo.tablesFound?.project && (
-              <Link 
-                to={`/admin/database/tables/${debugInfo.tablesFound.project.id}/records/create`}
-                className="btn btn-sm btn-primary"
-              >
-                <FiPlus className="mr-1" />
-                Ajouter un projet
-              </Link>
-            )}
-            {debugInfo.tablesFound?.tableNames && (
-              <Link 
-                to={`/admin/database/tables/${debugInfo.tablesFound.tableNames.id}/records/create`}
-                className="btn btn-sm btn-secondary"
-              >
-                <FiPlus className="mr-1" />
-                Ajouter un type
-              </Link>
-            )}
-            {debugInfo.tablesFound?.project && (
-              <Link 
-                to={`/admin/database/tables/${debugInfo.tablesFound.project.id}/records`}
-                className="btn btn-sm btn-outline"
-              >
-                <FiDatabase className="mr-1" />
-                Voir les projets
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Breadcrumb */}
-      <div className="text-sm breadcrumbs mb-4">
-        <ul>
-          <li><a href="/">Accueil</a></li>
-          <li>Projets</li>
-        </ul>
-      </div>
-
       {/* Quick Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button className="btn btn-sm btn-outline">
@@ -513,8 +336,8 @@ function DashboardContent() {
           <div className="fieldset bg-base-200 border-base-300 rounded-box w-xs border p-3">
             <div className="card-body p-4">
               <div className="tabs tabs-boxed mb-4">
-                <a href='/' className="tab tab-active">Filtres</a>
-                <a href='/' className="tab">Mes modèles</a>
+                <button className="tab tab-active">Filtres</button>
+                <button className="tab">Mes modèles</button>
               </div>
 
               <h3 className="font-medium mb-3">Informations projet</h3>
@@ -650,24 +473,7 @@ function DashboardContent() {
                           const value = getFieldValue(project, field);
                           if (value) {
                             contactId = value;
-                            console.log(`DEBUG: Contact ID trouvé via champ '${field}':`, value, 'Type:', typeof value);
                             break;
-                          }
-                        }
-                        
-                        if (!contactId) {
-                          console.log('DEBUG: Aucun contact ID trouvé, champs disponibles dans le projet:');
-                          Object.keys(project).forEach(key => {
-                            if (project[key] !== null && project[key] !== '') {
-                              console.log(`  - ${key}: ${project[key]} (${typeof project[key]})`);
-                            }
-                          });
-                          if (project.values) {
-                            project.values.forEach(v => {
-                              if (v.value !== null && v.value !== '') {
-                                console.log(`  - ${v.field_slug}: ${v.value} (${typeof v.value})`);
-                              }
-                            });
                           }
                         }
                         
@@ -684,19 +490,6 @@ function DashboardContent() {
                         const equipe = getFieldValue(project, 
                           'equipe', 'team', 'groupe', 'department', 'service'
                         ) || 'Équipe inconnue';
-                        
-                        // DEBUG: Afficher toutes les données du projet pour ce projet
-                        console.log(`DEBUG: Projet ${project.id} - Données complètes:`, {
-                          projectName,
-                          projectDescription,
-                          projectNumber,
-                          contactId,
-                          typeId,
-                          contactInfo,
-                          projectType,
-                          equipe,
-                          fullProject: project
-                        });
                         
                         return (
                           <tr key={project.id}>

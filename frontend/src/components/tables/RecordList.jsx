@@ -43,7 +43,23 @@ function RecordList({ tableId }) {
     const loadRecords = async () => {
       if (table) {
         const recordsData = await fetchRecords(tableId, filters);
-        setRecords(recordsData || []);
+        if (recordsData && Array.isArray(recordsData)) {
+          // Trier les enregistrements par custom_id croissant
+          const sortedRecords = recordsData.sort((a, b) => {
+            // Les enregistrements avec custom_id viennent en premier, triés par custom_id
+            if (a.custom_id && b.custom_id) {
+              return a.custom_id - b.custom_id;
+            }
+            // Les enregistrements sans custom_id viennent après
+            if (a.custom_id && !b.custom_id) return -1;
+            if (!a.custom_id && b.custom_id) return 1;
+            // Si aucun n'a de custom_id, trier par ID Django
+            return a.id - b.id;
+          });
+          setRecords(sortedRecords);
+        } else {
+          setRecords([]);
+        }
       }
     };
     
@@ -70,32 +86,21 @@ function RecordList({ tableId }) {
   
   const handleDeleteRecord = async (recordId) => {
     try {
-      console.log("Suppression de l'enregistrement:", recordId); // Pour debugging
-      
-      // Utiliser directement la fonction du contexte
       const success = await deleteRecord(recordId);
       
       if (success) {
-        console.log("Suppression réussie");
-        // Mettre à jour l'état local pour refléter la suppression
-        setRecords(prevRecords => prevRecords.filter(record => record.id !== recordId));
         setSuccessMessage('Enregistrement supprimé avec succès');
-        
-        setTimeout(() => {
-          setSuccessMessage('');
-        }, 3000);
+        // Mettre à jour l'état local pour supprimer l'enregistrement
+        setRecords(prevRecords => prevRecords.filter(record => record.id !== recordId));
+        // Effacer le message après 3 secondes
+        setTimeout(() => setSuccessMessage(''), 3000);
       } else {
-        throw new Error("Échec de la suppression de l'enregistrement");
+        setDeleteError('Erreur lors de la suppression');
       }
-    } catch (err) {
-      console.error('Erreur lors de la suppression:', err);
-      setDeleteError(err.message || "Une erreur s'est produite lors de la suppression");
-      
-      setTimeout(() => {
-        setDeleteError('');
-      }, 3000);
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
+      setDeleteError('Erreur lors de la suppression');
     } finally {
-      // Toujours réinitialiser l'état de confirmation
       setConfirmDelete(null);
     }
   };
@@ -135,7 +140,7 @@ function RecordList({ tableId }) {
     document.body.removeChild(link);
   };
   
-  // Filtrage par recherche textuelle
+  // Filtrage par recherche textuelle avec tri maintenu
   const filteredRecords = searchTerm 
     ? records.filter(record => {
         // Rechercher dans tous les champs de texte
@@ -274,7 +279,13 @@ function RecordList({ tableId }) {
               {filteredRecords.length > 0 ? (
                 filteredRecords.map((record) => (
                   <tr key={record.id}>
-                    <td>{record.id}</td>
+                    <td className="font-medium">
+                      {record.custom_id ? (
+                        <span className="text-primary font-bold">{record.custom_id}</span>
+                      ) : (
+                        <span className="text-gray-400 text-sm">Non assigné</span>
+                      )}
+                    </td>
                     {fields.map(field => (
                       <td key={`${record.id}-${field.id}`}>
                         {formatFieldValue(record[field.slug], field.field_type)}

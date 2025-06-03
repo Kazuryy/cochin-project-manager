@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { Link, Routes, Route, useNavigate } from 'react-router-dom';
 import { FiDatabase, FiSettings, FiTable, FiHardDrive, FiCheckSquare, FiFileText } from 'react-icons/fi';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
-import Breadcrumb from '../components/ui/Breadcrumb';
+import { Breadcrumb } from '../components/ui';
 import TableManagement from './Admin/Database/TableManagement';
 import CreateTablePage from './Admin/Database/CreateTablePage';
 import EditTablePage from './Admin/Database/EditTablePage';
@@ -255,7 +255,7 @@ function AdminDashboard() {
   return (
     <DynamicTableProvider>
       <div className="pt-6">
-        {/* Breadcrumb dynamique */}
+        {/* Breadcrumb pour navigation */}
         <Breadcrumb />
         
         <div className="container mx-auto mt-4">
@@ -268,14 +268,15 @@ function AdminDashboard() {
 
           <Routes>
             <Route path="/" element={<DatabaseOverview />} />
-            <Route path="/tables" element={<TableManagement />} />
-            <Route path="/tables/create" element={<CreateTablePage />} />
-            <Route path="/tables/:tableId/edit" element={<EditTablePage />} />
-            <Route path="/tables/:tableId/fields" element={<ManageFieldsPage />} />
-            <Route path="/tables/:tableId/records" element={<RecordsPage />} />
-            <Route path="/tables/:tableId/records/create" element={<CreateRecordPage />} />
-            <Route path="/tables/:tableId/records/:recordId/edit" element={<EditRecordPage />} />
-            <Route path="/maintenance" element={<MaintenancePage />} />
+            <Route path="/database" element={<DatabaseOverview />} />
+            <Route path="/database/tables" element={<TableManagement />} />
+            <Route path="/database/tables/create" element={<CreateTablePage />} />
+            <Route path="/database/tables/:tableId/edit" element={<EditTablePage />} />
+            <Route path="/database/tables/:tableId/fields" element={<ManageFieldsPage />} />
+            <Route path="/database/tables/:tableId/records" element={<RecordsPage />} />
+            <Route path="/database/tables/:tableId/records/create" element={<CreateRecordPage />} />
+            <Route path="/database/tables/:tableId/records/:recordId/edit" element={<EditRecordPage />} />
+            <Route path="/database/maintenance" element={<MaintenancePage />} />
           </Routes>
         </div>
       </div>

@@ -13,7 +13,6 @@ import './App.css';
 import DashboardAdmin from './pages/DashboardAdmin';
 import Footer from './components/global/Footer';
 
-
 // Contenu principal de l'application
 function MainContent() {
   return (
@@ -45,24 +44,20 @@ function MainContent() {
             } 
           />
           
-          {/* Route pour l'administration - nécessite des droits d'admin */}
-          <Route 
-            path="/admin-dashboard" 
-            element={
-              <ProtectedRoute requireAdmin={true}>
-                <DashboardAdmin />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Routes pour la gestion des tables */}
+          {/* Routes pour l'administration - toutes les routes admin */}
           <Route
-            path="/admin/database/*"
+            path="/admin/*"
             element={
               <ProtectedRoute requireAdmin={true}>
                 <DashboardAdmin />
               </ProtectedRoute>
             }
+          />
+          
+          {/* Route de redirection pour compatibilité */}
+          <Route 
+            path="/admin-dashboard" 
+            element={<Navigate to="/admin" replace />}
           />
           
           {/* Redirection pour les routes inconnues */}

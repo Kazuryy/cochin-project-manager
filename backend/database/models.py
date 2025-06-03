@@ -40,6 +40,19 @@ class DynamicTable(models.Model):
         """Retourne tous les enregistrements de cette table"""
         return DynamicRecord.objects.filter(table=self, is_active=True)
 
+    def get_next_custom_id(self):
+        """Génère le prochain ID personnalisé pour cette table"""
+        
+        # Trouver le dernier ID utilisé pour cette table
+        last_record = self.records.filter(is_active=True).order_by('-custom_id').first()
+        if last_record and last_record.custom_id:
+            return last_record.custom_id + 1
+        return 1
+
+    def get_custom_id_field_name(self):
+        """Retourne le nom du champ ID personnalisé pour cette table"""
+        return f"id_{self.slug}"
+
 class DynamicField(models.Model):
     """
     Définit un champ dans une table dynamique.
@@ -179,6 +192,7 @@ class DynamicRecord(models.Model):
         related_name='records',
         verbose_name=_('table')
     )
+    custom_id = models.PositiveIntegerField(_('ID personnalisé'), blank=True, null=True)
     created_at = models.DateTimeField(_('date de création'), auto_now_add=True)
     updated_at = models.DateTimeField(_('date de modification'), auto_now=True)
     created_by = models.ForeignKey(
@@ -201,10 +215,26 @@ class DynamicRecord(models.Model):
         verbose_name = _('enregistrement dynamique')
         verbose_name_plural = _('enregistrements dynamiques')
         ordering = ['-updated_at']
+        unique_together = [['table', 'custom_id']]
     
     def __str__(self):
-        return f"Enregistrement {self.id} - {self.table.name}"
+        custom_id_display = f" ({self.table.get_custom_id_field_name()}: {self.custom_id})" if self.custom_id else ""
+        return f"Enregistrement {self.id}{custom_id_display} - {self.table.name}"
     
+    def save(self, *args, **kwargs):
+        """Génère automatiquement un custom_id si nécessaire"""
+        if not self.custom_id:
+            self.custom_id = self.table.get_next_custom_id()
+        super().save(*args, **kwargs)
+
+    def get_primary_identifier(self):
+        """Retourne l'identifiant principal (custom_id si disponible, sinon id Django)"""
+        return self.custom_id if self.custom_id else self.id
+
+    def get_custom_id_field_name(self):
+        """Retourne le nom du champ ID personnalisé pour cette table"""
+        return self.table.get_custom_id_field_name()
+
     def get_values(self):
         """Retourne toutes les valeurs de cet enregistrement"""
         return self.values.filter(field__is_active=True)

@@ -1,10 +1,12 @@
 import { useContext } from 'react';
 import { DynamicTableContext } from '../context';
 
-export function useDynamicTables() {
+export const useDynamicTables = () => {
   const context = useContext(DynamicTableContext);
-  if (!context) {
-    throw new Error('useDynamicTables doit être utilisé à l\'intérieur d\'un DynamicTableProvider');
+  
+  if (context === undefined) {
+    throw new Error('useDynamicTables must be used within a DynamicTableProvider');
   }
+  
   return context;
-} 
+}; 

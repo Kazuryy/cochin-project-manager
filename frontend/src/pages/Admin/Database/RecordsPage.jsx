@@ -3,7 +3,7 @@ import React from 'react';
 import { useParams } from 'react-router-dom';
 import Page from "../../../components/global/Page";
 import RecordList from "../../../components/tables/RecordList";
-import { DynamicTableProvider } from "../../../contexts/DynamicTableContext";
+import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
 function RecordsPage() {
   const { tableId } = useParams();

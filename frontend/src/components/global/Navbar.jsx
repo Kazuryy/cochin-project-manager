@@ -29,7 +29,7 @@ function Navbar() {
             {user?.is_staff && (
               <>
                 <li><Link to="/admin/settings">Settings</Link></li>
-                <li><Link to="/admin-dashboard">Database</Link></li>
+                <li><Link to="/admin">Database</Link></li>
               </>
             )}
             <li className="mt-2">
@@ -68,7 +68,7 @@ function Navbar() {
           <li><Link to="/">Accueil</Link></li>
           {isAuthenticated && <li><Link to="/dashboard">Tableau de bord</Link></li>}
           {isAuthenticated && user?.is_staff && (
-            <li><Link to="/admin-dashboard">Administration</Link></li>
+            <li><Link to="/admin">Administration</Link></li>
           )}
         </ul>
       </div>

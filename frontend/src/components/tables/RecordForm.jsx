@@ -50,12 +50,19 @@ function RecordForm({ tableId, recordId }) {
     return firstNonSystemField ? firstNonSystemField[1] : null;
   }, []);
 
-  const createChoice = useCallback((record) => ({
-    value: record.id.toString(),
-    display: findBestDisplayValue(record) 
-      ? `${findBestDisplayValue(record)} (ID: ${record.id})` 
-      : `Enregistrement #${record.id}`
-  }), [findBestDisplayValue]);
+  const createChoice = useCallback((record) => {
+    const displayValue = findBestDisplayValue(record);
+    const customIdDisplay = record.custom_id ? 
+      `${record.custom_id_field_name}: ${record.custom_id}` : 
+      `ID Django: ${record.id}`;
+    
+    return {
+      value: record.id.toString(), // On garde l'ID Django pour la compatibilité backend
+      display: displayValue ? 
+        `${displayValue} (${customIdDisplay})` : 
+        `Enregistrement (${customIdDisplay})`
+    };
+  }, [findBestDisplayValue]);
 
   const sortChoices = useCallback((choices) => {
     return [...choices].sort((a, b) => a.display.localeCompare(b.display));

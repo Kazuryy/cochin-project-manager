@@ -1,5 +1,5 @@
 // frontend/src/components/ui/Breadcrumb.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 
@@ -10,10 +10,52 @@ function Breadcrumb() {
   const [tableInfo, setTableInfo] = useState(null);
   const [recordInfo, setRecordInfo] = useState(null);
 
+  // Ne s'afficher que sur les pages d'administration des tables
+  const shouldShowBreadcrumb = useCallback(() => {
+    const pathname = location.pathname;
+    return pathname.startsWith('/admin') && pathname.includes('/database/tables');
+  }, [location.pathname]);
+
+  // Fonction pour obtenir un nom d'affichage pour un enregistrement
+  const getRecordDisplayName = useCallback((record, table) => {
+    if (!record || !table) {
+      return `Enregistrement #${params.recordId}`;
+    }
+
+    // Chercher le custom_id en premier
+    if (record.custom_id) {
+      return `#${record.custom_id}`;
+    }
+
+    // Chercher le meilleur champ pour l'affichage
+    const displayFields = ['nom', 'name', 'title', 'titre', 'libelle', 'label'];
+    
+    for (const fieldName of displayFields) {
+      for (const [key, value] of Object.entries(record)) {
+        if (key.toLowerCase().includes(fieldName.toLowerCase()) && 
+            value && typeof value === 'string') {
+          return value.length > 30 ? `${value.substring(0, 30)}...` : value;
+        }
+      }
+    }
+
+    // Sinon, prendre la première valeur texte non-système
+    const systemFields = ['id', 'created_at', 'updated_at'];
+    for (const [key, value] of Object.entries(record)) {
+      if (!systemFields.includes(key) && 
+          value && typeof value === 'string' && 
+          value.trim() !== '') {
+        return value.length > 30 ? `${value.substring(0, 30)}...` : value;
+      }
+    }
+
+    return `Enregistrement #${record.id}`;
+  }, [params.recordId]);
+
   // Charger les infos de la table si nécessaire
   useEffect(() => {
     const loadTableInfo = async () => {
-      if (params.tableId) {
+      if (params.tableId && shouldShowBreadcrumb()) {
         try {
           const table = await fetchTableWithFields(params.tableId);
           setTableInfo(table);
@@ -42,186 +84,243 @@ function Breadcrumb() {
     };
 
     loadTableInfo();
-  }, [params.tableId, params.recordId, fetchTableWithFields]);
+  }, [params.tableId, params.recordId, fetchTableWithFields, shouldShowBreadcrumb]);
 
-  // Configuration des routes et leurs labels
-  const getBreadcrumbItems = () => {
-    const pathname = location.pathname;
-    const items = [];
-
-    // Toujours commencer par Admin si on est dans une zone admin
-    if (pathname.startsWith('/admin')) {
-      items.push({
+  // Fonctions utilitaires pour construire le breadcrumb
+  const getBaseBreadcrumbItems = useCallback(() => {
+    return [
+      {
         label: 'Administration',
-        path: '/admin-dashboard',
+        path: '/admin',
         icon: '🏠'
+      },
+      {
+        label: 'Base de données',
+        path: '/admin/database',
+        icon: '🗄️'
+      },
+      {
+        label: 'Tables',
+        path: '/admin/database/tables',
+        icon: '📋'
+      }
+    ];
+  }, []);
+
+  const getFieldsBreadcrumb = useCallback((tableName) => {
+    return [
+      {
+        label: tableName,
+        path: `/admin/database/tables/${params.tableId}/records`,
+        icon: '📊',
+        isTable: true
+      },
+      {
+        label: 'Gestion des champs',
+        path: `/admin/database/tables/${params.tableId}/fields`,
+        icon: '🏗️',
+        isCurrentPage: true
+      }
+    ];
+  }, [params.tableId]);
+
+  const getRecordsBreadcrumb = useCallback((tableName, pathname) => {
+    const items = [
+      {
+        label: tableName,
+        path: `/admin/database/tables/${params.tableId}/records`,
+        icon: '📊',
+        isTable: true
+      }
+    ];
+
+    if (params.recordId) {
+      items.push({
+        label: 'Enregistrements',
+        path: `/admin/database/tables/${params.tableId}/records`,
+        icon: '📝'
       });
 
-      // Database section
-      if (pathname.includes('/database')) {
+      const recordLabel = getRecordDisplayName(recordInfo, tableInfo);
+      if (pathname.includes('/edit')) {
         items.push({
-          label: 'Base de données',
-          path: '/admin/database',
-          icon: '🗄️'
+          label: `Modifier : ${recordLabel}`,
+          path: pathname,
+          icon: '✏️',
+          isCurrentPage: true
         });
-
-        // Tables section
-        if (pathname.includes('/tables')) {
-          items.push({
-            label: 'Tables',
-            path: '/admin/database/tables',
-            icon: '📋'
-          });
-
-          // Table spécifique
-          if (pathname.includes('/tables')) {
-            items.push({
-              label: 'test',
-              path: `/admin/database/tables/${params.tableId}/records`,
-              icon: '📊'
-            });
-
-            // Sous-sections d'une table
-            if (pathname.includes('/fields')) {
-              items.push({
-                label: 'Champs',
-                path: `/admin/database/tables/${params.tableId}/fields`,
-                icon: '🏗️'
-              });
-            } else if (pathname.includes('/records')) {
-              items.push({
-                label: 'Enregistrements',
-                path: `/admin/database/tables/${params.tableId}/records/create`,
-                icon: '📝'
-              });
-
-              // Enregistrement spécifique
-              if (params.recordId) {
-                const recordLabel = getRecordDisplayName(recordInfo, tableInfo);
-                
-                if (pathname.includes('/edit')) { 
-                  items.push({
-                    label: `Modifier: ${recordLabel}`,
-                    path: `/admin/database/tables/${params.tableId}/records/${params.recordId}/edit`,
-                    icon: '✏️',
-                    isCurrentPage: true
-                  });
-                } else {
-                  items.push({
-                    label: recordLabel,
-                    path: `/admin/database/tables/${params.tableId}/records/${params.recordId}`,
-                    icon: '📄'
-                  });
-                }
-              } else if (pathname.includes('/create')) {
-                items.push({
-                  label: 'Nouvel enregistrement',
-                  path: `/admin/database/tables/${params.tableId}/records/create`,
-                  icon: '➕',
-                  isCurrentPage: true
-                });
-              }
-            } else if (pathname.includes('/edit')) {
-              items.push({
-                label: 'Modifier la table',
-                path: `/admin/database/tables/${params.tableId}/edit`,
-                icon: '✏️',
-                isCurrentPage: true
-              });
-            }
-          } else if (pathname.includes('/create')) {
-            items.push({
-              label: 'Nouvelle table',
-              path: '/admin/database/tables/create',
-              icon: '➕',
-              isCurrentPage: true
-            });
-          }
-        }
+      } else {
+        items.push({
+          label: recordLabel,
+          path: pathname,
+          icon: '📄',
+          isCurrentPage: true
+        });
       }
-    } else if (pathname === '/dashboard') {
+    } else if (pathname.includes('/create')) {
       items.push({
-        label: 'Tableau de bord',
-        path: '/dashboard',
-        icon: '📊',
+        label: 'Enregistrements',
+        path: `/admin/database/tables/${params.tableId}/records`,
+        icon: '📝'
+      });
+      items.push({
+        label: 'Nouvel enregistrement',
+        path: pathname,
+        icon: '➕',
         isCurrentPage: true
       });
-    } else if (pathname === '/') {
+    } else {
       items.push({
-        label: 'Accueil',
-        path: '/',
-        icon: '🏠',
+        label: 'Enregistrements',
+        path: pathname,
+        icon: '📝',
         isCurrentPage: true
       });
     }
 
     return items;
-  };
+  }, [params.tableId, params.recordId, recordInfo, tableInfo, getRecordDisplayName]);
 
-  // Fonction pour obtenir un nom d'affichage pour un enregistrement
-  const getRecordDisplayName = (record, table) => {
-    if (!record || !table) {
-      return `Enregistrement #${params.recordId}`;
+  const getEditTableBreadcrumb = useCallback((tableName, pathname) => {
+    return [
+      {
+        label: tableName,
+        path: `/admin/database/tables/${params.tableId}/records`,
+        icon: '📊'
+      },
+      {
+        label: 'Modifier la table',
+        path: pathname,
+        icon: '✏️',
+        isCurrentPage: true
+      }
+    ];
+  }, [params.tableId]);
+
+  // Configuration optimisée pour l'UX
+  const getBreadcrumbItems = useCallback(() => {
+    const pathname = location.pathname;
+    const items = getBaseBreadcrumbItems();
+
+    // Création d'une nouvelle table
+    if (pathname.includes('/create') && !params.tableId) {
+      items.push({
+        label: 'Nouvelle table',
+        path: pathname,
+        icon: '➕',
+        isCurrentPage: true
+      });
+      return items;
     }
 
-    // Chercher le meilleur champ pour l'affichage
-    const displayFields = ['nom', 'name', 'title', 'titre', 'libelle', 'label'];
-    
-    for (const fieldName of displayFields) {
-      for (const [key, value] of Object.entries(record)) {
-        if (key.toLowerCase().includes(fieldName.toLowerCase()) && 
-            value && typeof value === 'string') {
-          return `${value}`;
-        }
+    // Table spécifique
+    if (params.tableId && tableInfo) {
+      const tableName = tableInfo.name || `Table #${params.tableId}`;
+      
+      if (pathname.includes('/fields')) {
+        items.push(...getFieldsBreadcrumb(tableName));
+      } else if (pathname.includes('/records')) {
+        items.push(...getRecordsBreadcrumb(tableName, pathname));
+      } else if (pathname.includes('/edit')) {
+        items.push(...getEditTableBreadcrumb(tableName, pathname));
+      } else {
+        items.push({
+          label: tableName,
+          path: `/admin/database/tables/${params.tableId}/records`,
+          icon: '📊',
+          isTable: true,
+          isCurrentPage: true
+        });
       }
     }
 
-    // Sinon, prendre la première valeur texte non-système
-    const systemFields = ['id', 'created_at', 'updated_at'];
-    for (const [key, value] of Object.entries(record)) {
-      if (!systemFields.includes(key) && 
-          value && typeof value === 'string' && 
-          value.trim() !== '') {
-        return `${value}`;
-      }
-    }
+    return items;
+  }, [location.pathname, params.tableId, params.recordId, tableInfo, recordInfo, getBaseBreadcrumbItems, getFieldsBreadcrumb, getRecordsBreadcrumb, getEditTableBreadcrumb]);
 
-    return `Enregistrement #${record.id}`;
-  };
+  // Ne pas afficher si on n'est pas dans la bonne section
+  if (!shouldShowBreadcrumb()) {
+    return null;
+  }
 
   const breadcrumbItems = getBreadcrumbItems();
 
-  if (breadcrumbItems.length <= 1) {
-    return null; // Ne pas afficher le breadcrumb s'il n'y a qu'un élément
-  }
-
   return (
-    <div className="breadcrumbs text-sm mb-6">
-      <ul>
-        {breadcrumbItems.map((item, index) => {
-          const isLast = index === breadcrumbItems.length - 1;
-          const isCurrent = item.isCurrentPage || isLast;
-          
-          return (
-            <li key={item.path} className={isCurrent ? 'font-semibold' : ''}>
-              {isCurrent ? (
-                <span className="flex items-center gap-1">
-                  <span>{item.icon}</span>
-                  {item.label}
-                </span>
-              ) : (
+    <div className="bg-base-200/50 border-b border-base-300 mb-6">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between py-3">
+          {/* Breadcrumb principal */}
+          <div className="breadcrumbs text-sm">
+            <ul>
+              {breadcrumbItems.map((item, index) => {
+                const isLast = index === breadcrumbItems.length - 1;
+                const isCurrent = item.isCurrentPage || isLast;
+                
+                return (
+                  <li key={item.path} className={isCurrent ? 'font-semibold text-primary' : ''}>
+                    {isCurrent ? (
+                      <span className="flex items-center gap-1">
+                        <span>{item.icon}</span>
+                        {item.label}
+                      </span>
+                    ) : (
+                      <Link 
+                        to={item.path} 
+                        className="flex items-center gap-1 hover:text-primary transition-colors"
+                      >
+                        <span>{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Actions rapides contextuelles */}
+          {params.tableId && tableInfo && (
+            <div className="flex items-center gap-2">
+              <div className="divider divider-horizontal mx-2"></div>
+              
+              {/* Navigation rapide pour les tables */}
+              <div className="flex gap-1">
                 <Link 
-                  to={item.path} 
-                  className="flex items-center gap-1 hover:text-primary transition-colors"
+                  to={`/admin/database/tables/${params.tableId}/records`}
+                  className="btn btn-xs btn-ghost"
+                  title="Voir les enregistrements"
                 >
-                  <span>{item.icon}</span>
-                  {item.label}
+                  📝
                 </Link>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                <Link 
+                  to={`/admin/database/tables/${params.tableId}/fields`}
+                  className="btn btn-xs btn-ghost"
+                  title="Gérer les champs"
+                >
+                  🏗️
+                </Link>
+                <Link 
+                  to={`/admin/database/tables/${params.tableId}/edit`}
+                  className="btn btn-xs btn-ghost"
+                  title="Modifier la table"
+                >
+                  ✏️
+                </Link>
+                
+                {/* Bouton d'ajout contextuel */}
+                {location.pathname.includes('/records') && !location.pathname.includes('/create') && (
+                  <Link 
+                    to={`/admin/database/tables/${params.tableId}/records/create`}
+                    className="btn btn-xs btn-primary"
+                    title="Nouvel enregistrement"
+                  >
+                    ➕
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

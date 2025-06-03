@@ -53,8 +53,6 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      console.log("Données à envoyer:", tableData);
-      
       const newTable = await api.post('/api/database/tables/', tableData);
       
       // Mettre à jour la liste des tables
@@ -138,12 +136,9 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      console.log('Suppression du champ:', fieldId);
-      
       // Utiliser le service API centralisé
       await api.delete(`/api/database/fields/${fieldId}/`);
       
-      console.log('Champ supprimé avec succès');
       return true;
     } catch (err) {
       console.error(`Erreur lors de la suppression du champ ${fieldId}:`, err);
@@ -160,15 +155,29 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      console.log('Mise à jour du champ:', fieldId, fieldData);
-      
       const updatedField = await api.put(`/api/database/fields/${fieldId}/`, fieldData);
       
-      console.log('Champ mis à jour avec succès');
       return updatedField;
     } catch (err) {
       console.error(`Erreur lors de la mise à jour du champ ${fieldId}:`, err);
       setError(err.message || `Une erreur est survenue lors de la mise à jour du champ`);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Fonction pour récupérer un enregistrement par son custom_id
+  const fetchRecordByCustomId = useCallback(async (tableId, customId) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const record = await api.get(`/api/database/records/by_custom_id/?table_id=${tableId}&custom_id=${customId}`);
+      return record;
+    } catch (err) {
+      console.error(`Erreur lors de la récupération de l'enregistrement custom_id ${customId} de la table ${tableId}:`, err);
+      setError(err.message || `Une erreur est survenue lors de la récupération de l'enregistrement ${customId}`);
       return null;
     } finally {
       setIsLoading(false);
@@ -234,8 +243,6 @@ export function DynamicTableProvider({ children }) {
         }
       });
       
-      console.log('Création - Données envoyées:', dataToSend);
-      
       const newRecord = await api.post('/api/database/records/create_with_values/', dataToSend);
       
       return newRecord;
@@ -258,13 +265,28 @@ export function DynamicTableProvider({ children }) {
         values: {}
       };
       
-      // Filtrer les champs système et ne garder que les champs de la table dynamique
-      const systemFields = ['id', 'created_at', 'updated_at'];
+      // Filtrer les champs système et les champs non-dynamiques
+      const systemFields = [
+        'id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 
+        'created_at', 'updated_at', 'created_by', 'updated_by', 
+        'is_active', 'table', 'table_name'
+      ];
+      
+      // Patterns de champs à exclure (champs système supplémentaires)
+      const excludePatterns = [
+        /^id_\w+$/,  // Tous les champs qui commencent par id_
+        /^\w+_id$/,  // Tous les champs qui finissent par _id (sauf s'ils sont des vraies FK)
+      ];
       
       // Nettoyer les valeurs - convertir tout en string sauf les valeurs vides
       Object.entries(values).forEach(([key, value]) => {
-        // Ignorer les champs système
+        // Ignorer les champs système explicites
         if (systemFields.includes(key)) {
+          return;
+        }
+        
+        // Ignorer les champs qui matchent les patterns à exclure
+        if (excludePatterns.some(pattern => pattern.test(key))) {
           return;
         }
         
@@ -277,12 +299,7 @@ export function DynamicTableProvider({ children }) {
         }
       });
       
-      console.log('Mise à jour - Record ID:', recordId);
-      console.log('Mise à jour - Données envoyées:', dataToSend);
-      
       const updatedRecord = await api.patch(`/api/database/records/${recordId}/update_with_values/`, dataToSend);
-      
-      console.log('Mise à jour - Réponse reçue:', updatedRecord);
       
       return updatedRecord;
     } catch (err) {
@@ -312,6 +329,32 @@ export function DynamicTableProvider({ children }) {
     }
   }, []);
 
+  // Fonction pour réorganiser l'ordre des champs
+  const saveFieldOrder = useCallback(async (tableId, newFields) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const fieldOrders = newFields.map((field, index) => ({
+        id: field.id,
+        order: index
+      }));
+      
+      const response = await api.patch('/api/database/fields/reorder_fields/', {
+        table_id: parseInt(tableId),
+        field_orders: fieldOrders
+      });
+      
+      return response;
+    } catch (err) {
+      console.error(`Erreur lors de la réorganisation des champs de la table ${tableId}:`, err);
+      setError(err.message || `Une erreur est survenue lors de la réorganisation des champs`);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Charger les tables au montage du composant
   useEffect(() => {
     fetchTables();
@@ -324,6 +367,7 @@ export function DynamicTableProvider({ children }) {
     error,
     fetchTables,
     fetchTableWithFields,
+    fetchRecordByCustomId,
     createTable,
     updateTable,
     deleteTable,
@@ -334,12 +378,14 @@ export function DynamicTableProvider({ children }) {
     createRecord,
     updateRecord,
     deleteRecord,
+    saveFieldOrder,
   }), [
     tables,
     isLoading,
     error,
     fetchTables,
     fetchTableWithFields,
+    fetchRecordByCustomId,
     createTable,
     updateTable,
     deleteTable,
@@ -349,7 +395,8 @@ export function DynamicTableProvider({ children }) {
     fetchRecords,
     createRecord,
     updateRecord,
-    deleteRecord
+    deleteRecord,
+    saveFieldOrder,
   ]);
 
   return (

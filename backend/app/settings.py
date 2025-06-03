@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'app',
     'database',
     'rest_framework',
+    'conditional_fields',
 ]
 
 MIDDLEWARE = [

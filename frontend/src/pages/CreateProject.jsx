@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
+import SelectWithAddOption from '../components/SelectWithAddOption';
 
 function CreateProjectContent() {
   const navigate = useNavigate();
@@ -13,7 +14,9 @@ function CreateProjectContent() {
     contact_principal: '',
     type_projet: '',
     equipe: '',
-    description: ''
+    description: '',
+    // Champs conditionnels dynamiques
+    conditionalFields: {}
   });
   
   const [formErrors, setFormErrors] = useState({});
@@ -25,6 +28,18 @@ function CreateProjectContent() {
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+  
+  // États pour les champs conditionnels
+  const [conditionalFields, setConditionalFields] = useState([]);
+  
+  // États pour la modal d'ajout de contact personnalisée
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [newContactData, setNewContactData] = useState({
+    prenom: '',
+    nom: '',
+    email: '',
+    equipe: ''
+  });
 
   // Charger les tables et identifier les IDs
   useEffect(() => {
@@ -98,7 +113,7 @@ function CreateProjectContent() {
   }, [tableNamesTableId, fetchRecords]);
 
   // Fonction utilitaire pour extraire les valeurs des champs dynamiques
-  const getFieldValue = (record, ...possibleFields) => {
+  const getFieldValue = useCallback((record, ...possibleFields) => {
     if (!record) return '';
     
     for (const field of possibleFields) {
@@ -117,6 +132,305 @@ function CreateProjectContent() {
     }
     
     return '';
+  }, []);
+
+  // Fonctions utilitaires pour réduire la complexité cognitive
+  const findSelectedType = useCallback((typeId) => {
+    return projectTypes.find(type => type.id.toString() === typeId.toString());
+  }, [projectTypes]);
+
+  const fetchTableData = useCallback(async (tableId) => {
+    const response = await fetch(`/api/database/tables/${tableId}/`, {
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('Impossible de récupérer les champs de la table');
+    return response.json();
+  }, []);
+
+  const findTypeField = useCallback((tableData) => {
+    return tableData.fields?.find(field => 
+      field.name === 'Type Projet' || field.name.toLowerCase().includes('type')
+    );
+  }, []);
+
+  const fetchConditionalRules = useCallback(async (fieldId, typeName) => {
+    const response = await fetch(`/api/conditional-fields/rules/by_field_and_value/?parent_field_id=${fieldId}&parent_value=${encodeURIComponent(typeName)}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('API conditionnelle a retourné une erreur');
+    return response.json();
+  }, []);
+
+  const transformRulesToFields = useCallback((rules) => {
+    return rules.map(rule => ({
+      name: rule.conditional_field_name,
+      label: rule.conditional_field_label,
+      required: rule.is_required,
+      options: rule.options || []
+    }));
+  }, []);
+
+  // Logique pour les champs conditionnels
+  useEffect(() => {
+    const loadConditionalFields = async () => {
+      if (!formData.type_projet || !projectTypes.length || !projectTableId) {
+        setConditionalFields([]);
+        return;
+      }
+
+      try {
+        const selectedType = findSelectedType(formData.type_projet);
+        if (!selectedType) {
+          setConditionalFields([]);
+          return;
+        }
+
+        const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+        const tableData = await fetchTableData(projectTableId);
+        const typeField = findTypeField(tableData);
+        
+        if (!typeField) {
+          console.warn('Champ Type Projet non trouvé');
+          setConditionalFields([]);
+          return;
+        }
+
+        const rules = await fetchConditionalRules(typeField.id, typeName);
+        const fieldsConfig = transformRulesToFields(rules);
+        setConditionalFields(fieldsConfig);
+
+        // Réinitialiser les champs conditionnels quand on change de type
+        setFormData(prev => ({
+          ...prev,
+          conditionalFields: {}
+        }));
+
+      } catch (err) {
+        console.error('Erreur lors du chargement des champs conditionnels:', err);
+        setConditionalFields([]);
+      }
+    };
+
+    loadConditionalFields();
+  }, [formData.type_projet, projectTypes, projectTableId, findSelectedType, getFieldValue, fetchTableData, findTypeField, fetchConditionalRules, transformRulesToFields]);
+
+  // Fonction pour ouvrir la modal contact personnalisée
+  const openAddContactModal = () => {
+    setNewContactData({
+      prenom: '',
+      nom: '',
+      email: '',
+      equipe: ''
+    });
+    setShowAddContactModal(true);
+  };
+
+  // Fonction pour ajouter un nouveau contact avec tous les champs
+  const addNewContactWithDetails = async () => {
+    if (!contactTableId) {
+      showToast('Table des contacts non trouvée', 'error');
+      return;
+    }
+
+    if (!newContactData.prenom.trim() || !newContactData.nom.trim()) {
+      showToast('Le prénom et le nom sont requis', 'error');
+      return;
+    }
+
+    try {
+      const contactData = {
+        prenom: newContactData.prenom.trim(),
+        nom: newContactData.nom.trim(),
+        email: newContactData.email.trim(),
+        equipe: newContactData.equipe.trim()
+      };
+
+      const result = await createRecord(contactTableId, contactData);
+      if (result) {
+        // Recharger les contacts
+        const contactData = await fetchRecords(contactTableId);
+        setContacts(contactData || []);
+        showToast(`Contact "${newContactData.prenom} ${newContactData.nom}" ajouté avec succès`, 'success');
+        
+        // Fermer la modal et réinitialiser
+        setShowAddContactModal(false);
+        setNewContactData({
+          prenom: '',
+          nom: '',
+          email: '',
+          equipe: ''
+        });
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout du contact:', error);
+      showToast('Erreur lors de l\'ajout du contact', 'error');
+    }
+  };
+
+  // Fonction pour ajouter un nouveau type de projet
+  const addNewProjectType = async (typeName) => {
+    if (!tableNamesTableId) {
+      showToast('Table des types non trouvée', 'error');
+      return;
+    }
+
+    try {
+      // 1. Créer le type dans TableNames
+      const typeData = {
+        nom: typeName,
+        description: ''
+      };
+
+      const result = await createRecord(tableNamesTableId, typeData);
+      if (result) {
+        showToast(`Type "${typeName}" ajouté avec succès`, 'success');
+        
+        // 2. Créer automatiquement la table {Nom}Details
+        const detailsTableName = `${typeName}Details`;
+        
+        try {
+          const tableResponse = await fetch('/api/database/tables/create_details_table/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              name: detailsTableName
+            })
+          });
+
+          if (tableResponse.ok) {
+            const tableResult = await tableResponse.json();
+            showToast(`Table "${detailsTableName}" créée automatiquement avec des champs de base`, 'success');
+            console.log('Table créée:', tableResult.table);
+          } else {
+            const errorData = await tableResponse.json();
+            console.warn(`Impossible de créer la table ${detailsTableName}:`, errorData.error);
+            showToast(`Type créé, mais erreur lors de la création de la table "${detailsTableName}": ${errorData.error}`, 'warning');
+          }
+        } catch (tableError) {
+          console.warn('Erreur lors de la création de la table details:', tableError);
+          showToast(`Type créé, mais impossible de créer la table "${detailsTableName}"`, 'warning');
+        }
+        
+        // 3. Recharger les types
+        const typeData = await fetchRecords(tableNamesTableId);
+        setProjectTypes(typeData || []);
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout du type:', error);
+      showToast('Erreur lors de l\'ajout du type', 'error');
+    }
+  };
+
+  // Fonction pour ajouter une nouvelle option
+  const addNewOption = async (fieldName, optionLabel) => {
+    if (!optionLabel || !optionLabel.trim()) {
+      showToast('Veuillez remplir le libellé', 'error');
+      return;
+    }
+
+    try {
+      // Trouver la règle conditionnelle correspondante
+      const currentField = conditionalFields.find(field => field.name === fieldName);
+      if (!currentField) {
+        showToast('Champ non trouvé', 'error');
+        return;
+      }
+
+      // Récupérer l'ID de la règle depuis l'API (au lieu de hardcoder)
+      if (!formData.type_projet || !projectTableId) {
+        showToast('Sélectionnez d\'abord un type de projet', 'error');
+        return;
+      }
+
+      // Trouver le type sélectionné
+      const selectedType = projectTypes.find(type => type.id.toString() === formData.type_projet.toString());
+      if (!selectedType) {
+        showToast('Type de projet non trouvé', 'error');
+        return;
+      }
+
+      const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+
+      // Récupérer l'ID du champ "Type Projet"
+      const tableResponse = await fetch(`/api/database/tables/${projectTableId}/`, {
+        credentials: 'include',
+      });
+
+      if (!tableResponse.ok) {
+        showToast('Erreur lors de la récupération des informations de table', 'error');
+        return;
+      }
+
+      const tableData = await tableResponse.json();
+      const typeField = tableData.fields?.find(field => 
+        field.name === 'Type Projet' || field.name.toLowerCase().includes('type')
+      );
+
+      if (!typeField) {
+        showToast('Champ Type Projet non trouvé', 'error');
+        return;
+      }
+
+      // Récupérer les règles pour trouver le bon rule_id
+      const rulesResponse = await fetch(`/api/conditional-fields/rules/by_field_and_value/?parent_field_id=${typeField.id}&parent_value=${encodeURIComponent(typeName)}`, {
+        credentials: 'include',
+      });
+
+      if (!rulesResponse.ok) {
+        showToast('Erreur lors de la récupération des règles', 'error');
+        return;
+      }
+
+      const rules = await rulesResponse.json();
+      const targetRule = rules.find(rule => rule.conditional_field_name === fieldName);
+
+      if (!targetRule) {
+        showToast('Règle non trouvée', 'error');
+        return;
+      }
+
+      // Ajouter l'option via l'API avec le bon rule_id
+      const response = await fetch('/api/conditional-fields/add-option/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          rule_id: targetRule.id, // Utiliser le vrai ID de la règle
+          value: optionLabel,
+          label: optionLabel
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Mettre à jour la liste locale
+        setConditionalFields(prev => prev.map(field => 
+          field.name === fieldName 
+            ? { 
+                ...field, 
+                options: [...field.options, { 
+                  value: result.option.value, 
+                  label: result.option.label 
+                }] 
+              }
+            : field
+        ));
+        
+        showToast(`Option "${optionLabel}" ajoutée avec succès`, 'success');
+      } else {
+        const errorData = await response.json();
+        showToast(errorData.error || 'Erreur lors de l\'ajout de l\'option', 'error');
+      }
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de l\'option:', err);
+      showToast('Erreur lors de l\'ajout de l\'option', 'error');
+    }
   };
 
   // Générer un numéro de projet automatique
@@ -129,10 +443,23 @@ function CreateProjectContent() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    
+    // Gérer les champs conditionnels séparément
+    if (name.startsWith('conditional_')) {
+      const fieldName = name.replace('conditional_', '');
+      setFormData(prev => ({
+        ...prev,
+        conditionalFields: {
+          ...prev.conditionalFields,
+          [fieldName]: value
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
     
     if (formErrors[name]) {
       setFormErrors(prev => ({
@@ -169,6 +496,13 @@ function CreateProjectContent() {
       errors.description = 'La description est requise';
     }
     
+    // Validation des champs conditionnels obligatoires
+    conditionalFields.forEach(field => {
+      if (field.required && !formData.conditionalFields[field.name]) {
+        errors[`conditional_${field.name}`] = `${field.label} est requis`;
+      }
+    });
+    
     return errors;
   };
 
@@ -198,44 +532,14 @@ function CreateProjectContent() {
           navigate('/dashboard');
         }, 2000);
       }
-    } catch (err) {
-      console.error('Erreur lors de la création du projet:', err);
-      
-      // Extraire le message d'erreur du backend
-      let errorMessage = 'Une erreur est survenue lors de la création du projet';
-      
-      if (err?.response?.data) {
-        if (typeof err.response.data === 'string') {
-          errorMessage = err.response.data;
-        } else if (typeof err.response.data === 'object') {
-          // Si l'erreur est un objet avec des champs spécifiques
-          const errors = [];
-          Object.entries(err.response.data).forEach(([field, messages]) => {
-            if (Array.isArray(messages)) {
-              errors.push(`${field}: ${messages.join(', ')}`);
-            } else {
-              errors.push(`${field}: ${messages}`);
-            }
-          });
-          errorMessage = errors.join('\n');
-        }
-      }
-
-      // Debug supplémentaire
-      console.log('Détails complets de l\'erreur:', {
-        error: err,
-        response: err?.response,
-        data: err?.response?.data,
-        message: err?.message,
-        errorMessage
-      });
-
+    } catch (error) {
+      console.error('Erreur lors de la création du projet:', error);
       setFormErrors({
-        submit: errorMessage
+        submit: error.message || 'Une erreur est survenue lors de la création du projet'
       });
       
       // Afficher aussi l'erreur dans un toast pour plus de visibilité
-      showToast(errorMessage, 'error', 5000);
+      showToast(error.message || 'Une erreur est survenue lors de la création du projet', 'error', 5000);
     } finally {
       setIsSubmitting(false);
     }
@@ -267,8 +571,8 @@ function CreateProjectContent() {
         <div className="mb-8">
           <div className="breadcrumbs text-sm mb-4">
             <ul>
-              <li><a href="/" className="link link-hover">Accueil</a></li>
-              <li><a href="/dashboard" className="link link-hover">Projets</a></li>
+              <li><Link to="/" className="link link-hover">Accueil</Link></li>
+              <li><Link to="/dashboard" className="link link-hover">Projets</Link></li>
               <li>Nouveau projet</li>
             </ul>
           </div>
@@ -311,7 +615,7 @@ function CreateProjectContent() {
                 
                 {/* Nom du projet */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="nom_projet">
                     <span className="label-text font-medium">Nom du projet <span className="text-error">*</span></span>
                   </label>
                   <div className="relative">
@@ -322,13 +626,13 @@ function CreateProjectContent() {
                     </span>
                     <input
                       type="text"
+                      id="nom_projet"
                       name="nom_projet"
                       value={formData.nom_projet}
                       onChange={handleChange}
                       placeholder="Saisir le nom du projet"
-                      className={`input input-bordered w-full ${formErrors.nom_projet ? 'input-error' : ''}`}
+                      className={`input input-bordered w-full pl-10 ${formErrors.nom_projet ? 'input-error' : ''}`}
                       required
-                      aria-label="Nom du projet"
                     />
                   </div>
                   {formErrors.nom_projet && (
@@ -340,19 +644,19 @@ function CreateProjectContent() {
 
                 {/* Numéro du projet */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="numero_projet">
                     <span className="label-text font-medium">Numéro du projet <span className="text-error">*</span></span>
                   </label>
                   <div className="join w-full">
                     <input
                       type="text"
+                      id="numero_projet"
                       name="numero_projet"
                       value={formData.numero_projet}
                       onChange={handleChange}
                       placeholder="PRJ-202401-001"
                       className={`input input-bordered join-item flex-1 ${formErrors.numero_projet ? 'input-error' : ''}`}
                       required
-                      aria-label="Numéro du projet"
                     />
                     <button
                       type="button"
@@ -384,50 +688,69 @@ function CreateProjectContent() {
 
                 {/* Contact principal */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="contact_principal">
                     <span className="label-text font-medium">Contact principal <span className="text-error">*</span></span>
                   </label>
-                  <select
-                    name="contact_principal"
-                    value={formData.contact_principal}
-                    onChange={handleChange}
-                    className={`select select-bordered w-full ${formErrors.contact_principal ? 'select-error' : ''}`}
-                    required
-                    aria-label="Contact principal"
-                  >
-                    <option value="">Choisir un contact</option>
-                    {contacts.length === 0 && isLoading ? (
-                      <option disabled>Chargement...</option>
-                    ) : contacts.map(contact => {
-                      const nom = getFieldValue(contact, 'nom', 'last_name', 'lastname', 'name');
-                      const prenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname', 'fname');
-                      const email = getFieldValue(contact, 'email', 'mail', 'e_mail');
-                      const displayName = `${prenom} ${nom.toUpperCase()}`.trim() || `Contact #${contact.id}`;
-                      const contactId = contact.id || getFieldValue(contact, 'id', 'contact_id');
-                      
-                      // Debug des valeurs du contact
-                      console.log('Contact:', {
-                        contact,
-                        id: contactId,
-                        nom,
-                        prenom,
-                        email,
-                        displayName,
-                        rawValues: contact.values
-                      });
-                      
-                      return (
-                        <option key={contactId} value={contactId}>
-                          {displayName} {email && `(${email})`}
-                        </option>
-                      );
-                    })}
-                    {contacts.length === 0 && !isLoading && (
-                      <div className="mt-2">
-                        <a href="/admin/database/tables" className="link link-primary text-xs">Créer un contact</a>
-                      </div>
-                    )}
-                  </select>
+                  
+                  <div className="join w-full">
+                    <select
+                      id="contact_principal"
+                      name="contact_principal"
+                      value={formData.contact_principal}
+                      onChange={handleChange}
+                      className={`select select-bordered join-item flex-1 ${formErrors.contact_principal ? 'select-error' : ''}`}
+                      required={true}
+                      disabled={isLoading}
+                    >
+                      <option value="">Choisir un contact</option>
+                      {isLoading ? (
+                        <option disabled>Chargement...</option>
+                      ) : (
+                        contacts.map((contact) => {
+                          const prenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname', 'fname');
+                          const nom = getFieldValue(contact, 'nom', 'last_name', 'lastname', 'name');
+                          const email = getFieldValue(contact, 'email', 'mail', 'e_mail', 'courriel');
+                          
+                          // Construire le nom d'affichage avec gestion des cas vides
+                          let displayName = '';
+                          if (prenom && nom) {
+                            displayName = `${prenom} ${nom.toUpperCase()}`;
+                          } else if (nom) {
+                            displayName = nom.toUpperCase();
+                          } else if (prenom) {
+                            displayName = prenom;
+                          } else {
+                            // Chercher d'autres champs possibles
+                            const fullName = getFieldValue(contact, 'full_name', 'nom_complet', 'display_name');
+                            displayName = fullName || `Contact #${contact.id}`;
+                          }
+                          
+                          return (
+                            <option key={contact.id} value={contact.id}>
+                              {`${displayName}${email ? ` (${email})` : ''}`}
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                    
+                    <button
+                      type="button"
+                      className="btn btn-outline join-item"
+                      onClick={openAddContactModal}
+                      title="Ajouter un nouveau contact"
+                      disabled={isLoading}
+                    >
+                      ➕
+                    </button>
+                  </div>
+
+                  {!isLoading && contacts.length === 0 && (
+                    <div className="mt-2">
+                      <Link to="/admin/database/tables" className="link link-primary text-xs">Créer un contact</Link>
+                    </div>
+                  )}
+                  
                   {formErrors.contact_principal && (
                     <label className="label">
                       <span className="label-text-alt text-error">{formErrors.contact_principal}</span>
@@ -437,18 +760,18 @@ function CreateProjectContent() {
 
                 {/* Équipe */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="equipe">
                     <span className="label-text font-medium">Équipe <span className="text-error">*</span></span>
                   </label>
                   <input
                     type="text"
+                    id="equipe"
                     name="equipe"
                     value={formData.equipe}
                     onChange={handleChange}
                     placeholder="Ex: Équipe GenomiC"
                     className={`input input-bordered w-full ${formErrors.equipe ? 'input-error' : ''}`}
                     required
-                    aria-label="Équipe"
                   />
                   {formErrors.equipe && (
                     <label className="label">
@@ -468,36 +791,31 @@ function CreateProjectContent() {
 
                 {/* Type de projet */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="type_projet">
                     <span className="label-text font-medium">Type de projet <span className="text-error">*</span></span>
                   </label>
-                  <select
+                  <SelectWithAddOption
+                    id="type_projet"
                     name="type_projet"
                     value={formData.type_projet}
                     onChange={handleChange}
-                    className={`select select-bordered w-full ${formErrors.type_projet ? 'select-error' : ''}`}
-                    required
-                    aria-label="Type de projet"
-                  >
-                    <option value="">Sélectionner un type</option>
-                    {projectTypes.length === 0 && isLoading ? (
-                      <option disabled>Chargement...</option>
-                    ) : projectTypes.map(type => {
+                    options={projectTypes.map(type => {
                       const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label') || `Type #${type.id}`;
                       const typeDescription = getFieldValue(type, 'description', 'desc');
                       
-                      return (
-                        <option key={type.id} value={type.id}>
-                          {typeName} {typeDescription && `- ${typeDescription}`}
-                        </option>
-                      );
+                      return {
+                        value: type.id,
+                        label: `${typeName}${typeDescription ? ` - ${typeDescription}` : ''}`
+                      };
                     })}
-                    {projectTypes.length === 0 && !isLoading && (
-                      <div className="mt-2">
-                        <a href="/admin/database/tables" className="link link-primary text-xs">Créer un type de projet</a>
-                      </div>
-                    )}
-                  </select>
+                    placeholder="Sélectionner un type"
+                    required={true}
+                    className={formErrors.type_projet ? 'select-error' : ''}
+                    isLoading={isLoading}
+                    onAddOption={addNewProjectType}
+                    addButtonTitle="Ajouter un nouveau type de projet"
+                    emptyMessage={<Link to="/admin/database/tables" className="link link-primary text-xs">Créer un type de projet</Link>}
+                  />
                   {formErrors.type_projet && (
                     <label className="label">
                       <span className="label-text-alt text-error">{formErrors.type_projet}</span>
@@ -505,6 +823,53 @@ function CreateProjectContent() {
                   )}
                 </div>
               </div>
+
+              {/* Section: Champs conditionnels */}
+              {conditionalFields.length > 0 && (
+                <>
+                  <div className="divider"></div>
+                  <div>
+                    <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
+                      ⚙️ Paramètres spécifiques
+                    </h2>
+                    
+                    {conditionalFields.map((field) => (
+                      <div key={field.name} className="form-control w-full mb-4">
+                        <label className="label" htmlFor={`conditional_${field.name}`}>
+                          <span className="label-text font-medium">
+                            {field.label} 
+                            {field.required && <span className="text-error">*</span>}
+                          </span>
+                        </label>
+                        
+                        <SelectWithAddOption
+                          id={`conditional_${field.name}`}
+                          name={`conditional_${field.name}`}
+                          value={formData.conditionalFields[field.name] || ''}
+                          onChange={handleChange}
+                          options={field.options.map(option => ({
+                            value: option.value,
+                            label: option.label
+                          }))}
+                          placeholder="Sélectionner..."
+                          required={field.required}
+                          className={formErrors[`conditional_${field.name}`] ? 'select-error' : ''}
+                          onAddOption={(optionLabel) => addNewOption(field.name, optionLabel)}
+                          addButtonTitle="Ajouter une nouvelle option"
+                        />
+                        
+                        {formErrors[`conditional_${field.name}`] && (
+                          <label className="label">
+                            <span className="label-text-alt text-error">
+                              {formErrors[`conditional_${field.name}`]}
+                            </span>
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
               <div className="divider"></div>
 
@@ -516,17 +881,17 @@ function CreateProjectContent() {
 
                 {/* Description */}
                 <div className="form-control w-full mb-4">
-                  <label className="label">
+                  <label className="label" htmlFor="description">
                     <span className="label-text font-medium">Description du projet <span className="text-error">*</span></span>
                   </label>
                   <textarea
+                    id="description"
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
                     placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
                     className={`textarea textarea-bordered h-32 ${formErrors.description ? 'textarea-error' : ''}`}
                     required
-                    aria-label="Description du projet"
                   />
                   {formErrors.description && (
                     <label className="label">
@@ -579,6 +944,116 @@ function CreateProjectContent() {
         {toast && (
           <div className={`toast toast-${toast.type} fixed top-4 right-4 z-50`}>
             <div>{toast.message}</div>
+          </div>
+        )}
+
+        {/* Modal personnalisée pour ajouter un contact */}
+        {showAddContactModal && (
+          <div className="modal modal-open" role="dialog" aria-labelledby="add-contact-title" aria-modal="true">
+            <div className="modal-box">
+              <h3 id="add-contact-title" className="font-bold text-lg">
+                👤 Ajouter un nouveau contact
+              </h3>
+              <p className="py-4">
+                <span className="text-sm text-base-content/70">
+                  Ce contact sera ajouté directement dans votre table Contacts
+                </span>
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Prénom */}
+                <div className="form-control w-full">
+                  <label className="label" htmlFor="new_contact_prenom">
+                    <span className="label-text font-medium">Prénom <span className="text-error">*</span></span>
+                  </label>
+                  <input
+                    type="text"
+                    id="new_contact_prenom"
+                    value={newContactData.prenom}
+                    onChange={(e) => setNewContactData(prev => ({ ...prev, prenom: e.target.value }))}
+                    placeholder="Ex: Jean"
+                    className="input input-bordered w-full"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Nom */}
+                <div className="form-control w-full">
+                  <label className="label" htmlFor="new_contact_nom">
+                    <span className="label-text font-medium">Nom <span className="text-error">*</span></span>
+                  </label>
+                  <input
+                    type="text"
+                    id="new_contact_nom"
+                    value={newContactData.nom}
+                    onChange={(e) => setNewContactData(prev => ({ ...prev, nom: e.target.value }))}
+                    placeholder="Ex: Dupont"
+                    className="input input-bordered w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Email */}
+                <div className="form-control w-full">
+                  <label className="label" htmlFor="new_contact_email">
+                    <span className="label-text font-medium">Email</span>
+                  </label>
+                  <input
+                    type="email"
+                    id="new_contact_email"
+                    value={newContactData.email}
+                    onChange={(e) => setNewContactData(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="Ex: jean.dupont@email.com"
+                    className="input input-bordered w-full"
+                  />
+                </div>
+
+                {/* Équipe */}
+                <div className="form-control w-full">
+                  <label className="label" htmlFor="new_contact_equipe">
+                    <span className="label-text font-medium">Équipe</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="new_contact_equipe"
+                    value={newContactData.equipe}
+                    onChange={(e) => setNewContactData(prev => ({ ...prev, equipe: e.target.value }))}
+                    placeholder="Ex: Équipe GenomiC"
+                    className="input input-bordered w-full"
+                  />
+                </div>
+              </div>
+              
+              <div className="modal-action">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setShowAddContactModal(false);
+                    setNewContactData({
+                      prenom: '',
+                      nom: '',
+                      email: '',
+                      equipe: ''
+                    });
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={addNewContactWithDetails}
+                  disabled={!newContactData.prenom.trim() || !newContactData.nom.trim()}
+                >
+                  Ajouter le contact
+                </button>
+              </div>
+            </div>
+            
+            {/* Overlay pour fermer la modal */}
+            <div className="modal-backdrop" onClick={() => setShowAddContactModal(false)}></div>
           </div>
         )}
       </div>

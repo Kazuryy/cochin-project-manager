@@ -2,7 +2,7 @@
 import React from 'react';
 import Page from "../../../components/global/Page";
 import TableForm from "../../../components/tables/TableForm";
-import { DynamicTableProvider } from "../../../contexts/DynamicTableContext";
+import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
 function CreateTablePage() {
   return (

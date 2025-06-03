@@ -33,7 +33,7 @@ const FIELD_TYPES = [
 ];
 
 function FieldsManager({ tableId }) {
-  const { fetchTableWithFields, deleteField, isLoading, error } = useDynamicTables();
+  const { fetchTableWithFields, deleteField, saveFieldOrder, isLoading, error } = useDynamicTables();
   
   const [table, setTable] = useState(null);
   const [tables, setTables] = useState([]);
@@ -45,6 +45,7 @@ function FieldsManager({ tableId }) {
   const [fieldFormErrors, setFieldFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [tablesLoading, setTablesLoading] = useState(false);
+  const [reorderLoading, setReorderLoading] = useState(false);
 
   const resetForm = useCallback(() => {
     setFieldFormData(INITIAL_FIELD_FORM);
@@ -253,7 +254,7 @@ function FieldsManager({ tableId }) {
     }
   }, [deleteField, tableId, fetchTableWithFields]);
 
-  const handleMoveField = useCallback((fieldId, direction) => {
+  const handleMoveField = useCallback(async (fieldId, direction) => {
     const fieldIndex = fields.findIndex(f => f.id === fieldId);
     if (
       (direction === 'up' && fieldIndex === 0) || 
@@ -278,8 +279,26 @@ function FieldsManager({ tableId }) {
       order: index
     }));
     
+    // Mettre à jour l'état local immédiatement (optimistic UI)
     setFields(updatedFields);
-  }, [fields]);
+    
+    // Sauvegarder en base de données
+    try {
+      setReorderLoading(true);
+      await saveFieldOrder(tableId, updatedFields);
+      setSuccessMessage('Ordre des champs mis à jour avec succès');
+      setTimeout(() => setSuccessMessage(''), 2000);
+    } catch (err) {
+      // En cas d'erreur, revenir à l'ordre précédent
+      setFields(fields);
+      setFieldFormErrors({
+        submit: err.message || 'Erreur lors de la sauvegarde de l\'ordre des champs'
+      });
+      setTimeout(() => setFieldFormErrors({}), 3000);
+    } finally {
+      setReorderLoading(false);
+    }
+  }, [fields, tableId, saveFieldOrder]);
 
   const getTableName = useCallback((tableId) => {
     const foundTable = tables.find(t => t.id.toString() === tableId.toString());
@@ -327,7 +346,7 @@ function FieldsManager({ tableId }) {
             <Button
               variant="ghost"
               size="xs"
-              isDisabled={index === 0}
+              isDisabled={index === 0 || reorderLoading}
               onClick={() => handleMoveField(field.id, 'up')}
             >
               <FiArrowUp />
@@ -335,7 +354,7 @@ function FieldsManager({ tableId }) {
             <Button
               variant="ghost"
               size="xs"
-              isDisabled={index === fields.length - 1}
+              isDisabled={index === fields.length - 1 || reorderLoading}
               onClick={() => handleMoveField(field.id, 'down')}
             >
               <FiArrowDown />
@@ -397,7 +416,7 @@ function FieldsManager({ tableId }) {
         </div>
       </td>
     </tr>
-  ), [handleMoveField, handleEditField, handleDeleteField, confirmDelete, fields.length, getTableName]);
+  ), [handleMoveField, handleEditField, handleDeleteField, confirmDelete, fields.length, getTableName, reorderLoading]);
 
   if (isLoading) {
     return (
@@ -421,6 +440,10 @@ function FieldsManager({ tableId }) {
       
       {error && <Alert type="error" message={error} />}
       {successMessage && <Alert type="success" message={successMessage} />}
+      {fieldFormErrors.submit && <Alert type="error" message={fieldFormErrors.submit} />}
+      {reorderLoading && (
+        <Alert type="info" message="Sauvegarde de l'ordre des champs en cours..." />
+      )}
       
       <div className="overflow-x-auto">
         <table className="table w-full">
@@ -608,10 +631,6 @@ function FieldsManager({ tableId }) {
               />
             </label>
           </div>
-          
-          {fieldFormErrors.submit && (
-            <Alert type="error" message={fieldFormErrors.submit} />
-          )}
           
           <div className="flex justify-end space-x-2 pt-4">
             <Button

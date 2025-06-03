@@ -3,7 +3,7 @@ import React from 'react';
 import { useParams } from 'react-router-dom';
 import Page from "../../../components/global/Page";
 import TableForm from "../../../components/tables/TableForm";
-import { DynamicTableProvider } from "../../../contexts/DynamicTableContext";
+import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
 function EditTablePage() {
   const { tableId } = useParams();

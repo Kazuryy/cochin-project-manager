@@ -1,4 +1,4 @@
-// Modification de AuthProvider.jsx - Version complète avec logs
+// Modification de AuthProvider.jsx - Version sans debug
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { AuthContext} from './authContext';
@@ -15,26 +15,22 @@ export function AuthProvider({ children }) {
   // Fonction pour obtenir le token CSRF
   const getCsrfToken = useCallback(async () => {
     try {
-      console.log('Getting CSRF token...');
       const response = await fetch('/api/auth/csrf/', {
         method: 'GET',
         credentials: 'include',
       });
       
       if (!response.ok) {
-        console.error('Failed to get CSRF token, status:', response.status);
         throw new Error('Échec de l\'obtention du token CSRF');
       }
       
       const data = await response.json();
       // Vérifiez si le token est présent dans la réponse
       if (data?.csrfToken) {
-        console.log('CSRF token obtained successfully');
         // Retourner le token
         return data.csrfToken;
       }
       
-      console.error('CSRF token not found in response');
       throw new Error('Token CSRF non trouvé dans la réponse');
     } catch (error) {
       console.error('Error getting CSRF token:', error);
@@ -50,7 +46,6 @@ export function AuthProvider({ children }) {
       try {
         if (!isMounted) return;
         
-        console.log('Checking auth status...');
         setIsLoading(true);
         
         const response = await fetch('/api/auth/check/', {
@@ -61,11 +56,9 @@ export function AuthProvider({ children }) {
         
         if (response.ok) {
           const data = await response.json();
-          console.log('Auth check success:', data);
           setUser(data.user);
           setIsAuthenticated(true);
         } else {
-          console.log('Auth check failed, status:', response.status);
           setUser(null);
           setIsAuthenticated(false);
         }
@@ -78,7 +71,6 @@ export function AuthProvider({ children }) {
         setIsAuthenticated(false);
       } finally {
         if (isMounted) {
-          console.log('Auth check completed, isLoading set to false');
           setIsLoading(false);
         }
       }
@@ -94,7 +86,6 @@ export function AuthProvider({ children }) {
   
   // Fonction de connexion
   const login = useCallback(async (credentials) => {
-    console.log('Login attempt with:', { username: credentials.username });
     setAuthError(null);
     
     try {
@@ -102,11 +93,9 @@ export function AuthProvider({ children }) {
       const csrfToken = await getCsrfToken();
       
       if (!csrfToken) {
-        console.error('Failed to get CSRF token for login');
         throw new Error('Impossible d\'obtenir un token CSRF');
       }
       
-      console.log('Sending login request...');
       const response = await fetch('/api/auth/login/', {
         method: 'POST',
         headers: {
@@ -120,11 +109,9 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       
       if (!response.ok) {
-        console.error('Login failed:', data);
         throw new Error(data.message || 'Échec de la connexion');
       }
       
-      console.log('Login successful:', data);
       setUser(data.user);
       setIsAuthenticated(true);
       return data;
@@ -137,12 +124,10 @@ export function AuthProvider({ children }) {
   
   // Fonction de déconnexion
   const logout = useCallback(async () => {
-    console.log('Logout attempt...');
     try {
       const csrfToken = await getCsrfToken();
       
       if (!csrfToken) {
-        console.error('Failed to get CSRF token for logout');
         throw new Error('Impossible d\'obtenir un token CSRF pour la déconnexion');
       }
       
@@ -156,11 +141,8 @@ export function AuthProvider({ children }) {
       
       if (!response.ok) {
         const data = await response.json();
-        console.error('Logout failed:', data);
         throw new Error(data.message || 'Échec de la déconnexion');
       }
-      
-      console.log('Logout successful');
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
