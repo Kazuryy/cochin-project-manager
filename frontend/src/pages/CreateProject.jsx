@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import SelectWithAddOption from '../components/SelectWithAddOption';
+import { typeService } from '../services/typeService';
+import { useFormPersistence } from '../hooks/useFormPersistence';
 
 function CreateProjectContent() {
   const navigate = useNavigate();
@@ -19,6 +21,18 @@ function CreateProjectContent() {
     conditionalFields: {}
   });
   
+  // Hook de persistance du formulaire
+  const { 
+    restoreFormData, 
+    clearSavedData, 
+    hasSavedData 
+  } = useFormPersistence(
+    'createProject_formData', 
+    formData, 
+    setFormData,
+    ['conditionalFields'] // Exclure les champs conditionnels de la persistance
+  );
+  
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [contacts, setContacts] = useState([]);
@@ -28,6 +42,7 @@ function CreateProjectContent() {
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+  const [showRestoreDataAlert, setShowRestoreDataAlert] = useState(false);
   
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
@@ -41,10 +56,36 @@ function CreateProjectContent() {
     equipe: ''
   });
 
+  // Vérifier s'il y a des données à restaurer au chargement
+  useEffect(() => {
+    if (hasSavedData()) {
+      setShowRestoreDataAlert(true);
+    }
+  }, [hasSavedData]);
+
+  // Fonction pour restaurer les données
+  const handleRestoreData = () => {
+    const restored = restoreFormData();
+    if (restored) {
+      showToast('Données du formulaire restaurées', 'success');
+    }
+    setShowRestoreDataAlert(false);
+  };
+
+  // Fonction pour ignorer la restauration
+  const handleIgnoreRestore = () => {
+    clearSavedData();
+    setShowRestoreDataAlert(false);
+  };
+
   // Charger les tables et identifier les IDs
   useEffect(() => {
     const loadTables = async () => {
-      await fetchTables();
+      fetchTables().then(() => {
+        // Tables chargées
+      }).catch(err => {
+        console.error('Erreur lors du chargement des tables:', err);
+      });
     };
     loadTables();
   }, [fetchTables]);
@@ -87,8 +128,11 @@ function CreateProjectContent() {
     const loadContacts = async () => {
       if (contactTableId) {
         try {
-          const contactData = await fetchRecords(contactTableId);
-          setContacts(contactData || []);
+          fetchRecords(contactTableId).then(contactData => {
+            setContacts(contactData || []);
+          }).catch(err => {
+            console.error('Erreur lors du chargement des contacts:', err);
+          });
         } catch (err) {
           console.error('Erreur lors du chargement des contacts:', err);
         }
@@ -102,8 +146,11 @@ function CreateProjectContent() {
     const loadProjectTypes = async () => {
       if (tableNamesTableId) {
         try {
-          const typeData = await fetchRecords(tableNamesTableId);
-          setProjectTypes(typeData || []);
+          fetchRecords(tableNamesTableId).then(typeData => {
+            setProjectTypes(typeData || []);
+          }).catch(err => {
+            console.error('Erreur lors du chargement des types:', err);
+          });
         } catch (err) {
           console.error('Erreur lors du chargement des types:', err);
         }
@@ -125,7 +172,7 @@ function CreateProjectContent() {
     if (record.values && Array.isArray(record.values)) {
       for (const field of possibleFields) {
         const valueField = record.values.find(v => v.field_slug === field);
-        if (valueField && valueField.value !== undefined && valueField.value !== null && valueField.value !== '') {
+        if (valueField?.value && valueField.value !== undefined && valueField.value !== null && valueField.value !== '') {
           return valueField.value;
         }
       }
@@ -170,49 +217,50 @@ function CreateProjectContent() {
     }));
   }, []);
 
-  // Logique pour les champs conditionnels
-  useEffect(() => {
-    const loadConditionalFields = async () => {
-      if (!formData.type_projet || !projectTypes.length || !projectTableId) {
+  // Fonction améliorée pour recharger les champs conditionnels
+  const reloadConditionalFields = useCallback(async () => {
+    if (!formData.type_projet || !projectTypes.length || !projectTableId) {
+      setConditionalFields([]);
+      return;
+    }
+
+    try {
+      const selectedType = findSelectedType(formData.type_projet);
+      if (!selectedType) {
         setConditionalFields([]);
         return;
       }
 
-      try {
-        const selectedType = findSelectedType(formData.type_projet);
-        if (!selectedType) {
-          setConditionalFields([]);
-          return;
-        }
-
-        const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
-        const tableData = await fetchTableData(projectTableId);
-        const typeField = findTypeField(tableData);
-        
-        if (!typeField) {
-          console.warn('Champ Type Projet non trouvé');
-          setConditionalFields([]);
-          return;
-        }
-
-        const rules = await fetchConditionalRules(typeField.id, typeName);
-        const fieldsConfig = transformRulesToFields(rules);
-        setConditionalFields(fieldsConfig);
-
-        // Réinitialiser les champs conditionnels quand on change de type
-        setFormData(prev => ({
-          ...prev,
-          conditionalFields: {}
-        }));
-
-      } catch (err) {
-        console.error('Erreur lors du chargement des champs conditionnels:', err);
+      const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+      const tableData = await fetchTableData(projectTableId);
+      const typeField = findTypeField(tableData);
+      
+      if (!typeField) {
+        console.warn('Champ Type Projet non trouvé');
         setConditionalFields([]);
+        return;
       }
-    };
 
-    loadConditionalFields();
+      const rules = await fetchConditionalRules(typeField.id, typeName);
+      const fieldsConfig = transformRulesToFields(rules);
+      setConditionalFields(fieldsConfig);
+
+      // Réinitialiser les champs conditionnels quand on change de type
+      setFormData(prev => ({
+        ...prev,
+        conditionalFields: {}
+      }));
+
+    } catch (err) {
+      console.error('Erreur lors du chargement des champs conditionnels:', err);
+      setConditionalFields([]);
+    }
   }, [formData.type_projet, projectTypes, projectTableId, findSelectedType, getFieldValue, fetchTableData, findTypeField, fetchConditionalRules, transformRulesToFields]);
+
+  // Logique pour les champs conditionnels
+  useEffect(() => {
+    reloadConditionalFields();
+  }, [reloadConditionalFields]);
 
   // Fonction pour ouvrir la modal contact personnalisée
   const openAddContactModal = () => {
@@ -245,88 +293,70 @@ function CreateProjectContent() {
         equipe: newContactData.equipe.trim()
       };
 
-      const result = await createRecord(contactTableId, contactData);
-      if (result) {
-        // Recharger les contacts
-        const contactData = await fetchRecords(contactTableId);
-        setContacts(contactData || []);
-        showToast(`Contact "${newContactData.prenom} ${newContactData.nom}" ajouté avec succès`, 'success');
-        
-        // Fermer la modal et réinitialiser
-        setShowAddContactModal(false);
-        setNewContactData({
-          prenom: '',
-          nom: '',
-          email: '',
-          equipe: ''
-        });
-      }
+      createRecord(contactTableId, contactData).then(result => {
+        if (result) {
+          // Recharger les contacts
+          fetchRecords(contactTableId).then(contactData => {
+            setContacts(contactData || []);
+            showToast(`Contact "${newContactData.prenom} ${newContactData.nom}" ajouté avec succès`, 'success');
+            
+            // Fermer la modal et réinitialiser
+            setShowAddContactModal(false);
+            setNewContactData({
+              prenom: '',
+              nom: '',
+              email: '',
+              equipe: ''
+            });
+          });
+        }
+      });
     } catch (error) {
       console.error('Erreur lors de l\'ajout du contact:', error);
       showToast('Erreur lors de l\'ajout du contact', 'error');
     }
   };
 
-  // Fonction pour ajouter un nouveau type de projet
-  const addNewProjectType = async (typeName) => {
-    if (!tableNamesTableId) {
-      showToast('Table des types non trouvée', 'error');
-      return;
-    }
-
+  // Fonction pour ajouter un nouveau type de projet avec le nouveau système
+  const addNewProjectType = async (typeName, columns = []) => {
     try {
-      // 1. Créer le type dans TableNames
-      const typeData = {
-        nom: typeName,
-        description: ''
-      };
-
-      const result = await createRecord(tableNamesTableId, typeData);
-      if (result) {
-        showToast(`Type "${typeName}" ajouté avec succès`, 'success');
+      const result = await typeService.createNewType(typeName, columns);
+      
+      if (result.success) {
+        showToast(result.message, 'success');
         
-        // 2. Créer automatiquement la table {Nom}Details
-        const detailsTableName = `${typeName}Details`;
-        
-        try {
-          const tableResponse = await fetch('/api/database/tables/create_details_table/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              name: detailsTableName
-            })
+        // Recharger les types depuis TableNames
+        if (tableNamesTableId) {
+          fetchRecords(tableNamesTableId).then(typeData => {
+            setProjectTypes(typeData || []);
+            
+            // Auto-sélectionner le nouveau type créé
+            if (result.data?.type_record) {
+              setFormData(prev => ({
+                ...prev,
+                type_projet: result.data.type_record.id
+              }));
+              
+              // Forcer le rechargement des champs conditionnels
+              setTimeout(() => {
+                // Les champs conditionnels se rechargeront automatiquement via useEffect
+              }, 500);
+            }
           });
-
-          if (tableResponse.ok) {
-            const tableResult = await tableResponse.json();
-            showToast(`Table "${detailsTableName}" créée automatiquement avec des champs de base`, 'success');
-            console.log('Table créée:', tableResult.table);
-          } else {
-            const errorData = await tableResponse.json();
-            console.warn(`Impossible de créer la table ${detailsTableName}:`, errorData.error);
-            showToast(`Type créé, mais erreur lors de la création de la table "${detailsTableName}": ${errorData.error}`, 'warning');
-          }
-        } catch (tableError) {
-          console.warn('Erreur lors de la création de la table details:', tableError);
-          showToast(`Type créé, mais impossible de créer la table "${detailsTableName}"`, 'warning');
         }
-        
-        // 3. Recharger les types
-        const typeData = await fetchRecords(tableNamesTableId);
-        setProjectTypes(typeData || []);
+      } else {
+        throw new Error(result.error);
       }
     } catch (error) {
-      console.error('Erreur lors de l\'ajout du type:', error);
-      showToast('Erreur lors de l\'ajout du type', 'error');
+      console.error('Erreur lors de la création du type:', error);
+      showToast(error.message || 'Erreur lors de la création du type', 'error');
+      throw error; // Re-lancer l'erreur pour que le modal puisse la gérer
     }
   };
 
   // Fonction pour ajouter une nouvelle option
   const addNewOption = async (fieldName, optionLabel) => {
-    if (!optionLabel || !optionLabel.trim()) {
+    if (!optionLabel.trim()) {
       showToast('Veuillez remplir le libellé', 'error');
       return;
     }
@@ -514,35 +544,41 @@ function CreateProjectContent() {
       setFormErrors(errors);
       return;
     }
-    
-    if (!projectTableId) {
-      setFormErrors({ submit: 'Impossible de trouver la table des projets' });
-      return;
-    }
-    
+
     setIsSubmitting(true);
-    
-    try {
-      const result = await createRecord(projectTableId, formData);
-      
+    setFormErrors({});
+
+    // Préparer les données pour la soumission
+    const submitData = {
+      nom_projet: formData.nom_projet,
+      numero_projet: formData.numero_projet || generateProjectNumber(),
+      contact_principal: formData.contact_principal,
+      equipe: formData.equipe,
+      description: formData.description,
+      type_projet: formData.type_projet,
+      // Ajouter les champs conditionnels
+      ...formData.conditionalFields
+    };
+
+    createRecord(projectTableId, submitData).then(result => {
       if (result) {
         setSuccessMessage('Projet créé avec succès !');
-        showToast('Projet créé avec succès !', 'success', 2000);
+        
+        // Effacer les données sauvegardées après succès
+        clearSavedData();
+        
         setTimeout(() => {
           navigate('/dashboard');
         }, 2000);
       }
-    } catch (error) {
+    }).catch(error => {
       console.error('Erreur lors de la création du projet:', error);
-      setFormErrors({
-        submit: error.message || 'Une erreur est survenue lors de la création du projet'
+      setFormErrors({ 
+        submit: error.message || 'Erreur lors de la création du projet. Veuillez réessayer.' 
       });
-      
-      // Afficher aussi l'erreur dans un toast pour plus de visibilité
-      showToast(error.message || 'Une erreur est survenue lors de la création du projet', 'error', 5000);
-    } finally {
+    }).finally(() => {
       setIsSubmitting(false);
-    }
+    });
   };
 
   const showToast = (message, type = 'info', duration = 2000) => {
@@ -567,6 +603,27 @@ function CreateProjectContent() {
     <div className="min-h-screen bg-base-100">
       <div className="container mx-auto p-6 max-w-2xl">
         
+        {/* Alert pour restaurer les données */}
+        {showRestoreDataAlert && (
+          <div className="alert alert-info mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <div>
+              <h3 className="font-bold">Données sauvegardées trouvées</h3>
+              <div className="text-xs">Voulez-vous restaurer les données précédemment saisies ?</div>
+            </div>
+            <div className="flex gap-2">
+              <button className="btn btn-primary btn-xs" onClick={handleRestoreData}>
+                Restaurer
+              </button>
+              <button className="btn btn-ghost btn-xs" onClick={handleIgnoreRestore}>
+                Ignorer
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="mb-8">
           <div className="breadcrumbs text-sm mb-4">
@@ -727,7 +784,7 @@ function CreateProjectContent() {
                           
                           return (
                             <option key={contact.id} value={contact.id}>
-                              {`${displayName}${email ? ` (${email})` : ''}`}
+                              {displayName + (email ? ` (${email})` : '')}
                             </option>
                           );
                         })
@@ -801,19 +858,19 @@ function CreateProjectContent() {
                     onChange={handleChange}
                     options={projectTypes.map(type => {
                       const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label') || `Type #${type.id}`;
-                      const typeDescription = getFieldValue(type, 'description', 'desc');
                       
                       return {
                         value: type.id,
-                        label: `${typeName}${typeDescription ? ` - ${typeDescription}` : ''}`
+                        label: `${typeName}`
                       };
                     })}
                     placeholder="Sélectionner un type"
                     required={true}
                     className={formErrors.type_projet ? 'select-error' : ''}
                     isLoading={isLoading}
-                    onAddOption={addNewProjectType}
-                    addButtonTitle="Ajouter un nouveau type de projet"
+                    isTypeMode={true}
+                    onCreateType={addNewProjectType}
+                    addButtonTitle="Créer un nouveau type de projet complet"
                     emptyMessage={<Link to="/admin/database/tables" className="link link-primary text-xs">Créer un type de projet</Link>}
                   />
                   {formErrors.type_projet && (
@@ -1053,7 +1110,19 @@ function CreateProjectContent() {
             </div>
             
             {/* Overlay pour fermer la modal */}
-            <div className="modal-backdrop" onClick={() => setShowAddContactModal(false)}></div>
+            <div 
+              className="modal-backdrop" 
+              onClick={() => setShowAddContactModal(false)}
+              role="button"
+              tabIndex="0"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowAddContactModal(false);
+                }
+              }}
+              aria-label="Fermer la modal"
+            ></div>
           </div>
         )}
       </div>

@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CreateProject from './pages/CreateProject';
+import TestCreateType from './pages/TestCreateType';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
 import { AuthProvider } from './hooks/AuthProvider';
@@ -40,6 +41,16 @@ function MainContent() {
             element={
               <ProtectedRoute>
                 <CreateProject />
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* Route de test pour la création de types */}
+          <Route 
+            path="/test/create-type" 
+            element={
+              <ProtectedRoute>
+                <TestCreateType />
               </ProtectedRoute>
             } 
           />

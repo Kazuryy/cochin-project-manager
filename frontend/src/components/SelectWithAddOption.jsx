@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import CreateTypeModal from './modals/CreateTypeModal';
 
 const SelectWithAddOption = ({
   id,
@@ -16,11 +17,16 @@ const SelectWithAddOption = ({
   showAddButton = true,
   isLoading = false,
   emptyMessage = null,
-  onError
+  onError,
+  // Nouvelles props pour le mode type
+  isTypeMode = false,
+  onCreateType = null
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
   const [newOptionData, setNewOptionData] = useState({ label: '' });
   const [isAdding, setIsAdding] = useState(false);
+  const [typeCreationError, setTypeCreationError] = useState(null);
 
   const handleError = (message) => {
     if (onError) {
@@ -54,6 +60,34 @@ const SelectWithAddOption = ({
     }
   };
 
+  const handleCreateType = async (typeName, columns) => {
+    if (!onCreateType) {
+      setTypeCreationError('Fonction de création de type non définie');
+      return;
+    }
+
+    setIsAdding(true);
+    setTypeCreationError(null);
+    
+    try {
+      await onCreateType(typeName, columns);
+      setShowTypeModal(false);
+    } catch (error) {
+      console.error('Erreur lors de la création du type:', error);
+      setTypeCreationError(error.message || 'Erreur lors de la création du type');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleAddButtonClick = () => {
+    if (isTypeMode) {
+      setShowTypeModal(true);
+    } else {
+      setShowAddModal(true);
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -68,6 +102,13 @@ const SelectWithAddOption = ({
     if (!isAdding) {
       setShowAddModal(false);
       setNewOptionData({ label: '' });
+    }
+  };
+
+  const closeTypeModal = () => {
+    if (!isAdding) {
+      setShowTypeModal(false);
+      setTypeCreationError(null);
     }
   };
 
@@ -96,11 +137,11 @@ const SelectWithAddOption = ({
           )}
         </select>
         
-        {showAddButton && onAddOption && (
+        {showAddButton && (onAddOption || onCreateType) && (
           <button
             type="button"
             className="btn btn-outline join-item"
-            onClick={() => setShowAddModal(true)}
+            onClick={handleAddButtonClick}
             title={addButtonTitle}
             disabled={disabled || isLoading}
             aria-label={addButtonTitle}
@@ -117,8 +158,8 @@ const SelectWithAddOption = ({
         </div>
       )}
 
-      {/* Modal pour ajouter une nouvelle option */}
-      {showAddModal && (
+      {/* Modal pour ajouter une nouvelle option simple */}
+      {showAddModal && !isTypeMode && (
         <div className="modal modal-open" role="dialog" aria-labelledby="add-option-title" aria-modal="true">
           <div className="modal-box">
             <h3 id="add-option-title" className="font-bold text-lg">
@@ -146,7 +187,7 @@ const SelectWithAddOption = ({
                 disabled={isAdding}
                 aria-describedby="new_option_help"
               />
-              <label className="label">
+              <label className="label" htmlFor="new_option_input">
                 <span id="new_option_help" className="label-text-alt">
                   Cette valeur apparaîtra dans la liste des choix
                 </span>
@@ -177,6 +218,17 @@ const SelectWithAddOption = ({
           <div className="modal-backdrop" onClick={closeModal}></div>
         </div>
       )}
+
+      {/* Modal pour créer un nouveau type complet */}
+      {isTypeMode && (
+        <CreateTypeModal
+          isOpen={showTypeModal}
+          onClose={closeTypeModal}
+          onCreateType={handleCreateType}
+          isLoading={isAdding}
+          error={typeCreationError}
+        />
+      )}
     </>
   );
 };
@@ -202,6 +254,9 @@ SelectWithAddOption.propTypes = {
   isLoading: PropTypes.bool,
   emptyMessage: PropTypes.node,
   onError: PropTypes.func,
+  // Nouvelles props pour le mode type
+  isTypeMode: PropTypes.bool,
+  onCreateType: PropTypes.func,
 };
 
 export default SelectWithAddOption; 

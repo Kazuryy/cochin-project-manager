@@ -13,6 +13,7 @@ from .serializers import (
     DynamicRecordCreateSerializer,
     FlatDynamicRecordSerializer
 )
+from django.db import models
 
 class DynamicTableViewSet(viewsets.ModelViewSet):
     queryset = DynamicTable.objects.all()
@@ -132,6 +133,194 @@ class DynamicTableViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {'error': f'Erreur lors de la création de la table: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'])
+    def create_new_type(self, request):
+        """
+        Créer un nouveau type : ajouter à TableNames et créer la table {Nom}Details
+        """
+        try:
+            type_name = request.data.get('type_name')
+            columns = request.data.get('columns', [])
+            
+            if not type_name:
+                return Response(
+                    {'error': 'Le nom du type est requis'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Capitaliser la première lettre
+            type_name = type_name.strip()
+            type_name = type_name[0].upper() + type_name[1:] if type_name else ''
+            
+            if not type_name:
+                return Response(
+                    {'error': 'Le nom du type est invalide'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # 1. Trouver la table TableNames
+            table_names_table = DynamicTable.objects.filter(name__icontains='tablename').first()
+            if not table_names_table:
+                # Essayer d'autres variantes
+                table_names_table = DynamicTable.objects.filter(name__icontains='table_name').first()
+                if not table_names_table:
+                    table_names_table = DynamicTable.objects.filter(name__icontains='type').first()
+            
+            if not table_names_table:
+                return Response(
+                    {'error': 'Table TableNames introuvable. Créez d\'abord une table pour stocker les types.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # 2. Ajouter le type dans TableNames
+            type_record = DynamicRecord.objects.create(
+                table=table_names_table,
+                created_by=request.user
+            )
+            
+            # Trouver le champ nom dans TableNames
+            nom_field = table_names_table.fields.filter(name__icontains='nom').first()
+            if nom_field:
+                DynamicValue.objects.create(
+                    record=type_record,
+                    field=nom_field,
+                    value=type_name
+                )
+            
+            # Trouver le champ description dans TableNames
+            description_field = table_names_table.fields.filter(name__icontains='description').first()
+            if description_field:
+                DynamicValue.objects.create(
+                    record=type_record,
+                    field=description_field,
+                    value=f'Type {type_name} créé automatiquement'
+                )
+            
+            # 3. Créer la table {Nom}Details
+            details_table_name = f"{type_name}Details"
+            
+            # Vérifier si la table existe déjà
+            if DynamicTable.objects.filter(name=details_table_name).exists():
+                return Response(
+                    {'error': f'La table "{details_table_name}" existe déjà'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            details_table = DynamicTable.objects.create(
+                name=details_table_name,
+                slug=details_table_name.lower().replace(' ', '_'),
+                description=f'Table de détails pour le type {type_name}',
+                created_by=request.user
+            )
+            
+            # 4. Créer les colonnes demandées par l'utilisateur
+            choix_table = DynamicTable.objects.filter(name__icontains='choix').first()
+            
+            for i, column in enumerate(columns):
+                column_name = column.get('name', '').strip()
+                column_type = column.get('type', 'text')
+                is_required = column.get('is_required', False)
+                is_choice_field = column.get('is_choice_field', False)
+                choice_column_name = column.get('choice_column_name', '')
+                
+                if not column_name:
+                    continue
+                
+                # Créer le champ dans la table Details
+                field_data = {
+                    'name': column_name,
+                    'slug': column_name.lower().replace(' ', '_'),
+                    'field_type': column_type,
+                    'is_required': is_required,
+                    'order': i + 1
+                }
+                
+                # Si c'est un champ de choix avec FK vers Choix
+                if is_choice_field and choix_table and choice_column_name:
+                    field_data['field_type'] = 'foreign_key'
+                    field_data['related_table'] = choix_table
+                    
+                    # Vérifier si la colonne existe dans la table Choix
+                    choice_field = choix_table.fields.filter(
+                        name__iexact=choice_column_name
+                    ).first()
+                    
+                    if not choice_field:
+                        # Créer la colonne dans la table Choix
+                        choice_field = DynamicField.objects.create(
+                            table=choix_table,
+                            name=choice_column_name,
+                            slug=choice_column_name.lower().replace(' ', '_'),
+                            field_type='text',
+                            is_required=False,
+                            order=choix_table.fields.count() + 1
+                        )
+                
+                DynamicField.objects.create(
+                    table=details_table,
+                    **field_data
+                )
+            
+            # 5. Créer automatiquement les règles conditionnelles
+            # Trouver la table des projets
+            project_table = DynamicTable.objects.filter(name__icontains='projet').first()
+            if project_table:
+                # Trouver le champ type_projet dans la table projet
+                type_field = project_table.fields.filter(
+                    models.Q(name__icontains='type') | models.Q(slug__icontains='type')
+                ).first()
+                
+                if type_field and choix_table:
+                    # Importer le modèle ici pour éviter les imports circulaires
+                    from conditional_fields.models import ConditionalFieldRule
+                    
+                    # Créer une règle pour chaque colonne qui a un lien vers Choix
+                    for column in columns:
+                        if column.get('is_choice_field') and column.get('choice_column_name'):
+                            choice_column_name = column.get('choice_column_name', '')
+                            column_label = column.get('name', '')
+                            
+                            # Trouver le champ dans la table Choix
+                            choice_field = choix_table.fields.filter(
+                                name__iexact=choice_column_name
+                            ).first()
+                            
+                            if choice_field:
+                                # Créer la règle conditionnelle
+                                rule, created = ConditionalFieldRule.objects.get_or_create(
+                                    parent_table=project_table,
+                                    parent_field=type_field,
+                                    parent_value=type_name,
+                                    conditional_field_name=choice_column_name.lower().replace(' ', '_'),
+                                    defaults={
+                                        'conditional_field_label': column_label,
+                                        'is_required': column.get('is_required', False),
+                                        'order': 0,
+                                        'source_table': choix_table,
+                                        'source_field': choice_field,
+                                        'created_by': request.user
+                                    }
+                                )
+                                
+                                if created:
+                                    print(f"✅ Règle conditionnelle créée: {type_name} → {column_label}")
+            
+            return Response({
+                'success': True,
+                'message': f'Type "{type_name}" créé avec succès',
+                'type_record': {
+                    'id': type_record.id,
+                    'type_name': type_name
+                },
+                'details_table': DynamicTableSerializer(details_table).data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Erreur lors de la création du type: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
