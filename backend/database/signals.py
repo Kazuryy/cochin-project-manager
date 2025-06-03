@@ -4,6 +4,9 @@ from django.dispatch import receiver
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from .models import DynamicTable, DynamicField
+from django.db import models
+from .models import DynamicRecord
+from conditional_fields.models import ConditionalFieldRule
 
 @receiver(pre_save, sender=DynamicTable)
 def create_table_slug(sender, instance, **kwargs):
@@ -61,3 +64,77 @@ def validate_field_options(sender, instance, **kwargs):
     
     if instance.field_type == 'foreign_key' and not instance.related_table:
         raise ValidationError({'related_table': 'Une table liée est requise pour les champs de type clé étrangère.'})
+
+@receiver(post_save, sender=DynamicRecord)
+def auto_create_conditional_rules(sender, instance, created, **kwargs):
+    """
+    Crée automatiquement les règles conditionnelles quand un nouveau type est ajouté dans TableNames
+    """
+    if not created:
+        return
+    
+    # Vérifier si c'est un enregistrement dans la table TableNames/Types
+    if not instance.table or not instance.table.name.lower() in ['tablenames', 'table_names', 'types']:
+        return
+    
+    try:
+        # Récupérer le nom du type depuis les valeurs
+        type_name = None
+        for value in instance.values.all():
+            if value.field.name.lower() in ['nom', 'name', 'title', 'titre', 'label']:
+                type_name = value.value.strip()
+                break
+        
+        if not type_name:
+            return
+        
+        # Trouver les tables nécessaires
+        project_table = DynamicTable.objects.filter(name__icontains='projet').first()
+        choix_table = DynamicTable.objects.filter(name='Choix').first()
+        
+        if not project_table or not choix_table:
+            return
+        
+        # Trouver le champ type_projet
+        type_field = project_table.fields.filter(
+            models.Q(name__icontains='type') | models.Q(slug__icontains='type')
+        ).first()
+        
+        if not type_field:
+            return
+        
+        # Chercher un champ "Sous type {type_name}" dans la table Choix
+        potential_field_names = [
+            f"Sous type {type_name}",
+            f"sous type {type_name.lower()}",
+            f"Sous-type {type_name}",
+            f"sous-type {type_name.lower()}"
+        ]
+        
+        auto_detected_field = None
+        for field_name in potential_field_names:
+            auto_detected_field = choix_table.fields.filter(name__iexact=field_name).first()
+            if auto_detected_field:
+                break
+        
+        if auto_detected_field:
+            # Créer la règle automatiquement
+            rule, created_rule = ConditionalFieldRule.objects.get_or_create(
+                parent_table=project_table,
+                parent_field=type_field,
+                parent_value=type_name.lower(),
+                conditional_field_name=auto_detected_field.name.lower().replace(' ', '_'),
+                defaults={
+                    'conditional_field_label': auto_detected_field.name,
+                    'is_required': True,
+                    'order': 0,
+                    'source_table': choix_table,
+                    'source_field': auto_detected_field,
+                }
+            )
+            
+            if created_rule:
+                print(f"🎯 Signal: Règle auto-créée: {type_name} → {auto_detected_field.name}")
+        
+    except Exception as e:
+        print(f"❌ Erreur dans le signal auto_create_conditional_rules: {e}")

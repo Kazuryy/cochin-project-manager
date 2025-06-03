@@ -25,6 +25,16 @@ function Modal({
 }) {
   const modalRef = useRef(null);
   
+  // Debug: Tracer les changements d'état du modal
+  useEffect(() => {
+    console.log('🚪 Modal isOpen changé:', isOpen);
+    if (isOpen) {
+      console.log('📖 Modal OUVERT:', { title, preventClosing });
+    } else {
+      console.log('📕 Modal FERMÉ:', { title });
+    }
+  }, [isOpen, title, preventClosing]);
+  
   // Mapping des tailles vers les classes Tailwind
   const sizeClasses = {
     xs: 'max-w-xs',
@@ -43,20 +53,38 @@ function Modal({
   
   // Gérer la fermeture du modal lors du clic à l'extérieur
   const handleClickOutside = useCallback((event) => {
+    console.log('🖱️ Modal.handleClickOutside déclenché:', {
+      closeOnClickOutside,
+      preventClosing,
+      target: event.target,
+      modalContains: modalRef.current?.contains(event.target)
+    });
+    
     if (
       closeOnClickOutside && 
       !preventClosing &&
       modalRef.current && 
       !modalRef.current.contains(event.target)
     ) {
+      console.log('❌ Modal fermé par clic à l\'extérieur');
       onClose();
+    } else {
+      console.log('✅ Clic à l\'extérieur ignoré');
     }
   }, [closeOnClickOutside, preventClosing, onClose]);
   
   // Gérer la fermeture du modal avec la touche Escape
   const handleEscapeKey = useCallback((event) => {
+    console.log('⌨️ Modal.handleEscapeKey déclenché:', {
+      key: event.key,
+      preventClosing
+    });
+    
     if (!preventClosing && event.key === 'Escape') {
+      console.log('❌ Modal fermé par touche Escape');
       onClose();
+    } else {
+      console.log('✅ Touche Escape ignorée');
     }
   }, [preventClosing, onClose]);
   

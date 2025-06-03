@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Modal, Button, Alert } from '../ui';
 import { FiPlus, FiTrash2, FiDatabase } from 'react-icons/fi';
+import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
+import api from '../../services/api';
+
+// Désactiver Hot Refresh temporairement pour les tests
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    // Ne pas recharger ce module
+  });
+}
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Texte' },
@@ -11,7 +20,8 @@ const FIELD_TYPES = [
   { value: 'date', label: 'Date' },
   { value: 'datetime', label: 'Date et heure' },
   { value: 'boolean', label: 'Booléen' },
-  { value: 'choice', label: 'Liste de choix' }
+  { value: 'choice', label: 'Liste de choix' },
+  { value: 'foreign_key', label: 'Clé étrangère (FK)' }
 ];
 
 function CreateTypeModal({ 
@@ -21,10 +31,50 @@ function CreateTypeModal({
   isLoading = false,
   error = null 
 }) {
+  const { tables } = useDynamicTables();
   const [step, setStep] = useState(1); // 1: nom du type, 2: colonnes
   const [typeName, setTypeName] = useState('');
   const [columns, setColumns] = useState([]);
   const [typeNameError, setTypeNameError] = useState('');
+  const [tableFields, setTableFields] = useState({}); // Cache des champs par table
+
+  // Filtrer les tables disponibles pour les FK (exclure certaines tables système)
+  const availableTables = tables.filter(table => 
+    !table.name.toLowerCase().includes('details') && 
+    table.name !== 'TableNames'
+  );
+
+  // Fonction pour charger les champs d'une table
+  const loadTableFields = async (tableId) => {
+    console.log('🔍 Chargement des champs pour la table:', tableId);
+    
+    if (tableFields[tableId]) {
+      console.log('✅ Champs trouvés en cache:', tableFields[tableId]);
+      return tableFields[tableId]; // Déjà en cache
+    }
+
+    try {
+      console.log('📡 Appel API direct fetchTableWithFields...');
+      // Utiliser un appel API direct au lieu du provider pour éviter les changements d'état globaux
+      const tableData = await api.get(`/api/database/tables/${tableId}/`);
+      console.log('📊 Données reçues:', tableData);
+      
+      if (tableData?.fields) {
+        console.log('✅ Champs extraits:', tableData.fields);
+        setTableFields(prev => ({
+          ...prev,
+          [tableId]: tableData.fields
+        }));
+        return tableData.fields;
+      } else {
+        console.warn('⚠️ Aucun champ trouvé dans la réponse:', tableData);
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du chargement des champs:', error);
+      // Ne pas propager l'erreur pour éviter de fermer le modal
+    }
+    return [];
+  };
 
   const resetModal = () => {
     setStep(1);
@@ -61,7 +111,12 @@ function CreateTypeModal({
       type: 'text',
       is_required: false,
       is_choice_field: false,
-      choice_column_name: ''
+      choice_column_name: '',
+      // Nouvelles propriétés pour FK
+      is_foreign_key: false,
+      foreign_table_id: '',
+      foreign_reference_field: 'id', // Par défaut, pointer vers l'ID
+      foreign_display_field: ''
     }]);
   };
 
@@ -70,9 +125,41 @@ function CreateTypeModal({
   };
 
   const updateColumn = (id, field, value) => {
-    setColumns(columns.map(col => 
-      col.id === id ? { ...col, [field]: value } : col
-    ));
+    console.log('🔄 updateColumn appelée:', { id, field, value });
+    
+    setColumns(prevColumns => prevColumns.map(col => {
+      if (col.id === id) {
+        console.log('🎯 Colonne trouvée, mise à jour:', col);
+        const updatedCol = { ...col, [field]: value };
+        
+        // Si on change le type, réinitialiser les options spécifiques
+        if (field === 'type') {
+          console.log('📝 Changement de type:', value);
+          if (value === 'choice') {
+            updatedCol.is_choice_field = true;
+            updatedCol.is_foreign_key = false;
+            updatedCol.foreign_table_id = '';
+            updatedCol.foreign_display_field = '';
+          } else if (value === 'foreign_key') {
+            updatedCol.is_foreign_key = true;
+            updatedCol.is_choice_field = false;
+            updatedCol.choice_column_name = '';
+            updatedCol.foreign_reference_field = 'id'; // Défaut vers ID
+          } else {
+            updatedCol.is_choice_field = false;
+            updatedCol.is_foreign_key = false;
+            updatedCol.choice_column_name = '';
+            updatedCol.foreign_table_id = '';
+            updatedCol.foreign_reference_field = '';
+            updatedCol.foreign_display_field = '';
+          }
+        }
+        
+        console.log('✅ Colonne mise à jour:', updatedCol);
+        return updatedCol;
+      }
+      return col;
+    }));
   };
 
   const handleCreateType = async () => {
@@ -84,6 +171,7 @@ function CreateTypeModal({
   const isColumnValid = (column) => {
     if (!column.name.trim()) return false;
     if (column.is_choice_field && !column.choice_column_name.trim()) return false;
+    if (column.is_foreign_key && !column.foreign_table_id) return false;
     return true;
   };
 
@@ -186,6 +274,11 @@ function CreateTypeModal({
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {columns.map((column, index) => (
                   <div key={column.id} className="p-4 border border-base-300 rounded-lg space-y-3">
+                    {console.log(`🔍 Rendu colonne ${index + 1}:`, { 
+                      id: column.id, 
+                      foreign_table_id: column.foreign_table_id, 
+                      type_foreign_table_id: typeof column.foreign_table_id 
+                    })}
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-medium">Colonne {index + 1}</span>
                       <Button
@@ -214,12 +307,14 @@ function CreateTypeModal({
                       </div>
 
                       <div className="form-control">
-                        <label className="label">
+                        <label className="label" htmlFor="column_type">
                           <span className="label-text">Type de données</span>
                         </label>
                         <select
                           value={column.type}
-                          onChange={(e) => updateColumn(column.id, 'type', e.target.value)}
+                          onChange={(e) => {
+                            updateColumn(column.id, 'type', e.target.value);
+                          }}
                           className="select select-bordered select-sm"
                           disabled={isLoading}
                         >
@@ -244,19 +339,21 @@ function CreateTypeModal({
                         <span className="label-text ml-2">Requis</span>
                       </label>
 
-                      <label className="label cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={column.is_choice_field}
-                          onChange={(e) => updateColumn(column.id, 'is_choice_field', e.target.checked)}
-                          className="checkbox checkbox-sm"
-                          disabled={isLoading}
-                        />
-                        <span className="label-text ml-2">Lier à la table Choix</span>
-                      </label>
+                      {column.type === 'choice' && (
+                        <label className="label cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={column.is_choice_field}
+                            onChange={(e) => updateColumn(column.id, 'is_choice_field', e.target.checked)}
+                            className="checkbox checkbox-sm"
+                            disabled={isLoading}
+                          />
+                          <span className="label-text ml-2">Lier à la table Choix</span>
+                        </label>
+                      )}
                     </div>
 
-                    {column.is_choice_field && (
+                    {column.type === 'choice' && column.is_choice_field && (
                       <div className="form-control">
                         <label className="label">
                           <span className="label-text">Nom de la colonne dans Choix *</span>
@@ -274,6 +371,107 @@ function CreateTypeModal({
                             Cette colonne sera créée dans la table Choix si elle n'existe pas
                           </span>
                         </label>
+                      </div>
+                    )}
+
+                    {column.type === 'foreign_key' && (
+                      <div className="space-y-3">
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text">Table de référence *</span>
+                          </label>
+                          <select
+                            value={column.foreign_table_id}
+                            onChange={async (e) => {
+                              console.log('🚀 ONCLICK DÉCLENCHÉ! Valeur:', e.target.value);
+                              console.log('🔍 Valeur actuelle dans colonne:', column.foreign_table_id, 'type:', typeof column.foreign_table_id);
+                              const selectedTableId = e.target.value;
+                              console.log('📋 Table sélectionnée:', selectedTableId);
+                              
+                              // Mettre à jour la colonne en une seule fois
+                              updateColumn(column.id, 'foreign_table_id', selectedTableId);
+                              updateColumn(column.id, 'foreign_reference_field', 'id');
+                              
+                              // Charger les champs de la nouvelle table
+                              if (selectedTableId) {
+                                try {
+                                  console.log('🔄 Chargement des champs pour la table:', selectedTableId);
+                                  await loadTableFields(selectedTableId);
+                                } catch (error) {
+                                  console.error('❌ Erreur lors du chargement des champs dans onChange:', error);
+                                }
+                              }
+                            }}
+                            className="select select-bordered select-sm"
+                            disabled={isLoading}
+                          >
+                            <option value="">Sélectionner une table...</option>
+                            {availableTables.map(table => (
+                              <option key={table.id} value={table.id.toString()}>
+                                {table.name}
+                              </option>
+                            ))}
+                          </select>
+                          <label className="label">
+                            <span className="label-text-alt">
+                              Cette colonne pointera vers la table sélectionnée
+                            </span>
+                          </label>
+                        </div>
+
+                        {column.foreign_table_id && (
+                          <div className="form-control">
+                            <label className="label">
+                              <span className="label-text">Champ de référence *</span>
+                            </label>
+                            {console.log('🔍 Condition FK remplie:', {
+                              foreign_table_id: column.foreign_table_id,
+                              tableFields: tableFields,
+                              tableFieldsForThisTable: tableFields[column.foreign_table_id],
+                              availableFields: tableFields[column.foreign_table_id]?.length || 0
+                            })}
+                            <select
+                              value={column.foreign_reference_field}
+                              onChange={(e) => {
+                                console.log('🎯 Champ de référence sélectionné:', e.target.value);
+                                updateColumn(column.id, 'foreign_reference_field', e.target.value);
+                              }}
+                              className="select select-bordered select-sm"
+                              disabled={isLoading}
+                            >
+                              <option value="id">ID (clé primaire)</option>
+                              {tableFields[column.foreign_table_id]?.map(field => (
+                                <option key={field.id} value={field.slug}>
+                                  {field.name} ({field.field_type})
+                                </option>
+                              ))}
+                            </select>
+                            <label className="label">
+                              <span className="label-text-alt">
+                                Champ de la table {availableTables.find(t => t.id.toString() === column.foreign_table_id)?.name} à utiliser comme référence
+                              </span>
+                            </label>
+                          </div>
+                        )}
+
+                        <div className="form-control">
+                          <label className="label">
+                            <span className="label-text">Champ d'affichage (optionnel)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={column.foreign_display_field}
+                            onChange={(e) => updateColumn(column.id, 'foreign_display_field', e.target.value)}
+                            placeholder="Ex: nom, titre, description..."
+                            className="input input-bordered input-sm"
+                            disabled={isLoading}
+                          />
+                          <label className="label">
+                            <span className="label-text-alt">
+                              Champ à afficher dans les listes déroulantes (sinon utilisera le champ de référence)
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -30,14 +30,10 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Récupération de la table
+      // Un seul appel car l'API retourne déjà la table avec ses champs
       const table = await api.get(`/api/database/tables/${tableId}/`);
       
-      // Récupération des champs
-      const fields = await api.get(`/api/database/tables/${tableId}/fields/`);
-      
-      // Combiner la table et ses champs
-      return { ...table, fields };
+      return table;
     } catch (err) {
       console.error(`Erreur lors de la récupération de la table ${tableId}:`, err);
       setError(err.message || `Une erreur est survenue lors de la récupération de la table ${tableId}`);

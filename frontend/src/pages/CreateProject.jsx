@@ -219,30 +219,50 @@ function CreateProjectContent() {
 
   // Fonction améliorée pour recharger les champs conditionnels
   const reloadConditionalFields = useCallback(async () => {
+    console.log('🔄 reloadConditionalFields appelée:', { 
+      type_projet: formData.type_projet, 
+      projectTypes_length: projectTypes.length, 
+      projectTableId 
+    });
+
     if (!formData.type_projet || !projectTypes.length || !projectTableId) {
+      console.log('❌ Conditions non remplies pour charger les champs conditionnels');
       setConditionalFields([]);
       return;
     }
 
     try {
       const selectedType = findSelectedType(formData.type_projet);
+      console.log('🎯 Type sélectionné:', selectedType);
+      
       if (!selectedType) {
+        console.log('❌ Aucun type sélectionné trouvé');
         setConditionalFields([]);
         return;
       }
 
       const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+      console.log('📝 Nom du type:', typeName);
+      
       const tableData = await fetchTableData(projectTableId);
+      console.log('📊 Données de table:', tableData);
+      
       const typeField = findTypeField(tableData);
+      console.log('🏷️ Champ type trouvé:', typeField);
       
       if (!typeField) {
-        console.warn('Champ Type Projet non trouvé');
+        console.warn('❌ Champ Type Projet non trouvé');
         setConditionalFields([]);
         return;
       }
 
+      console.log('📡 Appel API règles conditionnelles:', { fieldId: typeField.id, typeName });
       const rules = await fetchConditionalRules(typeField.id, typeName);
+      console.log('📋 Règles reçues:', rules);
+      
       const fieldsConfig = transformRulesToFields(rules);
+      console.log('⚙️ Configuration des champs:', fieldsConfig);
+      
       setConditionalFields(fieldsConfig);
 
       // Réinitialiser les champs conditionnels quand on change de type
@@ -252,7 +272,7 @@ function CreateProjectContent() {
       }));
 
     } catch (err) {
-      console.error('Erreur lors du chargement des champs conditionnels:', err);
+      console.error('❌ Erreur lors du chargement des champs conditionnels:', err);
       setConditionalFields([]);
     }
   }, [formData.type_projet, projectTypes, projectTableId, findSelectedType, getFieldValue, fetchTableData, findTypeField, fetchConditionalRules, transformRulesToFields]);

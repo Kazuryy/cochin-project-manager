@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import CreateTypeModal from './modals/CreateTypeModal';
 
@@ -27,6 +27,11 @@ const SelectWithAddOption = ({
   const [newOptionData, setNewOptionData] = useState({ label: '' });
   const [isAdding, setIsAdding] = useState(false);
   const [typeCreationError, setTypeCreationError] = useState(null);
+
+  // Debug: Tracer les changements de showTypeModal
+  useEffect(() => {
+    console.log('🎪 SelectWithAddOption showTypeModal changé:', showTypeModal);
+  }, [showTypeModal]);
 
   const handleError = (message) => {
     if (onError) {
@@ -61,6 +66,8 @@ const SelectWithAddOption = ({
   };
 
   const handleCreateType = async (typeName, columns) => {
+    console.log('🏭 SelectWithAddOption.handleCreateType appelé:', { typeName, columns });
+    
     if (!onCreateType) {
       setTypeCreationError('Fonction de création de type non définie');
       return;
@@ -70,10 +77,12 @@ const SelectWithAddOption = ({
     setTypeCreationError(null);
     
     try {
+      console.log('🚀 Appel de onCreateType...');
       await onCreateType(typeName, columns);
+      console.log('✅ onCreateType terminé, fermeture du modal');
       setShowTypeModal(false);
     } catch (error) {
-      console.error('Erreur lors de la création du type:', error);
+      console.error('❌ Erreur lors de la création du type:', error);
       setTypeCreationError(error.message || 'Erreur lors de la création du type');
     } finally {
       setIsAdding(false);
@@ -106,9 +115,14 @@ const SelectWithAddOption = ({
   };
 
   const closeTypeModal = () => {
+    console.log('🔒 SelectWithAddOption.closeTypeModal appelé:', { isAdding });
+    
     if (!isAdding) {
+      console.log('✅ Fermeture du modal type');
       setShowTypeModal(false);
       setTypeCreationError(null);
+    } else {
+      console.log('🚫 Fermeture bloquée (isAdding=true)');
     }
   };
 
