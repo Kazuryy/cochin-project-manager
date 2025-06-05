@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import api from '../services/api';
+import DevisManager from '../components/devis/DevisManager';
 
 function ProjectDetailsContent() {
   const { projectId } = useParams();
@@ -486,6 +487,12 @@ function ProjectDetailsContent() {
               </div>
             </div>
           )}
+
+          {/* Section: Devis du projet */}
+          <DevisManager 
+            projectId={projectId}
+            readonly={true}
+          />
 
           {/* Debug info en développement */}
           <div className="collapse collapse-arrow bg-base-300">

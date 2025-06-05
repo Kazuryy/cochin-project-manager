@@ -5,6 +5,7 @@ import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import SelectWithAddOption from '../components/SelectWithAddOption';
 import { typeService } from '../services/typeService';
 import api from '../services/api';
+import DevisManager from '../components/devis/DevisManager';
 
 function EditProjectContent() {
   const { projectId } = useParams();
@@ -1306,6 +1307,14 @@ function EditProjectContent() {
               </div>
             </form>
           </div>
+        </div>
+
+        {/* Section Devis */}
+        <div className="mt-8">
+          <DevisManager 
+            projectId={projectId}
+            readonly={false}
+          />
         </div>
 
         {/* Modal pour ajouter un contact */}

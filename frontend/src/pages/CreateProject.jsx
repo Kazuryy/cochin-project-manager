@@ -6,6 +6,7 @@ import SelectWithAddOption from '../components/SelectWithAddOption';
 import { typeService } from '../services/typeService';
 import { useFormPersistence } from '../hooks/useFormPersistence';
 import api from '../services/api';
+import DevisManager from '../components/devis/DevisManager';
 
 function CreateProjectContent() {
   const navigate = useNavigate();
@@ -56,6 +57,10 @@ function CreateProjectContent() {
     email: '',
     equipe: ''
   });
+
+  // État pour le projet créé (pour les devis)
+  const [createdProject, setCreatedProject] = useState(null);
+  const [showDevisSection, setShowDevisSection] = useState(false);
 
   // Vérifier s'il y a des données à restaurer au chargement
   useEffect(() => {
@@ -804,12 +809,25 @@ function CreateProjectContent() {
       if (result.success) {
         setSuccessMessage('Projet créé avec succès !');
         
+        // Enregistrer le projet créé pour les devis
+        setCreatedProject({
+          id: result.project.id,
+          name: projectData.nom_projet
+        });
+        
+        // Afficher la section devis
+        setShowDevisSection(true);
+        
         // Effacer les données sauvegardées après succès
         clearSavedData();
         
+        // Scroll vers la section devis
         setTimeout(() => {
-          navigate('/dashboard');
-        }, 2000);
+          const devisSection = document.getElementById('devis-section');
+          if (devisSection) {
+            devisSection.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 500);
       } else {
         throw new Error(result.error);
       }
@@ -1330,6 +1348,40 @@ function CreateProjectContent() {
             </form>
           </div>
         </div>
+
+        {/* Section Devis - Apparaît après la création du projet */}
+        {showDevisSection && createdProject && (
+          <div id="devis-section" className="mt-8">
+            <div className="alert alert-success mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h3 className="font-bold">Projet "{createdProject.name}" créé avec succès !</h3>
+                <div className="text-sm">Vous pouvez maintenant gérer les devis de ce projet ci-dessous, ou retourner au tableau de bord.</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => navigate('/dashboard')}
+                >
+                  📊 Retour au dashboard
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => navigate(`/projects/${createdProject.id}`)}
+                >
+                  👁️ Voir le projet
+                </button>
+              </div>
+            </div>
+            
+            <DevisManager 
+              projectId={createdProject.id}
+              readonly={false}
+            />
+          </div>
+        )}
 
         {/* Debug info */}
         <div className="collapse collapse-arrow bg-base-300 mt-6">
