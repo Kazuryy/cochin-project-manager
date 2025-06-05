@@ -1,6 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiCalendar, FiPlus, FiDatabase } from 'react-icons/fi';
+import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiPlus, FiDatabase } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import MultipleSelector from '../components/filters/MultiSelector';
@@ -255,43 +255,6 @@ function DashboardContent() {
   const startIndex = currentPage * rowsPerPage;
   const paginatedProjects = filteredProjects.slice(startIndex, startIndex + rowsPerPage);
 
-  // Fonctions utilitaires pour les dates
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Date inconnue';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('fr-FR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch {
-      return 'Date invalide';
-    }
-  };
-
-  const getTimeAgo = (dateString) => {
-    if (!dateString) return 'Date inconnue';
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffTime = Math.abs(now - date);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays === 0) return "Aujourd'hui";
-      if (diffDays === 1) return "Il y a 1 jour";
-      if (diffDays < 30) return `Il y a ${diffDays} jours`;
-      if (diffDays < 365) {
-        const months = Math.floor(diffDays / 30);
-        return `Il y a ${months} mois`;
-      }
-      const years = Math.floor(diffDays / 365);
-      return `Il y a ${years} an${years > 1 ? 's' : ''}`;
-    } catch {
-      return 'Date invalide';
-    }
-  };
-
   const resetFilters = () => {
     setSearchTerm('');
     setSelectedTypes([]);
@@ -441,7 +404,7 @@ function DashboardContent() {
                     <tr>
                       <th>Projet</th>
                       <th>Contact Principal</th>
-                      <th>Dernière Activité</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -492,9 +455,9 @@ function DashboardContent() {
                         ) || 'Équipe inconnue';
                         
                         return (
-                          <tr key={project.id}>
-                      <td>
-                        <div className="flex items-center gap-4">
+                          <tr key={project.id} className="hover">
+                            <td>
+                              <div className="flex items-center gap-4">
                                 <div>
                                   <div className="font-bold text-lg">{projectName}</div>
                                   <div className="text-sm opacity-70 max-w-md">
@@ -502,21 +465,19 @@ function DashboardContent() {
                                       ? `${projectDescription.substring(0, 100)}...` 
                                       : projectDescription
                                     }
-                            </div>
+                                  </div>
                                   <div className="text-xs opacity-50 mt-1">
                                     N° {projectNumber}
-                            </div>
-                            <div className="mt-2">
+                                  </div>
+                                  <div className="mt-2">
                                     <div className="badge badge-accent mr-2">{projectType}</div>
                                     <div className="badge badge-outline badge-secondary mr-2">{equipe}</div>
-                            </div>
-                                  
-
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex flex-col">
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                   <FiUser className="text-sm" />
                                   <span className="font-medium">{contactInfo.nom}</span>
@@ -527,16 +488,15 @@ function DashboardContent() {
                               </div>
                             </td>
                             <td>
-                              <div className="flex items-center gap-2">
-                                <FiCalendar className="text-sm" />
-                                <div className="flex flex-col">
-                                  <span className="text-sm">{getTimeAgo(project.created_at)}</span>
-                                  <span className="text-xs opacity-70">
-                                    Créé le {formatDate(project.created_at)}
-                                  </span>
-                                </div>
-                        </div>
-                      </td>
+                              <div className="flex gap-2">
+                                <Link 
+                                  to={`/projects/${project.id}`} 
+                                  className="btn btn-primary btn-sm"
+                                >
+                                  👁️ Voir détails
+                                </Link>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })

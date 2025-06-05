@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CreateProject from './pages/CreateProject';
+import ProjectDetails from './pages/ProjectDetails';
 import TestCreateType from './pages/TestCreateType';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
@@ -41,6 +42,16 @@ function MainContent() {
             element={
               <ProtectedRoute>
                 <CreateProject />
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* Route pour voir les détails d'un projet */}
+          <Route 
+            path="/projects/:projectId" 
+            element={
+              <ProtectedRoute>
+                <ProjectDetails />
               </ProtectedRoute>
             } 
           />

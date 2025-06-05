@@ -5,6 +5,7 @@ import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import SelectWithAddOption from '../components/SelectWithAddOption';
 import { typeService } from '../services/typeService';
 import { useFormPersistence } from '../hooks/useFormPersistence';
+import api from '../services/api';
 
 function CreateProjectContent() {
   const navigate = useNavigate();
@@ -194,76 +195,234 @@ function CreateProjectContent() {
     return response.json();
   }, []);
 
-  const findTypeField = useCallback((tableData) => {
-    return tableData.fields?.find(field => 
-      field.name === 'Type Projet' || field.name.toLowerCase().includes('type')
+  // Nouvelle fonction pour trouver la table Details correspondant au type
+  const findDetailsTable = useCallback((typeName) => {
+    const detailsTableName = `${typeName}Details`;
+    return tables.find(table => 
+      table.name === detailsTableName ||
+      table.name.toLowerCase() === detailsTableName.toLowerCase()
     );
-  }, []);
+  }, [tables]);
 
-  const fetchConditionalRules = useCallback(async (fieldId, typeName) => {
-    const response = await fetch(`/api/conditional-fields/rules/by_field_and_value/?parent_field_id=${fieldId}&parent_value=${encodeURIComponent(typeName)}`, {
-      credentials: 'include',
-    });
-    if (!response.ok) throw new Error('API conditionnelle a retourné une erreur');
-    return response.json();
-  }, []);
+  // Nouvelle fonction pour transformer les champs de table en configuration d'affichage
+  const transformTableFieldsToDisplayConfig = useCallback((fields) => {
+    return fields
+      .filter(field => {
+        // Exclure les champs FK qui pointent vers la table Projet
+        if (field.field_type === 'foreign_key' && field.related_table) {
+          // Trouver la table Projet pour comparaison
+          const projectTable = tables.find(t => 
+            t.name === 'Projet' ||
+            t.slug === 'projet' ||
+            t.name === 'Projets' || 
+            t.slug === 'projets'
+          );
+          
+          // Si ce champ pointe vers la table Projet, l'exclure
+          if (projectTable && field.related_table === projectTable.id) {
+            console.log(`🚫 Champ FK vers Projet exclu: ${field.name} (sera géré automatiquement)`);
+            return false;
+          }
+        }
+        return true;
+      })
+      .map(field => ({
+        name: field.slug,
+        label: field.name,
+        required: field.is_required,
+        field_type: field.field_type,
+        related_table: field.related_table,
+        related_field: field.related_field,
+        options: [] // Les options seront chargées pour les FK et choice fields
+      }));
+  }, [tables]);
 
-  const transformRulesToFields = useCallback((rules) => {
-    return rules.map(rule => ({
-      name: rule.conditional_field_name,
-      label: rule.conditional_field_label,
-      required: rule.is_required,
-      options: rule.options || []
-    }));
-  }, []);
+  // Fonction pour charger les options d'un champ FK
+  const loadFieldOptions = useCallback(async (field) => {
+    if (field.field_type === 'foreign_key' && field.related_table) {
+      try {
+        // Récupérer le type sélectionné pour déduire la bonne colonne
+        const selectedType = findSelectedType(formData.type_projet);
+        
+        if (!selectedType) {
+          return [];
+        }
 
-  // Fonction améliorée pour recharger les champs conditionnels
+        const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+        
+        if (!typeName) {
+          return [];
+        }
+
+        // Charger les champs de la table Choix pour identifier la bonne colonne
+        const choixTableData = await fetchTableData(field.related_table);
+        
+        if (!choixTableData.fields || choixTableData.fields.length === 0) {
+          return [];
+        }
+
+        // Utiliser la même logique de déduction que dans addNewOption
+        let targetField = null;
+        
+        // 1. Chercher un champ qui combine le nom du champ + type
+        const fieldLabelClean = field.label.toLowerCase();
+        const typeNameClean = typeName.toLowerCase();
+        
+        const combinedPatterns = [
+          `${fieldLabelClean} ${typeNameClean}`,      // "sous type prestation"
+          `${fieldLabelClean}_${typeNameClean}`,      // "sous_type_prestation"
+          `${typeNameClean}_${fieldLabelClean}`,      // "prestation_sous_type"
+          `${fieldLabelClean}${typeNameClean}`,       // "soustypeprestation"
+        ];
+
+        for (const pattern of combinedPatterns) {
+          targetField = choixTableData.fields.find(choixField => 
+            choixField.slug.toLowerCase().includes(pattern.replace(' ', '_')) ||
+            choixField.name.toLowerCase().includes(pattern) ||
+            choixField.slug.toLowerCase() === pattern.replace(' ', '_')
+          );
+          if (targetField) {
+            break;
+          }
+        }
+
+        // 2. Si pas trouvé, chercher par nom de champ seul
+        if (!targetField) {
+          const fieldPatterns = [
+            fieldLabelClean,
+            fieldLabelClean.replace(' ', '_'),
+            field.name.toLowerCase(),
+            field.name.toLowerCase().replace(' ', '_')
+          ];
+
+          for (const pattern of fieldPatterns) {
+            targetField = choixTableData.fields.find(choixField => 
+              choixField.slug.toLowerCase() === pattern ||
+              choixField.name.toLowerCase() === pattern ||
+              choixField.slug.toLowerCase().includes(pattern) ||
+              choixField.name.toLowerCase().includes(pattern)
+            );
+            if (targetField) {
+              break;
+            }
+          }
+        }
+
+        // 3. Si toujours pas trouvé, utiliser le premier champ text disponible
+        if (!targetField) {
+          targetField = choixTableData.fields.find(choixField => 
+            ['text', 'long_text'].includes(choixField.field_type)
+          );
+        }
+
+        if (!targetField) {
+          return [];
+        }
+
+        // Maintenant charger tous les enregistrements et extraire les valeurs de la colonne spécifique
+        const response = await fetch(`/api/database/records/by_table/?table_id=${field.related_table}`, {
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Erreur lors du chargement des options FK');
+        const records = await response.json();
+        
+        // Extraire les valeurs de la colonne spécifique et supprimer les doublons
+        const uniqueValues = new Set();
+        const options = [];
+        
+        const recordsList = records.results || records;
+        
+        recordsList.forEach((record) => {
+          const extractedValue = getFieldValue(record, targetField.slug);
+          
+          if (extractedValue && typeof extractedValue === 'string') {
+            const trimmedValue = extractedValue.trim();
+            
+            if (trimmedValue && !uniqueValues.has(trimmedValue)) {
+              uniqueValues.add(trimmedValue);
+              options.push({
+                value: trimmedValue,
+                label: trimmedValue
+              });
+            }
+          }
+        });
+
+        return options.sort((a, b) => a.label.localeCompare(b.label));
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des options FK:', error);
+        return [];
+      }
+    } else if (field.field_type === 'choice' && field.options) {
+      // Traiter les options statiques s'il y en a
+      try {
+        const options = typeof field.options === 'string' 
+          ? JSON.parse(field.options) 
+          : field.options;
+        return Array.isArray(options) 
+          ? options.map(opt => ({ value: opt, label: opt }))
+          : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [getFieldValue, findSelectedType, formData.type_projet, fetchTableData]);
+
+  // Fonction principale pour recharger les champs basés sur la table Details
   const reloadConditionalFields = useCallback(async () => {
-    console.log('🔄 reloadConditionalFields appelée:', { 
-      type_projet: formData.type_projet, 
-      projectTypes_length: projectTypes.length, 
-      projectTableId 
-    });
-
-    if (!formData.type_projet || !projectTypes.length || !projectTableId) {
-      console.log('❌ Conditions non remplies pour charger les champs conditionnels');
+    if (!formData.type_projet || !projectTypes.length) {
       setConditionalFields([]);
       return;
     }
 
     try {
       const selectedType = findSelectedType(formData.type_projet);
-      console.log('🎯 Type sélectionné:', selectedType);
       
       if (!selectedType) {
-        console.log('❌ Aucun type sélectionné trouvé');
         setConditionalFields([]);
         return;
       }
 
       const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
-      console.log('📝 Nom du type:', typeName);
       
-      const tableData = await fetchTableData(projectTableId);
-      console.log('📊 Données de table:', tableData);
-      
-      const typeField = findTypeField(tableData);
-      console.log('🏷️ Champ type trouvé:', typeField);
-      
-      if (!typeField) {
-        console.warn('❌ Champ Type Projet non trouvé');
+      if (!typeName) {
         setConditionalFields([]);
         return;
       }
 
-      console.log('📡 Appel API règles conditionnelles:', { fieldId: typeField.id, typeName });
-      const rules = await fetchConditionalRules(typeField.id, typeName);
-      console.log('📋 Règles reçues:', rules);
+      // Trouver la table Details correspondante
+      const detailsTable = findDetailsTable(typeName);
       
-      const fieldsConfig = transformRulesToFields(rules);
-      console.log('⚙️ Configuration des champs:', fieldsConfig);
+      if (!detailsTable) {
+        setConditionalFields([]);
+        return;
+      }
+
+      // Charger les champs de la table Details
+      const tableData = await fetchTableData(detailsTable.id);
       
-      setConditionalFields(fieldsConfig);
+      if (!tableData.fields || tableData.fields.length === 0) {
+        setConditionalFields([]);
+        return;
+      }
+
+      // Transformer les champs en configuration d'affichage
+      const fieldsConfig = transformTableFieldsToDisplayConfig(tableData.fields);
+      
+      // Charger les options pour chaque champ qui en a besoin
+      const fieldsWithOptions = await Promise.all(
+        fieldsConfig.map(async (field) => {
+          const options = await loadFieldOptions(field);
+          return {
+            ...field,
+            options
+          };
+        })
+      );
+
+      setConditionalFields(fieldsWithOptions);
 
       // Réinitialiser les champs conditionnels quand on change de type
       setFormData(prev => ({
@@ -272,10 +431,10 @@ function CreateProjectContent() {
       }));
 
     } catch (err) {
-      console.error('❌ Erreur lors du chargement des champs conditionnels:', err);
+      console.error('❌ Erreur lors du chargement des champs depuis la table Details:', err);
       setConditionalFields([]);
     }
-  }, [formData.type_projet, projectTypes, projectTableId, findSelectedType, getFieldValue, fetchTableData, findTypeField, fetchConditionalRules, transformRulesToFields]);
+  }, [formData.type_projet, projectTypes, findSelectedType, getFieldValue, findDetailsTable, fetchTableData, transformTableFieldsToDisplayConfig, loadFieldOptions]);
 
   // Logique pour les champs conditionnels
   useEffect(() => {
@@ -374,7 +533,7 @@ function CreateProjectContent() {
     }
   };
 
-  // Fonction pour ajouter une nouvelle option
+  // Fonction pour ajouter une nouvelle option (mise à jour pour les champs Details)
   const addNewOption = async (fieldName, optionLabel) => {
     if (!optionLabel.trim()) {
       showToast('Veuillez remplir le libellé', 'error');
@@ -382,100 +541,128 @@ function CreateProjectContent() {
     }
 
     try {
-      // Trouver la règle conditionnelle correspondante
+      // Trouver le champ correspondant
       const currentField = conditionalFields.find(field => field.name === fieldName);
       if (!currentField) {
         showToast('Champ non trouvé', 'error');
         return;
       }
 
-      // Récupérer l'ID de la règle depuis l'API (au lieu de hardcoder)
-      if (!formData.type_projet || !projectTableId) {
-        showToast('Sélectionnez d\'abord un type de projet', 'error');
-        return;
-      }
+      // Pour les champs FK, ajouter dans la table liée
+      if (currentField.field_type === 'foreign_key' && currentField.related_table) {
+        try {
+          // Récupérer le type sélectionné pour déduire le nom de colonne
+          const selectedType = findSelectedType(formData.type_projet);
+          if (!selectedType) {
+            showToast('Type de projet non sélectionné', 'error');
+            return;
+          }
 
-      // Trouver le type sélectionné
-      const selectedType = projectTypes.find(type => type.id.toString() === formData.type_projet.toString());
-      if (!selectedType) {
-        showToast('Type de projet non trouvé', 'error');
-        return;
-      }
+          const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+          if (!typeName) {
+            showToast('Nom du type non trouvé', 'error');
+            return;
+          }
 
-      const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+          // Charger les champs de la table Choix pour trouver la bonne colonne
+          const choixTableData = await fetchTableData(currentField.related_table);
+          console.log('🎯 Champs de la table Choix:', choixTableData.fields);
+          
+          if (!choixTableData.fields || choixTableData.fields.length === 0) {
+            showToast('Aucun champ trouvé dans la table Choix', 'error');
+            return;
+          }
 
-      // Récupérer l'ID du champ "Type Projet"
-      const tableResponse = await fetch(`/api/database/tables/${projectTableId}/`, {
-        credentials: 'include',
-      });
+          // Stratégie de déduction du bon champ dans la table Choix
+          let targetField = null;
+          
+          // 1. Chercher un champ qui combine le nom du champ + type
+          // Ex: "Sous type Prestation", "Qualité Formation"
+          const fieldLabelClean = currentField.label.toLowerCase();
+          const typeNameClean = typeName.toLowerCase();
+          
+          const combinedPatterns = [
+            `${fieldLabelClean} ${typeNameClean}`,      // "sous type prestation"
+            `${fieldLabelClean}_${typeNameClean}`,      // "sous_type_prestation"
+            `${typeNameClean}_${fieldLabelClean}`,      // "prestation_sous_type"
+            `${fieldLabelClean}${typeNameClean}`,       // "soustypeprestation"
+          ];
 
-      if (!tableResponse.ok) {
-        showToast('Erreur lors de la récupération des informations de table', 'error');
-        return;
-      }
+          for (const pattern of combinedPatterns) {
+            targetField = choixTableData.fields.find(field => 
+              field.slug.toLowerCase().includes(pattern.replace(' ', '_')) ||
+              field.name.toLowerCase().includes(pattern) ||
+              field.slug.toLowerCase() === pattern.replace(' ', '_')
+            );
+            if (targetField) {
+              console.log(`✅ Champ trouvé avec pattern "${pattern}":`, targetField);
+              break;
+            }
+          }
 
-      const tableData = await tableResponse.json();
-      const typeField = tableData.fields?.find(field => 
-        field.name === 'Type Projet' || field.name.toLowerCase().includes('type')
-      );
+          // 2. Si pas trouvé, chercher par nom de champ seul
+          if (!targetField) {
+            const fieldPatterns = [
+              fieldLabelClean,
+              fieldLabelClean.replace(' ', '_'),
+              currentField.name.toLowerCase(),
+              currentField.name.toLowerCase().replace(' ', '_')
+            ];
 
-      if (!typeField) {
-        showToast('Champ Type Projet non trouvé', 'error');
-        return;
-      }
-
-      // Récupérer les règles pour trouver le bon rule_id
-      const rulesResponse = await fetch(`/api/conditional-fields/rules/by_field_and_value/?parent_field_id=${typeField.id}&parent_value=${encodeURIComponent(typeName)}`, {
-        credentials: 'include',
-      });
-
-      if (!rulesResponse.ok) {
-        showToast('Erreur lors de la récupération des règles', 'error');
-        return;
-      }
-
-      const rules = await rulesResponse.json();
-      const targetRule = rules.find(rule => rule.conditional_field_name === fieldName);
-
-      if (!targetRule) {
-        showToast('Règle non trouvée', 'error');
-        return;
-      }
-
-      // Ajouter l'option via l'API avec le bon rule_id
-      const response = await fetch('/api/conditional-fields/add-option/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          rule_id: targetRule.id, // Utiliser le vrai ID de la règle
-          value: optionLabel,
-          label: optionLabel
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Mettre à jour la liste locale
-        setConditionalFields(prev => prev.map(field => 
-          field.name === fieldName 
-            ? { 
-                ...field, 
-                options: [...field.options, { 
-                  value: result.option.value, 
-                  label: result.option.label 
-                }] 
+            for (const pattern of fieldPatterns) {
+              targetField = choixTableData.fields.find(field => 
+                field.slug.toLowerCase() === pattern ||
+                field.name.toLowerCase() === pattern ||
+                field.slug.toLowerCase().includes(pattern) ||
+                field.name.toLowerCase().includes(pattern)
+              );
+              if (targetField) {
+                console.log(`✅ Champ trouvé avec pattern de champ "${pattern}":`, targetField);
+                break;
               }
-            : field
-        ));
-        
-        showToast(`Option "${optionLabel}" ajoutée avec succès`, 'success');
+            }
+          }
+
+          // 3. Si toujours pas trouvé, utiliser le premier champ text disponible
+          if (!targetField) {
+            targetField = choixTableData.fields.find(field => 
+              ['text', 'long_text'].includes(field.field_type)
+            );
+            console.log('⚠️ Aucun champ spécifique trouvé, utilisation du premier champ text:', targetField);
+          }
+
+          if (!targetField) {
+            showToast('Aucun champ approprié trouvé dans la table Choix pour stocker la nouvelle option', 'error');
+            return;
+          }
+
+          console.log('✅ Champ cible final sélectionné:', targetField);
+
+          // Créer l'enregistrement avec le bon champ
+          await api.post('/api/database/records/create_with_values/', {
+            table_id: currentField.related_table,
+            values: {
+              [targetField.slug]: optionLabel
+            }
+          });
+
+          // Recharger les options pour ce champ
+          const newOptions = await loadFieldOptions(currentField);
+          
+          // Mettre à jour la liste locale
+          setConditionalFields(prev => prev.map(field => 
+            field.name === fieldName 
+              ? { ...field, options: newOptions }
+              : field
+          ));
+          
+          showToast(`Option "${optionLabel}" ajoutée avec succès dans ${targetField.name}`, 'success');
+        } catch (error) {
+          console.error('Erreur lors de l\'ajout de l\'option:', error);
+          showToast(error.response?.data?.error || 'Erreur lors de l\'ajout de l\'option', 'error');
+        }
       } else {
-        const errorData = await response.json();
-        showToast(errorData.error || 'Erreur lors de l\'ajout de l\'option', 'error');
+        showToast('Ce type de champ ne supporte pas l\'ajout d\'options dynamiques', 'warning');
       }
     } catch (err) {
       console.error('Erreur lors de l\'ajout de l\'option:', err);
@@ -568,20 +755,38 @@ function CreateProjectContent() {
     setIsSubmitting(true);
     setFormErrors({});
 
-    // Préparer les données pour la soumission
-    const submitData = {
-      nom_projet: formData.nom_projet,
-      numero_projet: formData.numero_projet || generateProjectNumber(),
-      contact_principal: formData.contact_principal,
-      equipe: formData.equipe,
-      description: formData.description,
-      type_projet: formData.type_projet,
-      // Ajouter les champs conditionnels
-      ...formData.conditionalFields
-    };
+    try {
+      // Préparer les données du projet principal
+      const projectData = {
+        nom_projet: formData.nom_projet,
+        numero_projet: formData.numero_projet || generateProjectNumber(),
+        contact_principal: formData.contact_principal,
+        type_projet: formData.type_projet,
+        equipe: formData.equipe,
+        description: formData.description
+      };
 
-    createRecord(projectTableId, submitData).then(result => {
-      if (result) {
+      // Préparer les champs conditionnels pour la table Details
+      const conditionalFieldsData = formData.conditionalFields;
+
+      // Logs détaillés pour le débogage
+      console.log('📤 === DONNÉES ENVOYÉES AU BACKEND ===');
+      console.log('🏗️ Données projet:', projectData);
+      console.log('⚙️ Champs conditionnels:', conditionalFieldsData);
+      console.log('🎯 Type de projet ID:', formData.type_projet);
+      console.log('📋 Configuration des champs conditionnels disponibles:');
+      conditionalFields.forEach((field, index) => {
+        console.log(`  ${index + 1}. ${field.label} (slug: ${field.name}, type: ${field.field_type})`);
+      });
+
+      // Utiliser le nouveau service transactionnel
+      const result = await typeService.createProjectWithDetails(
+        projectData,
+        conditionalFieldsData,
+        formData.type_projet
+      );
+
+      if (result.success) {
         setSuccessMessage('Projet créé avec succès !');
         
         // Effacer les données sauvegardées après succès
@@ -590,15 +795,18 @@ function CreateProjectContent() {
         setTimeout(() => {
           navigate('/dashboard');
         }, 2000);
+      } else {
+        throw new Error(result.error);
       }
-    }).catch(error => {
+
+    } catch (error) {
       console.error('Erreur lors de la création du projet:', error);
       setFormErrors({ 
         submit: error.message || 'Erreur lors de la création du projet. Veuillez réessayer.' 
       });
-    }).finally(() => {
+    } finally {
       setIsSubmitting(false);
-    });
+    }
   };
 
   const showToast = (message, type = 'info', duration = 2000) => {
@@ -910,40 +1118,148 @@ function CreateProjectContent() {
                       ⚙️ Paramètres spécifiques
                     </h2>
                     
-                    {conditionalFields.map((field) => (
-                      <div key={field.name} className="form-control w-full mb-4">
-                        <label className="label" htmlFor={`conditional_${field.name}`}>
-                          <span className="label-text font-medium">
-                            {field.label} 
-                            {field.required && <span className="text-error">*</span>}
-                          </span>
-                        </label>
-                        
-                        <SelectWithAddOption
-                          id={`conditional_${field.name}`}
-                          name={`conditional_${field.name}`}
-                          value={formData.conditionalFields[field.name] || ''}
-                          onChange={handleChange}
-                          options={field.options.map(option => ({
-                            value: option.value,
-                            label: option.label
-                          }))}
-                          placeholder="Sélectionner..."
-                          required={field.required}
-                          className={formErrors[`conditional_${field.name}`] ? 'select-error' : ''}
-                          onAddOption={(optionLabel) => addNewOption(field.name, optionLabel)}
-                          addButtonTitle="Ajouter une nouvelle option"
-                        />
-                        
-                        {formErrors[`conditional_${field.name}`] && (
-                          <label className="label">
-                            <span className="label-text-alt text-error">
-                              {formErrors[`conditional_${field.name}`]}
+                    {conditionalFields.map((field) => {
+                      const fieldId = `conditional_${field.name}`;
+                      const fieldValue = formData.conditionalFields[field.name] || '';
+                      const fieldError = formErrors[fieldId];
+
+                      return (
+                        <div key={field.name} className="form-control w-full mb-4">
+                          <label className="label" htmlFor={fieldId}>
+                            <span className="label-text font-medium">
+                              {field.label} 
+                              {field.required && <span className="text-error">*</span>}
                             </span>
                           </label>
-                        )}
-                      </div>
-                    ))}
+                          
+                          {/* Rendu selon le type de champ */}
+                          {field.field_type === 'text' && (
+                            <input
+                              type="text"
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              placeholder={`Saisir ${field.label.toLowerCase()}`}
+                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                              required={field.required}
+                            />
+                          )}
+                          
+                          {field.field_type === 'long_text' && (
+                            <textarea
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              placeholder={`Saisir ${field.label.toLowerCase()}`}
+                              className={`textarea textarea-bordered w-full ${fieldError ? 'textarea-error' : ''}`}
+                              required={field.required}
+                              rows="3"
+                            />
+                          )}
+                          
+                          {field.field_type === 'number' && (
+                            <input
+                              type="number"
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              placeholder={`Saisir ${field.label.toLowerCase()}`}
+                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                              required={field.required}
+                            />
+                          )}
+                          
+                          {field.field_type === 'decimal' && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              placeholder={`Saisir ${field.label.toLowerCase()}`}
+                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                              required={field.required}
+                            />
+                          )}
+                          
+                          {field.field_type === 'date' && (
+                            <input
+                              type="date"
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                              required={field.required}
+                            />
+                          )}
+                          
+                          {field.field_type === 'datetime' && (
+                            <input
+                              type="datetime-local"
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                              required={field.required}
+                            />
+                          )}
+                          
+                          {field.field_type === 'boolean' && (
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={fieldId}
+                                name={fieldId}
+                                checked={fieldValue === true || fieldValue === 'true'}
+                                onChange={(e) => {
+                                  const event = {
+                                    target: {
+                                      name: fieldId,
+                                      value: e.target.checked
+                                    }
+                                  };
+                                  handleChange(event);
+                                }}
+                                className="checkbox"
+                              />
+                              <span className="label-text">Oui</span>
+                            </div>
+                          )}
+                          
+                          {(field.field_type === 'choice' || field.field_type === 'foreign_key') && (
+                            <SelectWithAddOption
+                              id={fieldId}
+                              name={fieldId}
+                              value={fieldValue}
+                              onChange={handleChange}
+                              options={field.options.map(option => ({
+                                value: option.value,
+                                label: option.label
+                              }))}
+                              placeholder="Sélectionner..."
+                              required={field.required}
+                              className={fieldError ? 'select-error' : ''}
+                              onAddOption={field.field_type === 'foreign_key' ? (optionLabel) => addNewOption(field.name, optionLabel) : undefined}
+                              addButtonTitle={field.field_type === 'foreign_key' ? "Ajouter une nouvelle option" : undefined}
+                            />
+                          )}
+                          
+                          {fieldError && (
+                            <label className="label">
+                              <span className="label-text-alt text-error">
+                                {fieldError}
+                              </span>
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -991,7 +1307,7 @@ function CreateProjectContent() {
                 <button
                   type="submit"
                   className={`btn btn-primary ${isSubmitting ? 'loading' : ''}`}
-                  disabled={isSubmitting || !projectTableId}
+                  disabled={isSubmitting}
                 >
                   {isSubmitting ? 'Création...' : 'Créer le projet'}
                 </button>
