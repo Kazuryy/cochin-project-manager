@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 import { Button, Alert, Modal } from '../ui';
-import { FiPlus, FiEdit, FiTrash2, FiFilter, FiSearch, FiDownload } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiFilter, FiSearch, FiDownload, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 
 function RecordList({ tableId }) {
   const { 
@@ -25,6 +25,10 @@ function RecordList({ tableId }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [deleteError, setDeleteError] = useState('');
   
+  // États pour le tri
+  const [sortField, setSortField] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' ou 'desc'
+  
   // Charger les données de la table et ses champs
   useEffect(() => {
     const loadTable = async () => {
@@ -44,19 +48,7 @@ function RecordList({ tableId }) {
       if (table) {
         const recordsData = await fetchRecords(tableId, filters);
         if (recordsData && Array.isArray(recordsData)) {
-          // Trier les enregistrements par custom_id croissant
-          const sortedRecords = recordsData.sort((a, b) => {
-            // Les enregistrements avec custom_id viennent en premier, triés par custom_id
-            if (a.custom_id && b.custom_id) {
-              return a.custom_id - b.custom_id;
-            }
-            // Les enregistrements sans custom_id viennent après
-            if (a.custom_id && !b.custom_id) return -1;
-            if (!a.custom_id && b.custom_id) return 1;
-            // Si aucun n'a de custom_id, trier par ID Django
-            return a.id - b.id;
-          });
-          setRecords(sortedRecords);
+          setRecords(recordsData);
         } else {
           setRecords([]);
         }
@@ -65,6 +57,95 @@ function RecordList({ tableId }) {
     
     loadRecords();
   }, [tableId, table, filters, fetchRecords]);
+  
+  // Fonction de tri
+  const handleSort = (fieldSlug) => {
+    if (sortField === fieldSlug) {
+      // Si on clique sur la même colonne, inverser la direction
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Nouvelle colonne, tri ascendant par défaut
+      setSortField(fieldSlug);
+      setSortDirection('asc');
+    }
+  };
+  
+  // Fonction pour obtenir la valeur d'affichage d'un champ (gère les FK résolues)
+  const getDisplayValue = (record, field) => {
+    const value = record[field.slug];
+    
+    // Si c'est une FK et qu'on a une valeur résolue, l'utiliser
+    if (field.field_type === 'foreign_key') {
+      // Le FlatDynamicRecordSerializer peut avoir résolu la FK en nom lisible
+      if (value && typeof value === 'string' && !value.startsWith('[')) {
+        return value; // Valeur résolue (nom lisible)
+      }
+      
+      // Sinon essayer avec l'ID si disponible
+      const idValue = record[`${field.slug}_id`];
+      if (idValue) {
+        return `ID: ${idValue}`;
+      }
+    }
+    
+    return value;
+  };
+  
+  // Fonction pour obtenir la valeur de tri (pour les comparaisons)
+  const getSortValue = (record, fieldSlug) => {
+    const value = record[fieldSlug];
+    
+    // Pour les FK, utiliser l'ID si disponible, sinon la valeur affichée
+    const idValue = record[`${fieldSlug}_id`];
+    if (idValue) {
+      return parseInt(idValue) || 0;
+    }
+    
+    // Pour les valeurs nulles/undefined
+    if (value === null || value === undefined) {
+      return '';
+    }
+    
+    // Pour les nombres
+    if (typeof value === 'number') {
+      return value;
+    }
+    
+    // Pour tout le reste, convertir en string pour tri alphabétique
+    return value.toString().toLowerCase();
+  };
+  
+  // Appliquer le tri sur les enregistrements
+  const sortedRecords = React.useMemo(() => {
+    if (!sortField) {
+      // Tri par défaut : custom_id croissant, puis ID Django
+      return [...records].sort((a, b) => {
+        if (a.custom_id && b.custom_id) {
+          return a.custom_id - b.custom_id;
+        }
+        if (a.custom_id && !b.custom_id) return -1;
+        if (!a.custom_id && b.custom_id) return 1;
+        return a.id - b.id;
+      });
+    }
+    
+    return [...records].sort((a, b) => {
+      const aValue = getSortValue(a, sortField);
+      const bValue = getSortValue(b, sortField);
+      
+      // Gestion des valeurs vides
+      if (aValue === '' && bValue !== '') return 1;
+      if (aValue !== '' && bValue === '') return -1;
+      if (aValue === '' && bValue === '') return 0;
+      
+      // Comparaison normale
+      let comparison = 0;
+      if (aValue > bValue) comparison = 1;
+      if (aValue < bValue) comparison = -1;
+      
+      return sortDirection === 'desc' ? -comparison : comparison;
+    });
+  }, [records, sortField, sortDirection]);
   
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -142,17 +223,30 @@ function RecordList({ tableId }) {
   
   // Filtrage par recherche textuelle avec tri maintenu
   const filteredRecords = searchTerm 
-    ? records.filter(record => {
+    ? sortedRecords.filter(record => {
         // Rechercher dans tous les champs de texte
         return fields.some(field => {
           if (field.field_type === 'text' || field.field_type === 'long_text') {
-            const value = record[field.slug];
+            const value = getDisplayValue(record, field);
             return value?.toString().toLowerCase().includes(searchTerm.toLowerCase());
           }
           return false;
         });
       })
-    : records;
+    : sortedRecords;
+  
+  // Fonction pour rendre l'icône de tri
+  const renderSortIcon = (fieldSlug) => {
+    if (sortField !== fieldSlug) {
+      return null; // Pas d'icône si ce n'est pas le champ trié
+    }
+    
+    return sortDirection === 'asc' ? (
+      <FiChevronUp className="inline ml-1" />
+    ) : (
+      <FiChevronDown className="inline ml-1" />
+    );
+  };
   
   // Fonction pour rendre le champ de filtrage approprié
   const renderFilterField = (field) => {
@@ -268,9 +362,20 @@ function RecordList({ tableId }) {
           <table className="table w-full">
             <thead>
               <tr>
-                <th>ID</th>
+                <th 
+                  className="cursor-pointer hover:bg-base-200"
+                  onClick={() => handleSort('custom_id')}
+                >
+                  ID {renderSortIcon('custom_id')}
+                </th>
                 {fields.map(field => (
-                  <th key={field.id}>{field.name}</th>
+                  <th 
+                    key={field.id}
+                    className="cursor-pointer hover:bg-base-200"
+                    onClick={() => handleSort(field.slug)}
+                  >
+                    {field.name} {renderSortIcon(field.slug)}
+                  </th>
                 ))}
                 <th>Actions</th>
               </tr>
@@ -288,7 +393,7 @@ function RecordList({ tableId }) {
                     </td>
                     {fields.map(field => (
                       <td key={`${record.id}-${field.id}`}>
-                        {formatFieldValue(record[field.slug], field.field_type)}
+                        {formatFieldValue(getDisplayValue(record, field), field.field_type)}
                       </td>
                     ))}
                     <td>

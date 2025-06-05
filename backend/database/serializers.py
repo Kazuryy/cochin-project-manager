@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue
 import json
+from django.db import models
 
 class DynamicFieldSerializer(serializers.ModelSerializer):
     class Meta:
@@ -40,202 +41,188 @@ class DynamicFieldSerializer(serializers.ModelSerializer):
         return data
 
 class DynamicTableSerializer(serializers.ModelSerializer):
-    fields = DynamicFieldSerializer(many=True, read_only=True)
-    
     class Meta:
         model = DynamicTable
-        fields = ['id', 'name', 'slug', 'description', 'created_at', 'updated_at', 'created_by', 'is_active', 'fields']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'fields']
+        fields = '__all__'
     
-    def create(self, validated_data):
-        # Définir l'utilisateur qui crée la table
-        user = self.context['request'].user
-        validated_data['created_by'] = user
-        
-        return super().create(validated_data)
+    def to_representation(self, instance):
+        """Ajouter les champs de la table dans la représentation."""
+        data = super().to_representation(instance)
+        if instance:
+            data['fields'] = DynamicFieldSerializer(
+                instance.fields.filter(is_active=True).order_by('order'), 
+                many=True
+            ).data
+        else:
+            data['fields'] = []
+        return data
 
 class DynamicValueSerializer(serializers.ModelSerializer):
     field_name = serializers.CharField(source='field.name', read_only=True)
-    field_type = serializers.CharField(source='field.field_type', read_only=True)
     field_slug = serializers.CharField(source='field.slug', read_only=True)
+    field_type = serializers.CharField(source='field.field_type', read_only=True)
     
     class Meta:
         model = DynamicValue
-        fields = ['id', 'field', 'field_name', 'field_slug', 'field_type', 'value']
-        read_only_fields = ['id', 'field_name', 'field_type', 'field_slug']
+        fields = '__all__'
 
 class DynamicRecordSerializer(serializers.ModelSerializer):
     values = DynamicValueSerializer(many=True, read_only=True)
-    table_name = serializers.CharField(source='table.name', read_only=True)
-    custom_id_field_name = serializers.CharField(source='get_custom_id_field_name', read_only=True)
-    primary_identifier = serializers.IntegerField(source='get_primary_identifier', read_only=True)
     
     class Meta:
         model = DynamicRecord
-        fields = [
-            'id', 'custom_id', 'primary_identifier', 'custom_id_field_name',
-            'table', 'table_name', 'created_at', 'updated_at',
-            'created_by', 'updated_by', 'is_active', 'values'
-        ]
-        read_only_fields = ['id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 
-                           'created_at', 'updated_at', 'values', 'table_name']
+        fields = '__all__'
+
+class DynamicRecordCreateSerializer(serializers.ModelSerializer):
+    values = serializers.DictField(write_only=True)
+    
+    class Meta:
+        model = DynamicRecord
+        fields = ['table', 'values', 'created_by']
+        read_only_fields = ['created_by']
     
     def create(self, validated_data):
-        # Définir l'utilisateur qui crée l'enregistrement
-        user = self.context['request'].user
-        validated_data['created_by'] = user
-        validated_data['updated_by'] = user
+        values_data = validated_data.pop('values', {})
+        table = validated_data.get('table')
         
-        return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        # Mettre à jour l'utilisateur qui modifie l'enregistrement
-        user = self.context['request'].user
-        validated_data['updated_by'] = user
-        
-        return super().update(instance, validated_data)
-
-class DynamicRecordCreateSerializer(serializers.Serializer):
-    """
-    Sérialiseur pour créer ou mettre à jour un enregistrement complet avec ses valeurs.
-    """
-    values = serializers.DictField(
-        child=serializers.CharField(allow_null=True, allow_blank=True),
-        required=True
-    )
-    
-    def _validate_required_fields(self, table, values):
-        required_fields = table.fields.filter(is_required=True, is_active=True)
-        for field in required_fields:
-            if field.slug not in values or values[field.slug] == '':
-                raise serializers.ValidationError(f"Le champ '{field.name}' est obligatoire")
-
-    def _validate_field_existence(self, table, values):
-        for field_slug in values.keys():
-            if not table.fields.filter(slug=field_slug, is_active=True).exists():
-                raise serializers.ValidationError(f"Le champ '{field_slug}' n'existe pas dans cette table")
-
-    def _validate_unique_fields(self, table, values):
-        unique_fields = table.fields.filter(is_unique=True, is_active=True)
-        for field in unique_fields:
-            if field.slug in values and values[field.slug]:
-                existing_records = DynamicRecord.objects.filter(
-                    table=table,
-                    is_active=True,
-                    values__field=field,
-                    values__value=values[field.slug]
-                )
-                
-                if self.instance:
-                    existing_records = existing_records.exclude(id=self.instance.id)
-                
-                if existing_records.exists():
-                    raise serializers.ValidationError(
-                        f"Un enregistrement avec la valeur '{values[field.slug]}' "
-                        f"pour le champ '{field.name}' existe déjà"
-                    )
-
-    def validate(self, data):
-        table = self.context.get('table')
-        
-        if not table:
-            raise serializers.ValidationError("Table non spécifiée")
-        
-        self._validate_required_fields(table, data['values'])
-        self._validate_field_existence(table, data['values'])
-        self._validate_unique_fields(table, data['values'])
-        
-        return data
-    
-    def create(self, validated_data):
-        table = self.context.get('table')
-        user = self.context['request'].user
-        
+        # Créer l'enregistrement
         record = DynamicRecord.objects.create(
-            table=table,
-            created_by=user,
-            updated_by=user
+            **validated_data,
+            created_by=self.context['request'].user
         )
         
-        for field_slug, value in validated_data['values'].items():
+        # Créer les valeurs
+        for field_slug, value in values_data.items():
             try:
-                field = table.fields.get(slug=field_slug, is_active=True)
-                if value is not None:  # Ne pas créer de valeur pour les champs vides/null
-                    DynamicValue.objects.create(
-                        record=record,
-                        field=field,
-                        value=value
-                    )
+                field = table.fields.get(slug=field_slug)
+                DynamicValue.objects.create(
+                    record=record,
+                    field=field,
+                    value=str(value)
+                )
             except DynamicField.DoesNotExist:
-                # Ignorer les champs qui n'existent pas (ils ont déjà été vérifiés dans validate)
-                pass
+                continue  # Ignorer les champs inexistants
         
         return record
     
     def update(self, instance, validated_data):
-        table = instance.table
-        user = self.context['request'].user
+        values_data = validated_data.pop('values', {})
         
-        # Mettre à jour les métadonnées de l'enregistrement
-        instance.updated_by = user
+        # Mettre à jour l'enregistrement
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
         
         # Mettre à jour les valeurs
-        for field_slug, value in validated_data['values'].items():
+        for field_slug, value in values_data.items():
             try:
-                field = table.fields.get(slug=field_slug, is_active=True)
-                
-                # Obtenir ou créer la valeur
-                value_obj, created = DynamicValue.objects.get_or_create(
+                field = instance.table.fields.get(slug=field_slug)
+                dynamic_value, created = DynamicValue.objects.get_or_create(
                     record=instance,
                     field=field,
-                    defaults={'value': value if value is not None else ''}
+                    defaults={'value': str(value)}
                 )
-                
-                # Mettre à jour la valeur si elle existe déjà
-                if not created and value is not None:
-                    value_obj.value = value
-                    value_obj.save()
-                elif not created and value is None:
-                    # Supprimer la valeur si la nouvelle valeur est None
-                    value_obj.delete()
-                
+                if not created:
+                    dynamic_value.value = str(value)
+                    dynamic_value.save()
             except DynamicField.DoesNotExist:
-                # Ignorer les champs qui n'existent pas
-                pass
+                continue
         
         return instance
 
 class FlatDynamicRecordSerializer(serializers.ModelSerializer):
     """
-    Sérialiseur qui présente un enregistrement de manière aplatie, 
-    avec les valeurs directement accessibles par leur clé de champ.
+    Serializer qui retourne un enregistrement avec ses valeurs aplaties
+    et les FK automatiquement résolues en valeurs lisibles
     """
-    id = serializers.IntegerField(read_only=True)
-    custom_id = serializers.IntegerField(read_only=True)
-    primary_identifier = serializers.IntegerField(source='get_primary_identifier', read_only=True)
-    custom_id_field_name = serializers.CharField(source='get_custom_id_field_name', read_only=True)
-    created_at = serializers.DateTimeField(read_only=True)
-    updated_at = serializers.DateTimeField(read_only=True)
-    
-    class Meta:
-        model = DynamicRecord
-        fields = ['id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 'created_at', 'updated_at']
     
     def to_representation(self, instance):
-        # Commencer avec les champs de base
-        ret = super().to_representation(instance)
+        data = super().to_representation(instance)
         
-        # Ajouter le custom_id avec son nom de champ spécifique à la table
-        if instance.custom_id:
-            custom_field_name = instance.get_custom_id_field_name()
-            ret[custom_field_name] = instance.custom_id
+        # Ajouter les valeurs aplaties avec résolution FK améliorée
+        for value in instance.values.all():
+            field = value.field
+            field_value = value.value
+            
+            # Si c'est une FK, essayer de résoudre en valeur lisible
+            if field.field_type == 'foreign_key' and field.related_table and field_value:
+                try:
+                    # D'abord essayer de traiter field_value comme un ID numérique
+                    try:
+                        record_id = int(field_value)
+                        related_record = DynamicRecord.objects.get(
+                            id=record_id, 
+                            table=field.related_table,
+                            is_active=True
+                        )
+                        # ID trouvé, résoudre en valeur lisible
+                        resolved_value = self._get_readable_value(related_record)
+                        data[field.slug] = resolved_value
+                        data[f"{field.slug}_id"] = field_value
+                        print(f"🔗 FK résolue par ID: {field.slug} = '{resolved_value}' (ID: {field_value})")
+                        
+                    except (ValueError, DynamicRecord.DoesNotExist):
+                        # Si ce n'est pas un ID valide, chercher par nom dans la table liée
+                        print(f"🔍 Tentative de résolution par nom pour {field.slug}: '{field_value}'")
+                        
+                        # Chercher un enregistrement dont un champ texte correspond à field_value
+                        related_records = DynamicRecord.objects.filter(
+                            table=field.related_table,
+                            is_active=True
+                        )
+                        
+                        found_record = None
+                        for record in related_records:
+                            record_name = self._get_readable_value(record)
+                            if record_name == field_value:
+                                found_record = record
+                                break
+                        
+                        if found_record:
+                            # Nom trouvé, utiliser ce nom comme valeur lisible et garder la référence
+                            data[field.slug] = field_value  # Garder le nom tel quel
+                            data[f"{field.slug}_id"] = found_record.id
+                            print(f"🔗 FK résolue par nom: {field.slug} = '{field_value}' (ID résolu: {found_record.id})")
+                        else:
+                            # Aucun enregistrement trouvé ni par ID ni par nom
+                            data[field.slug] = f"[Référence manquante: {field_value}]"
+                            data[f"{field.slug}_raw"] = field_value
+                            print(f"⚠️ FK non résolue: {field.slug} = '{field_value}' (ni ID ni nom trouvé)")
+                    
+                except Exception as e:
+                    # En cas d'erreur inattendue
+                    data[field.slug] = f"[Erreur de résolution: {field_value}]"
+                    data[f"{field.slug}_raw"] = field_value
+                    print(f"❌ Erreur lors de la résolution FK: {field.slug} = '{field_value}' ({str(e)})")
+            else:
+                # Champ normal (non FK)
+                data[field.slug] = field_value
         
-        # Ajouter toutes les valeurs des champs dynamiques
-        values = instance.values.select_related('field').all()
+        return data
+    
+    def _get_readable_value(self, record):
+        """
+        Trouve la valeur la plus lisible dans un enregistrement
+        """
+        # D'abord essayer les champs génériques (ajout de nom_projet)
+        generic_fields = ['nom_projet', 'nom', 'name', 'label', 'title', 'titre', 'libelle', 'description', 'desc']
         
-        for value in values:
-            if value.field.is_active:
-                ret[value.field.slug] = value.get_formatted_value()
+        for value in record.values.all():
+            if value.field.slug in generic_fields and value.value:
+                return value.value
         
-        return ret
+        # Si pas de champ générique, prendre le premier champ texte non-système
+        system_fields = ['id', 'custom_id', 'primary_identifier', 'created_at', 'updated_at']
+        
+        for value in record.values.all():
+            if (value.field.slug not in system_fields and 
+                value.field.field_type in ['text', 'long_text'] and 
+                value.value and value.value.strip()):
+                return value.value
+        
+        # En dernier recours, retourner l'ID
+        return f"#{record.id}"
+
+    class Meta:
+        model = DynamicRecord
+        fields = '__all__'

@@ -24,67 +24,153 @@ function RecordForm({ tableId, recordId }) {
   const [fkChoices, setFkChoices] = useState({});
   const [fkLoading, setFkLoading] = useState({});
 
-  const findBestDisplayValue = useCallback((record) => {
-    const priorityFields = [
-      'nom', 'name', 'title', 'titre', 'libelle', 'label',
-      'designation', 'description', 'nom_contact', 'nom_client'
-    ];
+  // Fonction utilitaire pour extraire des valeurs d'un enregistrement avec fallbacks
+  const getFieldValue = useCallback((record, ...possibleFields) => {
+    if (!record) return '';
     
-    for (const fieldName of priorityFields) {
-      const matchingField = Object.entries(record).find(([key, value]) => 
-        key.toLowerCase().includes(fieldName.toLowerCase()) && 
-        value && 
-        typeof value === 'string'
-      );
-      if (matchingField) return matchingField[1];
+    for (const field of possibleFields) {
+      if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
+        return record[field];
+      }
     }
     
-    const systemFields = ['id', 'created_at', 'updated_at'];
-    const firstNonSystemField = Object.entries(record).find(([key, value]) => 
-      !systemFields.includes(key) && 
-      value && 
-      typeof value === 'string' && 
-      value.trim() !== ''
-    );
+    if (record.values && Array.isArray(record.values)) {
+      for (const field of possibleFields) {
+        const valueField = record.values.find(v => v.field_slug === field);
+        if (valueField?.value && valueField.value !== undefined && valueField.value !== null && valueField.value !== '') {
+          return valueField.value;
+        }
+      }
+    }
     
-    return firstNonSystemField ? firstNonSystemField[1] : null;
+    return '';
   }, []);
 
-  const createChoice = useCallback((record) => {
-    const displayValue = findBestDisplayValue(record);
-    const customIdDisplay = record.custom_id ? 
-      `${record.custom_id_field_name}: ${record.custom_id}` : 
-      `ID Django: ${record.id}`;
-    
-    return {
-      value: record.id.toString(), // On garde l'ID Django pour la compatibilité backend
-      display: displayValue ? 
-        `${displayValue} (${customIdDisplay})` : 
-        `Enregistrement (${customIdDisplay})`
-    };
-  }, [findBestDisplayValue]);
-
+  // Fonction pour trier les choix par ordre alphabétique
   const sortChoices = useCallback((choices) => {
-    return [...choices].sort((a, b) => a.display.localeCompare(b.display));
+    if (!Array.isArray(choices)) return [];
+    return choices.sort((a, b) => a.display.localeCompare(b.display));
   }, []);
 
   const loadFkChoicesForField = useCallback(async (field) => {
     setFkLoading(prev => ({ ...prev, [field.id]: true }));
     
     try {
-      const records = await api.get(`/api/database/records/by_table/?table_id=${field.related_table}`);
-      const choices = records.map(createChoice);
+      console.log(`🚀 === DÉBUT CHARGEMENT FK POUR ${field.name} ===`);
+      console.log(`📋 Champ:`, {
+        name: field.name,
+        id: field.id,
+        related_table: field.related_table
+      });
+      console.log(`🏗️ Table courante:`, table?.name);
+      
+      const response = await api.get(`/api/database/tables/${field.related_table}/records`);
+      const recordsList = response || [];
+
+      console.log(`📊 ${recordsList.length} enregistrements reçus pour ${field.name}`);
+      
+      if (recordsList.length > 0) {
+        console.log(`🔍 Premier enregistrement exemple:`, recordsList[0]);
+        console.log(`🔍 Clés disponibles:`, Object.keys(recordsList[0]));
+      }
+
+      const uniqueValues = new Set();
+      const options = [];
+
+      recordsList.forEach((record, index) => {
+        console.log(`\n--- TRAITEMENT RECORD ${index} ---`);
+        
+        // Déterminer la colonne cible selon le type de champ
+        let targetColumn = '';
+        const fieldNameLower = field.name.toLowerCase();
+        
+        console.log(`🎯 Nom du champ analysé: "${field.name}" → "${fieldNameLower}"`);
+        
+        // Pour les champs "sous_type" : construire dynamiquement selon la table courante
+        if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
+          const tableName = table?.name || '';
+          const typeFromTable = tableName.replace('Details', '').toLowerCase();
+          console.log(`🔧 Détection sous_type: table="${tableName}" → type="${typeFromTable}"`);
+          
+          if (typeFromTable) {
+            targetColumn = `sous_type_${typeFromTable}`;
+            console.log(`🎯 Colonne dynamique calculée: "${targetColumn}"`);
+          }
+        } 
+        // Pour les autres champs : mapping direct nom du champ → nom de colonne
+        else {
+          // Normaliser le nom du champ pour matcher la colonne (ex: "Espèce" → "espèce")
+          targetColumn = fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // Enlever accents
+          console.log(`🔧 Mapping direct: "${field.name}" → "${targetColumn}"`);
+        }
+        
+        console.log(`📍 Colonne cible finale: "${targetColumn}"`);
+        
+        // Chercher la valeur : D'ABORD dans la colonne spécifique, PUIS champs génériques
+        let extractedValue = '';
+        
+        if (targetColumn) {
+          // 1. Chercher d'abord dans la colonne calculée
+          extractedValue = getFieldValue(record, targetColumn);
+          console.log(`🔍 Recherche dans colonne "${targetColumn}": "${extractedValue}"`);
+        }
+        
+        // 2. Si pas trouvé, chercher dans les champs génériques
+        if (!extractedValue || extractedValue.trim() === '') {
+          extractedValue = getFieldValue(record, 'nom_projet', 'nom', 'name', 'label', 'title', 'value');
+          console.log(`🔍 Fallback champs génériques: "${extractedValue}"`);
+        }
+        
+        // 3. Si toujours pas trouvé, essayer avec le nom du champ lui-même
+        if (!extractedValue || extractedValue.trim() === '') {
+          extractedValue = getFieldValue(record, field.name, fieldNameLower);
+          console.log(`🔍 Fallback nom du champ: "${extractedValue}"`);
+        }
+        
+        console.log(`📤 Valeur finale extraite: "${extractedValue}"`);
+        
+        if (extractedValue && typeof extractedValue === 'string') {
+          const trimmedValue = extractedValue.trim();
+          
+          if (trimmedValue && !uniqueValues.has(trimmedValue)) {
+            uniqueValues.add(trimmedValue);
+            options.push({
+              value: trimmedValue,
+              label: trimmedValue
+            });
+            console.log(`✅ Option ajoutée: "${trimmedValue}"`);
+          } else {
+            console.log(`🚫 Option ignorée (vide ou dupliquée): "${trimmedValue}"`);
+          }
+        } else {
+          console.log(`🚫 Valeur rejetée (type ${typeof extractedValue}): ${extractedValue}`);
+        }
+      });
+
+      console.log(`📊 RÉSUMÉ: ${options.length} options uniques trouvées:`, options);
+      
+      // Créer les choix avec le format attendu par le select
+      const choices = options.map(option => ({
+        value: option.value,
+        display: option.label
+      }));
+      
+      console.log(`🎯 Choix finaux pour ${field.name}:`, choices);
+      
       setFkChoices(prev => ({
         ...prev,
         [field.id]: sortChoices(choices)
       }));
+      
+      console.log(`🏁 === FIN CHARGEMENT FK POUR ${field.name} ===\n`);
+      
     } catch (err) {
-      console.error(`Erreur lors du chargement des choix FK pour ${field.name}:`, err);
+      console.error(`❌ Erreur lors du chargement des choix FK pour ${field.name}:`, err);
       setFkChoices(prev => ({ ...prev, [field.id]: [] }));
     } finally {
       setFkLoading(prev => ({ ...prev, [field.id]: false }));
     }
-  }, [createChoice, sortChoices]);
+  }, [getFieldValue, table, sortChoices]);
 
   // Charger les données de la table et ses champs
   useEffect(() => {
@@ -126,23 +212,35 @@ function RecordForm({ tableId, recordId }) {
     if (recordId && table) {
       const loadRecord = async () => {
         try {
-          // Utiliser le service API centralisé
-          const response = await fetch(`/api/database/records/${recordId}/`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
+          console.log(`🔄 Chargement de l'enregistrement ${recordId}...`);
+          
+          // Utiliser le service API centralisé au lieu de fetch direct
+          const record = await api.get(`/api/database/records/${recordId}/`);
+          console.log(`📋 Données de l'enregistrement reçues:`, record);
+          
+          // Traiter les valeurs pour les FK
+          const processedFormData = {};
+          
+          table.fields?.forEach(field => {
+            console.log(`🔍 Traitement du champ: ${field.name} (${field.slug}) - Type: ${field.field_type}`);
+            
+            if (field.field_type === 'foreign_key') {
+              // Pour les FK, la valeur est déjà le texte affiché (ex: "Spatial", "Bonne")
+              // Pas besoin de convertir, on utilise directement la valeur
+              const fieldValue = record[field.slug] || '';
+              processedFormData[field.slug] = fieldValue;
+              
+              console.log(`✅ FK ${field.slug}: "${fieldValue}"`);
+            } else {
+              // Pour les autres champs, utiliser la valeur directement
+              processedFormData[field.slug] = record[field.slug] || '';
+              
+              console.log(`✅ Normal ${field.slug}: "${record[field.slug]}"`);
+            }
           });
           
-          if (!response.ok) {
-            throw new Error(`Erreur HTTP ${response.status}`);
-          }
-          
-          const record = await response.json();
-          
-          // Mettre à jour le formulaire avec les valeurs de l'enregistrement
-          setFormData(record);
+          console.log('🎯 Données du formulaire finales:', processedFormData);
+          setFormData(processedFormData);
         } catch (err) {
           console.error(`Erreur lors de la récupération de l'enregistrement ${recordId}:`, err);
         }

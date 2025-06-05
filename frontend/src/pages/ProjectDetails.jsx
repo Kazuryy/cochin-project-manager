@@ -118,34 +118,11 @@ function ProjectDetailsContent() {
       const detailsRecords = await fetchRecords(foundDetailsTable.id);
       console.log('📊 Enregistrements Details:', detailsRecords);
 
-      // Logs détaillés pour le débogage
-      console.log('🔍 Recherche de correspondance pour projet ID:', projectId);
-      console.log('🔍 Type attendu:', typeof projectId);
-      
-      detailsRecords.forEach((record, index) => {
-        console.log(`📝 Enregistrement ${index + 1}:`, record);
-        console.log(`📝 Propriétés directes:`, {
-          projet: record.projet,
-          project: record.project,
-          id_projet: record.id_projet,
-          projet_id: record.projet_id,
-          projet_auto: record.projet_auto
-        });
-        
-        // Vérifier toutes les propriétés qui contiennent "projet"
-        const allProjectKeys = Object.keys(record).filter(key => 
-          key.toLowerCase().includes('projet') || key.toLowerCase().includes('project')
-        );
-        console.log(`📝 Toutes les clés contenant "projet":`, allProjectKeys);
-        allProjectKeys.forEach(key => {
-          console.log(`  - ${key}: ${record[key]} (type: ${typeof record[key]})`);
-        });
-      });
-
       // Trouver l'enregistrement qui correspond à notre projet
-      // Chercher un enregistrement qui a une FK vers notre projet
       const projectRecord = detailsRecords.find(record => {
-        console.log(`🔍 Test correspondance pour enregistrement:`, record.id);
+        console.log(`🔍 Vérification enregistrement Details:`, record);
+        console.log(`🎯 ProjectId recherché: ${projectId} (type: ${typeof projectId})`);
+        console.log(`🎯 Nom du projet: "${getFieldValue(project, 'nom_projet', 'nom', 'name')}"`);
         
         // Vérifier les propriétés directes avec comparaison de type flexible
         const directMatches = [
@@ -159,21 +136,75 @@ function ProjectDetailsContent() {
         
         for (const match of directMatches) {
           if (match.value !== undefined && match.value !== null) {
-            // Comparaison flexible (string vs number)
+            // Comparaison flexible (string vs number) pour les IDs
             const valueAsString = String(match.value);
             const projectIdAsString = String(projectId);
-            console.log(`  🔍 Test ${match.key}: "${valueAsString}" == "${projectIdAsString}" ?`, valueAsString === projectIdAsString);
+            
+            console.log(`🔍 Test ${match.key}: ${match.value} (${typeof match.value}) vs ${projectId} (${typeof projectId})`);
+            console.log(`🔍 Comparaison string: "${valueAsString}" === "${projectIdAsString}" → ${valueAsString === projectIdAsString}`);
             
             if (valueAsString === projectIdAsString) {
               console.log(`✅ Correspondance trouvée via ${match.key}!`);
               return true;
+            }
+            
+            // Si c'est le champ projet_auto, essayer aussi de comparer avec le nom du projet
+            if (match.key === 'projet_auto') {
+              const projectName = getFieldValue(project, 'nom_projet', 'nom', 'name');
+              const projectDescription = getFieldValue(project, 'description', 'desc');
+              
+              // D'abord essayer comparaison exacte avec le nom
+              if (projectName && match.value === projectName) {
+                console.log(`✅ Correspondance trouvée via nom de projet exact dans ${match.key}!`);
+                return true;
+              }
+              
+              // Puis essayer avec la description (cas actuel)
+              if (projectDescription && match.value === projectDescription) {
+                console.log(`✅ Correspondance trouvée via description de projet exacte dans ${match.key}!`);
+                console.log(`   Description: "${projectDescription}"`);
+                return true;
+              }
+              
+              // Essayer une correspondance partielle avec la description
+              if (projectDescription && match.value && typeof match.value === 'string') {
+                const descLower = projectDescription.toLowerCase();
+                const matchValueLower = match.value.toLowerCase();
+                
+                // Si l'un contient l'autre (au moins 10 caractères pour la description)
+                if (descLower.length >= 10 && matchValueLower.length >= 10) {
+                  if (descLower.includes(matchValueLower) || matchValueLower.includes(descLower)) {
+                    console.log(`✅ Correspondance partielle trouvée via description de projet dans ${match.key}!`);
+                    console.log(`   Description actuelle: "${projectDescription}"`);
+                    console.log(`   Description stockée: "${match.value}"`);
+                    return true;
+                  }
+                }
+              }
+              
+              // Enfin, essayer une correspondance partielle avec le nom (fallback)
+              if (projectName && match.value && typeof match.value === 'string') {
+                const projectNameLower = projectName.toLowerCase();
+                const matchValueLower = match.value.toLowerCase();
+                
+                // Si l'un contient l'autre (au moins 3 caractères pour éviter les faux positifs)
+                if (projectNameLower.length >= 3 && matchValueLower.length >= 3) {
+                  if (projectNameLower.includes(matchValueLower) || matchValueLower.includes(projectNameLower)) {
+                    console.log(`✅ Correspondance partielle trouvée via nom de projet dans ${match.key}!`);
+                    console.log(`   Nom actuel: "${projectName}"`);
+                    console.log(`   Valeur stockée: "${match.value}"`);
+                    return true;
+                  }
+                }
+              }
             }
           }
         }
         
         // Chercher dans les propriétés values si elles existent encore
         if (record.values && Array.isArray(record.values)) {
-          console.log(`  🔍 Test dans values array:`, record.values);
+          console.log(`🔍 Vérification dans values:`, record.values);
+          
           const found = record.values.some(value => {
             const hasProjectSlug = value.field_slug && 
               (value.field_slug.includes('projet') || value.field_slug.includes('project'));
@@ -181,11 +212,62 @@ function ProjectDetailsContent() {
             if (hasProjectSlug) {
               const valueAsString = String(value.value);
               const projectIdAsString = String(projectId);
-              console.log(`    🔍 Test field ${value.field_slug}: "${valueAsString}" == "${projectIdAsString}" ?`, valueAsString === projectIdAsString);
+              
+              console.log(`🔍 Test values.${value.field_slug}: ${value.value} (${typeof value.value}) vs ${projectId} (${typeof projectId})`);
+              console.log(`🔍 Comparaison string: "${valueAsString}" === "${projectIdAsString}" → ${valueAsString === projectIdAsString}`);
               
               if (valueAsString === projectIdAsString) {
                 console.log(`✅ Correspondance trouvée via values.${value.field_slug}!`);
                 return true;
+              }
+              
+              // Essayer aussi de comparer avec le nom du projet
+              const projectName = getFieldValue(project, 'nom_projet', 'nom', 'name');
+              const projectDescription = getFieldValue(project, 'description', 'desc');
+              
+              // D'abord essayer comparaison exacte avec le nom
+              if (projectName && value.value === projectName) {
+                console.log(`✅ Correspondance trouvée via nom de projet exact dans values.${value.field_slug}!`);
+                return true;
+              }
+              
+              // Puis essayer avec la description (cas actuel)
+              if (projectDescription && value.value === projectDescription) {
+                console.log(`✅ Correspondance trouvée via description de projet exacte dans values.${value.field_slug}!`);
+                console.log(`   Description: "${projectDescription}"`);
+                return true;
+              }
+              
+              // Essayer une correspondance partielle avec la description
+              if (projectDescription && value.value && typeof value.value === 'string') {
+                const descLower = projectDescription.toLowerCase();
+                const valueValueLower = value.value.toLowerCase();
+                
+                // Si l'un contient l'autre (au moins 10 caractères pour la description)
+                if (descLower.length >= 10 && valueValueLower.length >= 10) {
+                  if (descLower.includes(valueValueLower) || valueValueLower.includes(descLower)) {
+                    console.log(`✅ Correspondance partielle trouvée via description de projet dans values.${value.field_slug}!`);
+                    console.log(`   Description actuelle: "${projectDescription}"`);
+                    console.log(`   Description stockée: "${value.value}"`);
+                    return true;
+                  }
+                }
+              }
+              
+              // Enfin, essayer une correspondance partielle avec le nom (fallback)
+              if (projectName && value.value && typeof value.value === 'string') {
+                const projectNameLower = projectName.toLowerCase();
+                const valueValueLower = value.value.toLowerCase();
+                
+                // Si l'un contient l'autre (au moins 3 caractères pour éviter les faux positifs)
+                if (projectNameLower.length >= 3 && valueValueLower.length >= 3) {
+                  if (projectNameLower.includes(valueValueLower) || valueValueLower.includes(projectNameLower)) {
+                    console.log(`✅ Correspondance partielle trouvée via nom de projet dans values.${value.field_slug}!`);
+                    console.log(`   Nom actuel: "${projectName}"`);
+                    console.log(`   Valeur stockée: "${value.value}"`);
+                    return true;
+                  }
+                }
               }
             }
             
@@ -195,7 +277,7 @@ function ProjectDetailsContent() {
           if (found) return true;
         }
         
-        console.log(`❌ Aucune correspondance pour enregistrement ${record.id}`);
+        console.log(`❌ Aucune correspondance trouvée pour cet enregistrement`);
         return false;
       });
 
@@ -342,7 +424,10 @@ function ProjectDetailsContent() {
               >
                 ← Retour
               </button>
-              <button className="btn btn-primary">
+              <button 
+                className="btn btn-primary"
+                onClick={() => navigate(`/projects/${projectId}/edit`)}
+              >
                 ✏️ Modifier
               </button>
             </div>
@@ -360,12 +445,30 @@ function ProjectDetailsContent() {
           {/* Section: Détails spécifiques selon le type */}
           {detailsTable && projectDetailsData && renderDataSection(
             projectDetailsData, 
-            detailsTable.fields?.filter(field => 
-              // Exclure les champs FK vers Projet (déjà affiché dans la section générale)
-              !(field.field_type === 'foreign_key' && 
-                (field.slug.includes('projet') || field.slug.includes('project'))
-              )
-            ) || [], 
+            detailsTable.fields?.filter(field => {
+              // Exclure les champs FK qui pointent vers la table Projet
+              if (field.field_type === 'foreign_key' && field.related_table) {
+                // Vérifier si la table liée est la table Projet (par ID ou nom)
+                const isProjectTable = field.related_table.name === 'Projet' ||
+                                        field.related_table.slug === 'projet' ||
+                                        field.related_table.name === 'Projets' ||
+                                        field.related_table.slug === 'projets';
+                
+                if (isProjectTable) {
+                  console.log(`🚫 Champ FK exclu de l'affichage (pointe vers Projet): ${field.name} (${field.slug})`);
+                  return false;
+                }
+              }
+              
+              // Exclure aussi par le nom/slug si c'est un champ de projet
+              if (field.slug.includes('projet') || field.slug.includes('project') || 
+                  field.name.toLowerCase().includes('projet') || field.name.toLowerCase().includes('project')) {
+                console.log(`🚫 Champ projet exclu de l'affichage par nom/slug: ${field.name} (${field.slug})`);
+                return false;
+              }
+              
+              return true;
+            }) || [], 
             `⚙️ Détails ${projectType}`
           )}
 

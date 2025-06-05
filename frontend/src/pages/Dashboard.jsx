@@ -134,38 +134,12 @@ function DashboardContent() {
     return '';
   };
 
-  const findContact = (contactId, contacts) => {
-    if (!contactId || !contacts.length) return null;
-    return contacts.find(c => c.id === contactId) ||
-           contacts.find(c => c.id.toString() === contactId.toString()) ||
-           contacts.find(c => parseInt(c.id) === parseInt(contactId));
-  };
-
   const findFieldValue = (contact, fields) => {
     for (const field of fields) {
       const value = getFieldValue(contact, field);
       if (value) return value;
     }
     return '';
-  };
-
-  const getContactInfo = (contactId) => {
-    const contact = findContact(contactId, contacts);
-    
-    if (!contact) {
-      return { nom: `Contact #${contactId} (non trouvé)`, email: '' };
-    }
-
-    const prenom = findFieldValue(contact, ['prenom', 'first_name', 'firstname', 'fname']);
-    const nom = findFieldValue(contact, ['nom', 'last_name', 'lastname', 'name']);
-    const email = findFieldValue(contact, ['email', 'mail', 'e_mail', 'courriel']);
-
-    const displayName = `${prenom} ${nom.toUpperCase()}`.trim() || `Contact #${contactId}`;
-    
-    return {
-      nom: displayName,
-      email: email
-    };
   };
 
   // Fonction améliorée pour obtenir le type de projet
@@ -425,19 +399,49 @@ function DashboardContent() {
                           'numero_projet', 'number', 'num', 'numero', 'code', 'reference'
                         ) || 'N/A';
                         
-                        // Essayer de récupérer l'ID du contact avec debug détaillé
-                        const contactIdFields = [
-                          'contact_principal_id', 'contact_id', 'contact', 'client_id', 'responsable_id',
-                          'contact_principal', 'id_contact', 'contactid', 'principal_contact'
-                        ];
+                        // Essayer de récupérer le contact principal
+                        const contactValue = getFieldValue(project, 
+                          'contact_principal', 'contact_principal_id', 'contact_id', 'contact', 'client_id', 'responsable_id'
+                        );
                         
-                        let contactId = null;
-                        for (const field of contactIdFields) {
-                          const value = getFieldValue(project, field);
-                          if (value) {
-                            contactId = value;
-                            break;
+                        // Gérer le contact : extraire le nom même si c'est "[Référence manquante: xxx]"
+                        let contactInfo;
+                        if (contactValue && contactValue !== 'Contact non défini') {
+                          let cleanContactName = contactValue;
+                          
+                          // Si c'est une référence manquante, extraire le nom
+                          if (contactValue.startsWith('[Référence manquante:') && contactValue.endsWith(']')) {
+                            cleanContactName = contactValue.replace('[Référence manquante:', '').replace(']', '').trim();
                           }
+                          
+                          // Essayer de trouver le contact correspondant pour récupérer l'email
+                          const matchingContact = contacts.find(contact => {
+                            const contactName = getFieldValue(contact, 'nom', 'name', 'prenom', 'label') || `Contact #${contact.id}`;
+                            const contactPrenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname');
+                            const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+                            
+                            return fullName === cleanContactName || contactName === cleanContactName;
+                          });
+                          
+                          if (matchingContact) {
+                            // Contact trouvé, récupérer l'email
+                            const email = findFieldValue(matchingContact, ['email', 'mail', 'e_mail', 'courriel']);
+                            contactInfo = {
+                              nom: cleanContactName,
+                              email: email || ''
+                            };
+                          } else {
+                            // Contact non trouvé dans la liste, utiliser le nom nettoyé
+                            contactInfo = {
+                              nom: cleanContactName,
+                              email: ''
+                            };
+                          }
+                        } else {
+                          contactInfo = {
+                            nom: 'Contact non défini',
+                            email: ''
+                          };
                         }
                         
                         // Essayer de récupérer l'ID du type
@@ -445,8 +449,6 @@ function DashboardContent() {
                           'type_projet', 'type_id', 'type', 'category_id', 'categorie_id'
                         );
                         
-                        // Obtenir les informations dérivées
-                        const contactInfo = getContactInfo(contactId);
                         const projectType = getProjectType(typeId);
                         
                         // Essayer de récupérer l'équipe

@@ -256,6 +256,9 @@ function CreateProjectContent() {
 
         // Charger les champs de la table Choix pour identifier la bonne colonne
         const choixTableData = await fetchTableData(field.related_table);
+        console.log('🎯 Champs de la table Choix:', choixTableData.fields);
+        console.log('📋 Table Choix ID utilisé:', field.related_table);
+        console.log('📋 Réponse fetchTableData complète:', choixTableData);
         
         if (!choixTableData.fields || choixTableData.fields.length === 0) {
           return [];
@@ -567,6 +570,8 @@ function CreateProjectContent() {
           // Charger les champs de la table Choix pour trouver la bonne colonne
           const choixTableData = await fetchTableData(currentField.related_table);
           console.log('🎯 Champs de la table Choix:', choixTableData.fields);
+          console.log('📋 Table Choix ID utilisé:', currentField.related_table);
+          console.log('📋 Réponse fetchTableData complète:', choixTableData);
           
           if (!choixTableData.fields || choixTableData.fields.length === 0) {
             showToast('Aucun champ trouvé dans la table Choix', 'error');
@@ -638,9 +643,19 @@ function CreateProjectContent() {
 
           console.log('✅ Champ cible final sélectionné:', targetField);
 
+          // Extraire l'ID correct de la table liée
+          const relatedTableId = currentField.related_table?.id || currentField.related_table;
+          
+          console.log('📤 Données envoyées à l\'API:', {
+            table_id: relatedTableId,
+            values: {
+              [targetField.slug]: optionLabel
+            }
+          });
+
           // Créer l'enregistrement avec le bon champ
           await api.post('/api/database/records/create_with_values/', {
-            table_id: currentField.related_table,
+            table_id: relatedTableId,
             values: {
               [targetField.slug]: optionLabel
             }
