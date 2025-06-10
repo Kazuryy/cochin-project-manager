@@ -1,4 +1,5 @@
 // Correction de PasswordChangeCheck.jsx
+import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../hooks/useAuth';
 import PasswordChangeForm from '../auth/PasswordChangeForm';
@@ -11,12 +12,30 @@ import PasswordChangeForm from '../auth/PasswordChangeForm';
  */
 function PasswordChangeCheck({ children }) {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const [shouldShowLoader, setShouldShowLoader] = useState(true);
+
+  // Gérer l'affichage du loader avec un délai minimum pour éviter le clignotement
+  useEffect(() => {
+    if (!isLoading) {
+      // Attendre au moins 500ms avant de cacher le loader pour éviter le clignotement
+      const timer = setTimeout(() => {
+        setShouldShowLoader(false);
+      }, 500);
+
+      return () => clearTimeout(timer);
+    } else {
+      setShouldShowLoader(true);
+    }
+  }, [isLoading]);
 
   // Afficher un loader pendant le chargement
-  if (isLoading) {
+  if (shouldShowLoader) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="loading loading-spinner loading-lg"></div>
+      <div className="fixed inset-0 bg-base-100 flex items-center justify-center z-50">
+        <div className="text-center">
+          <div className="loading loading-spinner loading-lg mb-4"></div>
+          <p className="text-base-content/70">Chargement...</p>
+        </div>
       </div>
     );
   }

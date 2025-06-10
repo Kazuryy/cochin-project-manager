@@ -1,4 +1,4 @@
-// Modification de AuthProvider.jsx - Version sans debug
+// Modification de AuthProvider.jsx - Version optimisée sans clignotement
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { AuthContext} from './authContext';
@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   
   // Fonction pour obtenir le token CSRF
   const getCsrfToken = useCallback(async () => {
@@ -46,7 +47,10 @@ export function AuthProvider({ children }) {
       try {
         if (!isMounted) return;
         
-        setIsLoading(true);
+        // Ne montrer le loading que si c'est la première fois
+        if (!hasInitialized) {
+          setIsLoading(true);
+        }
         
         const response = await fetch('/api/auth/check/', {
           credentials: 'include',
@@ -72,6 +76,7 @@ export function AuthProvider({ children }) {
       } finally {
         if (isMounted) {
           setIsLoading(false);
+          setHasInitialized(true);
         }
       }
     };
@@ -82,7 +87,7 @@ export function AuthProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, []); // Supprimer les dépendances pour éviter les re-render
   
   // Fonction de connexion
   const login = useCallback(async (credentials) => {

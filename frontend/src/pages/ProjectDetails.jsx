@@ -342,6 +342,36 @@ function ProjectDetailsContent() {
     );
   }, [getFieldValue, formatValue]);
 
+  // Fonction pour formater les dates
+  const formatDate = (dateString) => {
+    if (!dateString) return null;
+    try {
+      return new Date(dateString).toLocaleDateString('fr-FR');
+    } catch {
+      return dateString; // Retourner la valeur originale si erreur de formatage
+    }
+  };
+
+  // Fonction helper pour les badges de statut
+  const getStatusBadge = (statut) => {
+    const statusConfig = {
+      'Non commencé': { emoji: '🔄', color: 'badge-neutral', text: 'Non commencé' },
+      'En cours': { emoji: '⚡', color: 'badge-info', text: 'En cours' },
+      'Terminé': { emoji: '✅', color: 'badge-success', text: 'Terminé' },
+      'En attente': { emoji: '⏸️', color: 'badge-warning', text: 'En attente' },
+      'Suspendu': { emoji: '⚠️', color: 'badge-error', text: 'Suspendu' }
+    };
+    
+    const config = statusConfig[statut] || { emoji: '❓', color: 'badge-ghost', text: statut || 'Inconnu' };
+    
+    return (
+      <div className={`badge ${config.color} gap-1`}>
+        <span>{config.emoji}</span>
+        <span>{config.text}</span>
+      </div>
+    );
+  };
+
   if (loading || isLoading) {
     return (
       <div className="hero min-h-screen">
@@ -507,6 +537,42 @@ function ProjectDetailsContent() {
                 <div><strong>Table Details:</strong> {detailsTable?.name || 'Non trouvée'}</div>
                 <div><strong>Données projet:</strong> {projectData ? 'Chargées' : 'Non chargées'}</div>
                 <div><strong>Données details:</strong> {projectDetailsData ? 'Chargées' : 'Non chargées'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Métadonnées générales */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Informations du projet */}
+            <div className="card bg-base-100 shadow">
+              <div className="card-body">
+                <h2 className="card-title text-xl">ℹ️ Informations générales</h2>
+                
+                <div className="space-y-3">
+                  <div>
+                    <strong>Numéro :</strong> {getFieldValue(projectData, 'numero_projet', 'numero', 'number', 'num', 'code') || 'Non défini'}
+                  </div>
+                  
+                  <div>
+                    <strong>Type :</strong> {projectType || 'Type non défini'}
+                  </div>
+                  
+                  <div>
+                    <strong>Sous-type :</strong> {getFieldValue(projectData, 'sous_type', 'sous_type') || 'Sous-type non défini'}
+                  </div>
+                  
+                  <div>
+                    <strong>Équipe :</strong> {getFieldValue(projectData, 'equipe', 'team', 'groupe') || 'Équipe non définie'}
+                  </div>
+
+                  <div>
+                    <strong>Statut :</strong> {getStatusBadge(getFieldValue(projectData, 'statut', 'status', 'etat') || 'Non commencé')}
+                  </div>
+                  
+                  <div>
+                    <strong>Date de création :</strong> {formatDate(getFieldValue(projectData, 'date_creation', 'created_at', 'creation_date')) || 'Non définie'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

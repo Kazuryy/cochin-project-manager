@@ -19,6 +19,7 @@ function CreateProjectContent() {
     type_projet: '',
     equipe: '',
     description: '',
+    statut: 'Non commencé', // Valeur par défaut
     // Champs conditionnels dynamiques
     conditionalFields: {}
   });
@@ -61,6 +62,8 @@ function CreateProjectContent() {
   // État pour le projet créé (pour les devis)
   const [createdProject, setCreatedProject] = useState(null);
   const [showDevisSection, setShowDevisSection] = useState(false);
+  const [showDevisChoice, setShowDevisChoice] = useState(false);
+  const [isManagingDevis, setIsManagingDevis] = useState(false);
 
   // Vérifier s'il y a des données à restaurer au chargement
   useEffect(() => {
@@ -753,6 +756,10 @@ function CreateProjectContent() {
       errors.description = 'La description est requise';
     }
     
+    if (!formData.statut) {
+      errors.statut = 'Le statut est requis';
+    }
+    
     // Validation des champs conditionnels obligatoires
     conditionalFields.forEach(field => {
       if (field.required && !formData.conditionalFields[field.name]) {
@@ -783,7 +790,8 @@ function CreateProjectContent() {
         contact_principal: formData.contact_principal,
         type_projet: formData.type_projet,
         equipe: formData.equipe,
-        description: formData.description
+        description: formData.description,
+        statut: formData.statut
       };
 
       // Préparer les champs conditionnels pour la table Details
@@ -806,32 +814,59 @@ function CreateProjectContent() {
         formData.type_projet
       );
 
+      console.log('🔍 === RÉPONSE DU BACKEND ===');
+      console.log('✅ Résultat complet:', result);
+      console.log('✅ result.success:', result.success);
+      console.log('✅ result.project:', result.project);
+      console.log('✅ result.error:', result.error);
+      
       if (result.success) {
         setSuccessMessage('Projet créé avec succès !');
         
-        // Enregistrer le projet créé pour les devis
-        setCreatedProject({
-          id: result.project.id,
-          name: projectData.nom_projet
-        });
+        console.log('🎯 === VÉRIFICATION DE L\'ID PROJET ===');
+        console.log('🔍 result.project existe?', !!result.project);
+        console.log('🔍 result.project:', result.project);
+        console.log('🔍 result.data existe?', !!result.data);
+        console.log('🔍 result.data:', result.data);
+        if (result.project) {
+          console.log('🔍 result.project.id existe?', !!result.project.id);
+          console.log('🔍 result.project.id:', result.project.id);
+        }
+        if (result.data) {
+          console.log('🔍 result.data.project existe?', !!result.data.project);
+          console.log('🔍 result.data.project:', result.data.project);
+          if (result.data.project) {
+            console.log('🔍 result.data.project.id existe?', !!result.data.project.id);
+            console.log('🔍 result.data.project.id:', result.data.project.id);
+          }
+        }
         
-        // Afficher la section devis
-        setShowDevisSection(true);
+        // Enregistrer le projet créé pour les devis (avec vérification défensive)
+        // Les données du projet sont dans result.data, pas directement dans result
+        const projectCreated = result.data?.project || result.project;
+        if (projectCreated && projectCreated.id) {
+          console.log('✅ ID projet trouvé, création de createdProject');
+          setCreatedProject({
+            id: projectCreated.id,
+            name: projectData.nom_projet
+          });
+          
+          // Afficher la section de choix (devis ou dashboard)
+          setShowDevisChoice(true);
+          console.log('✅ showDevisChoice défini à true');
+        } else {
+          // Si pas d'ID retourné, rediriger directement vers le dashboard
+          console.warn('⚠️ Projet créé avec succès mais aucun ID retourné:', result);
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 1500);
+        }
         
         // Effacer les données sauvegardées après succès
         clearSavedData();
-        
-        // Scroll vers la section devis
-        setTimeout(() => {
-          const devisSection = document.getElementById('devis-section');
-          if (devisSection) {
-            devisSection.scrollIntoView({ behavior: 'smooth' });
-          }
-        }, 500);
       } else {
         throw new Error(result.error);
       }
-
     } catch (error) {
       console.error('Erreur lors de la création du projet:', error);
       setFormErrors({ 
@@ -1140,6 +1175,32 @@ function CreateProjectContent() {
                     </label>
                   )}
                 </div>
+
+                {/* Statut du projet */}
+                <div className="form-control w-full mb-4">
+                  <label className="label" htmlFor="statut">
+                    <span className="label-text font-medium">Statut du projet <span className="text-error">*</span></span>
+                  </label>
+                  <select
+                    id="statut"
+                    name="statut"
+                    value={formData.statut}
+                    onChange={handleChange}
+                    className={`select select-bordered w-full ${formErrors.statut ? 'select-error' : ''}`}
+                    required
+                  >
+                    <option value="Non commencé">🔄 Non commencé</option>
+                    <option value="En cours">⚡ En cours</option>
+                    <option value="Terminé">✅ Terminé</option>
+                    <option value="En attente">⏸️ En attente</option>
+                    <option value="Suspendu">⚠️ Suspendu</option>
+                  </select>
+                  {formErrors.statut && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{formErrors.statut}</span>
+                    </label>
+                  )}
+                </div>
               </div>
 
               {/* Section: Champs conditionnels */}
@@ -1349,29 +1410,80 @@ function CreateProjectContent() {
           </div>
         </div>
 
-        {/* Section Devis - Apparaît après la création du projet */}
-        {showDevisSection && createdProject && (
-          <div id="devis-section" className="mt-8">
+        {/* Section Choix après création - Devis ou Dashboard */}
+        {showDevisChoice && createdProject && !isManagingDevis && (
+          <div className="mt-8">
             <div className="alert alert-success mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div>
                 <h3 className="font-bold">Projet "{createdProject.name}" créé avec succès !</h3>
-                <div className="text-sm">Vous pouvez maintenant gérer les devis de ce projet ci-dessous, ou retourner au tableau de bord.</div>
+                <div className="text-sm">Que souhaitez-vous faire maintenant ?</div>
+              </div>
+            </div>
+
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body text-center">
+                <h2 className="card-title justify-center mb-4">Prochaine étape</h2>
+                <p className="mb-6 text-base-content/70">
+                  Vous pouvez soit ajouter des devis à ce projet, soit retourner au tableau de bord pour voir tous vos projets.
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <button
+                    className="btn btn-primary btn-lg"
+                    onClick={() => {
+                      setIsManagingDevis(true);
+                      setShowDevisSection(true);
+                      setShowDevisChoice(false);
+                      // Scroll vers la section devis
+                      setTimeout(() => {
+                        const devisSection = document.getElementById('devis-section');
+                        if (devisSection) {
+                          devisSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 100);
+                    }}
+                  >
+                    📋 Ajouter des devis
+                  </button>
+                  
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    📊 Retour au dashboard
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section Devis - Apparaît après avoir choisi de gérer les devis */}
+        {showDevisSection && createdProject && isManagingDevis && (
+          <div id="devis-section" className="mt-8">
+            <div className="alert alert-info mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <div>
+                <h3 className="font-bold">Gestion des devis pour "{createdProject.name}"</h3>
+                <div className="text-sm">Ajoutez autant de devis que nécessaire. Cliquez sur "J'ai terminé" quand vous avez fini.</div>
               </div>
               <div className="flex gap-2">
                 <button
-                  className="btn btn-outline btn-sm"
+                  className="btn btn-success btn-sm"
                   onClick={() => navigate('/dashboard')}
                 >
-                  📊 Retour au dashboard
+                  ✅ J'ai terminé - Retour au dashboard
                 </button>
                 <button
-                  className="btn btn-primary btn-sm"
+                  className="btn btn-outline btn-sm"
                   onClick={() => navigate(`/projects/${createdProject.id}`)}
                 >
-                  👁️ Voir le projet
+                  👁️ Voir le projet complet
                 </button>
               </div>
             </div>

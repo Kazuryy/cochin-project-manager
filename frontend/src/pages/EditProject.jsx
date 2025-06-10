@@ -19,6 +19,7 @@ function EditProjectContent() {
     type_projet: '',
     equipe: '',
     description: '',
+    statut: 'Non commencé',
     // Champs conditionnels dynamiques
     conditionalFields: {}
   });
@@ -75,6 +76,243 @@ function EditProjectContent() {
     
     return '';
   }, []);
+
+  // Charger les options pour un champ (déclaré en premier car utilisé par loadConditionalFields)
+  const loadFieldOptions = useCallback(async (field) => {
+    if (field.field_type === 'foreign_key' && field.related_table) {
+      try {
+        const response = await api.get(`/api/database/tables/${field.related_table.id || field.related_table}/records`);
+        const recordsList = response || [];
+
+        console.log(`🔍 Chargement options pour ${field.label}:`, {
+          field: field.name,
+          related_table: field.related_table,
+          records_count: recordsList.length
+        });
+
+        const uniqueValues = new Set();
+        const options = [];
+
+        recordsList.forEach((record) => {
+          // D'abord essayer les champs génériques
+          let extractedValue = getFieldValue(record, 'nom', 'name', 'label', 'title', 'value');
+          
+          // Si pas trouvé, essayer des colonnes spécifiques basées sur le nom du champ
+          if (!extractedValue || extractedValue.trim() === '') {
+            const fieldNameLower = field.name.toLowerCase();
+            
+            // Mapping dynamique selon le type de projet pour les sous types
+            if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype')) {
+              // Construire dynamiquement le nom de la colonne selon le type de projet
+              const selectedType = projectTypes.find(type => {
+                const typeId = String(type.id);
+                return typeId === String(formData.type_projet);
+              });
+              
+              if (selectedType) {
+                const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+                if (typeName) {
+                  const dynamicColumnName = `sous_type_${typeName.toLowerCase()}`;
+                  console.log(`🎯 Colonne dynamique pour sous type: ${dynamicColumnName}`);
+                  extractedValue = getFieldValue(record, dynamicColumnName, 'sous_type', 'soustype');
+                }
+              }
+            } else if (fieldNameLower.includes('espece') || fieldNameLower.includes('espèce')) {
+              extractedValue = getFieldValue(record, 'espece', 'espèce', 'species');
+            } else {
+              // Essayer avec le nom du champ lui-même
+              extractedValue = getFieldValue(record, field.name, fieldNameLower);
+            }
+          }
+          
+          if (extractedValue && typeof extractedValue === 'string') {
+            const trimmedValue = extractedValue.trim();
+            
+            if (trimmedValue && !uniqueValues.has(trimmedValue)) {
+              uniqueValues.add(trimmedValue);
+              options.push({
+                value: trimmedValue,
+                label: trimmedValue
+              });
+            }
+          }
+        });
+
+        console.log(`✅ Options chargées pour ${field.label}:`, options);
+        return options.sort((a, b) => a.label.localeCompare(b.label));
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des options FK:', error);
+        return [];
+      }
+    }
+    return [];
+  }, [getFieldValue, projectTypes, formData.type_projet]);
+
+  // Charger les champs conditionnels basés sur la table Details
+  const loadConditionalFields = useCallback(async (detailsTable, projectRecord) => {
+    try {
+      // Exclure les champs FK vers Projet
+      const fieldsConfig = detailsTable.fields?.filter(field => {
+        // Exclure les champs FK qui pointent vers la table Projet
+        if (field.field_type === 'foreign_key' && field.related_table) {
+          // Vérifier si la table liée est la table Projet (par ID ou nom)
+          const relatedTableId = field.related_table.id || field.related_table;
+          const isProjectTable = relatedTableId === projectTableId || 
+                                  field.related_table.name === 'Projet' ||
+                                  field.related_table.slug === 'projet';
+          
+          if (isProjectTable) {
+            console.log(`🚫 Champ FK exclu (pointe vers Projet): ${field.name} (${field.slug})`);
+            return false;
+          }
+        }
+        
+        // Exclure aussi par le nom/slug si c'est un champ de projet
+        if (field.slug.includes('projet') || field.slug.includes('project') || 
+            field.name.toLowerCase().includes('projet') || field.name.toLowerCase().includes('project')) {
+          console.log(`🚫 Champ projet exclu par nom/slug: ${field.name} (${field.slug})`);
+          return false;
+        }
+        
+        return true;
+      }).map(field => ({
+        name: field.slug,
+        label: field.name,
+        field_type: field.field_type,
+        required: field.is_required || false,
+        related_table: field.related_table,
+        options: []
+      })) || [];
+
+      console.log('📋 Champs conditionnels configurés:', fieldsConfig);
+
+      // Charger les options pour chaque champ
+      const fieldsWithOptions = await Promise.all(
+        fieldsConfig.map(async (field) => {
+          const options = await loadFieldOptions(field);
+          return { ...field, options };
+        })
+      );
+
+      setConditionalFields(fieldsWithOptions);
+
+      // Extraire les valeurs actuelles des champs conditionnels
+      const conditionalValues = {};
+      fieldsWithOptions.forEach(field => {
+        const value = getFieldValue(projectRecord, field.name);
+        if (value) {
+          conditionalValues[field.name] = value;
+        }
+      });
+
+      console.log('📋 Valeurs conditionnelles extraites:', conditionalValues);
+      
+      // Mettre à jour le formData avec les valeurs conditionnelles
+      setFormData(prev => ({
+        ...prev,
+        conditionalFields: conditionalValues
+      }));
+
+    } catch (err) {
+      console.error('Erreur lors du chargement des champs conditionnels:', err);
+    }
+  }, [getFieldValue, projectTableId, loadFieldOptions]);
+
+  // Charger les détails spécifiques du projet
+  const loadProjectDetails = useCallback(async (project, typeProjet) => {
+    try {
+      console.log('🎯 loadProjectDetails appelé avec typeProjet:', typeProjet);
+      console.log('🎯 projectTypes disponibles:', projectTypes.length);
+      
+      // Trouver le type exact dans la liste des types
+      const selectedType = projectTypes.find(type => {
+        const typeId = String(type.id);
+        const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
+        console.log(`🔍 Comparaison type: ID=${typeId}, Nom=${typeName}, Recherche=${typeProjet}`);
+        return typeId === String(typeProjet) || typeName === typeProjet;
+      });
+
+      if (!selectedType) {
+        console.log('⚠️ Type de projet non trouvé dans la liste');
+        console.log('🔍 Types disponibles:', projectTypes.map(t => ({ id: t.id, nom: getFieldValue(t, 'nom', 'name', 'title', 'titre', 'label') })));
+        return;
+      }
+
+      const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
+      console.log('✅ Type de projet trouvé:', typeName, 'pour ID/Nom:', typeProjet);
+
+      // Trouver la table {Type}Details correspondante
+      const detailsTableName = `${typeName}Details`;
+      const foundDetailsTable = tables.find(table => 
+        table.name === detailsTableName ||
+        table.name.toLowerCase() === detailsTableName.toLowerCase()
+      );
+
+      if (!foundDetailsTable) {
+        console.log(`⚠️ Table ${detailsTableName} non trouvée`);
+        return;
+      }
+
+      console.log('✅ Table Details trouvée:', foundDetailsTable.name);
+      setDetailsTable(foundDetailsTable);
+
+      // Charger les enregistrements de la table Details
+      const detailsRecords = await fetchRecords(foundDetailsTable.id);
+      
+      console.log('📊 Enregistrements dans la table Details:', detailsRecords);
+      console.log('🔍 Recherche d\'un enregistrement pour projectId:', projectId);
+      
+      // Trouver l'enregistrement qui correspond à notre projet
+      const projectRecord = detailsRecords.find(record => {
+        console.log('🔍 Test enregistrement:', record);
+        
+        // Tester différentes propriétés de FK par ID
+        const matchesById = [
+          record.id_projet_id,
+          record.projet_id,
+          record.projet_auto,
+          record.projet,
+          record.project
+        ].map(val => String(val)).includes(String(projectId));
+        
+        // Tester la correspondance par nom de projet (pour projet_auto)
+        const projectName = getFieldValue(project, 'nom_projet', 'nom', 'name', 'titre', 'title');
+        const matchesByName = projectName && (
+          record.projet_auto === projectName ||
+          record.projet === projectName ||
+          record.project === projectName
+        );
+        
+        console.log('🔍 Matches trouvés:', {
+          id_projet_id: record.id_projet_id,
+          projet_id: record.projet_id,
+          projet_auto: record.projet_auto,
+          projet: record.projet,
+          project: record.project,
+          matchesById: matchesById,
+          matchesByName: matchesByName,
+          projectName: projectName,
+          searchingFor: projectId
+        });
+        
+        return matchesById || matchesByName;
+      });
+
+      if (projectRecord) {
+        console.log('✅ Enregistrement Details trouvé:', projectRecord);
+        setProjectDetailsData(projectRecord);
+
+        // Charger les champs conditionnels pour ce type
+        await loadConditionalFields(foundDetailsTable, projectRecord);
+      } else {
+        console.log('⚠️ Aucun enregistrement Details trouvé pour ce projet');
+      }
+
+    } catch (err) {
+      console.error('Erreur lors du chargement des détails:', err);
+    }
+  }, [tables, projectTypes, getFieldValue, fetchRecords, projectId, loadConditionalFields]);
 
   // Charger les tables et identifier les IDs
   useEffect(() => {
@@ -168,23 +406,25 @@ function EditProjectContent() {
         console.log('📋 Données du projet chargées:', projectResponse);
 
         // Extraire les valeurs pour le formulaire
-        const projectFormData = {
-          nom_projet: getFieldValue(projectResponse, 'nom_projet', 'nom', 'name'),
-          numero_projet: getFieldValue(projectResponse, 'numero_projet', 'numero', 'number'),
-          contact_principal: getFieldValue(projectResponse, 'contact_principal', 'contact_principal_id', 'contact'),
-          type_projet: getFieldValue(projectResponse, 'type_projet', 'type', 'projet_type'),
-          equipe: getFieldValue(projectResponse, 'equipe', 'team'),
-          description: getFieldValue(projectResponse, 'description', 'desc'),
+        const projectData = {
+          nom_projet: getFieldValue(projectResponse, 'nom_projet', 'nom', 'name', 'titre', 'title'),
+          numero_projet: getFieldValue(projectResponse, 'numero_projet', 'numero', 'number', 'num'),
+          contact_principal: getFieldValue(projectResponse, 'contact_principal', 'contact_principal_id', 'contact_id', 'contact'),
+          type_projet: getFieldValue(projectResponse, 'type_projet', 'type_id', 'type'),
+          equipe: getFieldValue(projectResponse, 'equipe', 'team', 'groupe'),
+          description: getFieldValue(projectResponse, 'description', 'desc', 'details'),
+          statut: getFieldValue(projectResponse, 'statut', 'status', 'etat') || 'Non commencé',
           conditionalFields: {}
         };
 
-        console.log('📋 Données extraites pour le formulaire:', projectFormData);
-        setFormData(projectFormData);
+        console.log('📋 Données extraites pour le formulaire:', projectData);
+        console.log('🔍 Détail contact_principal extrait:', projectData.contact_principal);
+        console.log('🔍 Détail type_projet extrait:', projectData.type_projet);
+        console.log('🔍 Toutes les clés de projectResponse:', Object.keys(projectResponse));
+        
+        setFormData(projectData);
 
-        // Charger les détails spécifiques si il y a un type
-        if (projectFormData.type_projet) {
-          await loadProjectDetails(projectResponse, projectFormData.type_projet);
-        }
+        // Note: Le chargement des détails spécifiques est maintenant géré par un useEffect séparé
 
       } catch (err) {
         console.error('Erreur lors du chargement du projet:', err);
@@ -197,6 +437,35 @@ function EditProjectContent() {
     loadProjectData();
   }, [projectId, projectTableId, getFieldValue]);
 
+  // Charger les détails spécifiques du projet quand toutes les conditions sont réunies
+  useEffect(() => {
+    const loadProjectDetailsWhenReady = async () => {
+      if (!formData.nom_projet || !formData.type_projet || !projectTypes.length || !tables.length) {
+        console.log('⚠️ Conditions non réunies pour charger les détails:', {
+          hasProjectData: !!formData.nom_projet,
+          hasTypeProjet: !!formData.type_projet,
+          projectTypesLoaded: projectTypes.length,
+          tablesLoaded: tables.length
+        });
+        return;
+      }
+
+      console.log('🎯 Toutes les conditions réunies, chargement des détails pour type:', formData.type_projet);
+      console.log('🎯 projectTypes disponibles:', projectTypes.length);
+      console.log('🎯 tables disponibles:', tables.length);
+
+      try {
+        // Recharger les données du projet pour passer à loadProjectDetails
+        const projectResponse = await api.get(`/api/database/records/${projectId}/`);
+        await loadProjectDetails(projectResponse, formData.type_projet);
+      } catch (err) {
+        console.error('Erreur lors du chargement des détails du projet:', err);
+      }
+    };
+
+    loadProjectDetailsWhenReady();
+  }, [formData.nom_projet, formData.type_projet, projectTypes, tables, projectId]);
+
   // Convertir les valeurs texte en IDs une fois que les options sont disponibles
   useEffect(() => {
     if (!formData.nom_projet) return; // Attendre que les données du projet soient chargées
@@ -207,18 +476,48 @@ function EditProjectContent() {
       
       // Convertir le type de projet si les types sont chargés
       if (projectTypes.length > 0 && formData.type_projet) {
-        // Chercher l'ID correspondant au nom directement ici
-        const matchingType = projectTypes.find(type => {
-          const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
-          return typeName === formData.type_projet;
+        // Si c'est déjà un ID numérique, ne pas convertir
+        if (isNaN(formData.type_projet)) {
+          const matchingType = projectTypes.find(type => {
+            const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
+            return typeName === formData.type_projet;
+          });
+          
+          if (matchingType) {
+            const convertedType = String(matchingType.id);
+            if (convertedType !== formData.type_projet) {
+              updatedFormData.type_projet = convertedType;
+              hasChanges = true;
+              console.log('🔄 Type de projet converti:', formData.type_projet, '→', convertedType);
+            }
+          }
+        }
+      }
+      
+      // Convertir le contact principal si les contacts sont chargés
+      if (contacts.length > 0 && formData.contact_principal) {
+        // Vérifier si c'est un nom complet qui doit être converti en ID ou format attendu
+        const currentContact = formData.contact_principal;
+        
+        // Chercher le contact correspondant dans la liste
+        const matchingContact = contacts.find(contact => {
+          const contactName = getFieldValue(contact, 'nom', 'name', 'prenom', 'label') || `Contact #${contact.id}`;
+          const contactPrenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname');
+          const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+          
+          return fullName === currentContact || contactName === currentContact || contact.id.toString() === currentContact;
         });
         
-        if (matchingType) {
-          const convertedType = String(matchingType.id);
-          if (convertedType !== formData.type_projet) {
-            updatedFormData.type_projet = convertedType;
+        if (matchingContact) {
+          // Utiliser le format nom complet pour cohérence avec CreateProject
+          const contactName = getFieldValue(matchingContact, 'nom', 'name', 'prenom', 'label');
+          const contactPrenom = getFieldValue(matchingContact, 'prenom', 'first_name', 'firstname');
+          const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+          
+          if (fullName !== currentContact) {
+            updatedFormData.contact_principal = fullName;
             hasChanges = true;
-            console.log('🔄 Type de projet converti:', formData.type_projet, '→', convertedType);
+            console.log('🔄 Contact principal converti:', currentContact, '→', fullName);
           }
         }
       }
@@ -229,304 +528,7 @@ function EditProjectContent() {
     };
     
     convertValues();
-  }, [projectTypes, formData.nom_projet, formData.type_projet, getFieldValue]);
-
-  // Charger les détails spécifiques du projet
-  const loadProjectDetails = useCallback(async (project, typeProjet) => {
-    try {
-      // Trouver le type exact dans la liste des types
-      const selectedType = projectTypes.find(type => {
-        const typeId = String(type.id);
-        const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
-        return typeId === String(typeProjet) || typeName === typeProjet;
-      });
-
-      if (!selectedType) {
-        console.log('⚠️ Type de projet non trouvé dans la liste');
-        return;
-      }
-
-      const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
-      console.log('🎯 Type de projet détecté:', typeName);
-
-      // Trouver la table {Type}Details correspondante
-      const detailsTableName = `${typeName}Details`;
-      const foundDetailsTable = tables.find(table => 
-        table.name === detailsTableName ||
-        table.name.toLowerCase() === detailsTableName.toLowerCase()
-      );
-
-      if (!foundDetailsTable) {
-        console.log(`⚠️ Table ${detailsTableName} non trouvée`);
-        return;
-      }
-
-      console.log('✅ Table Details trouvée:', foundDetailsTable.name);
-      setDetailsTable(foundDetailsTable);
-
-      // Charger les enregistrements de la table Details
-      const detailsRecords = await fetchRecords(foundDetailsTable.id);
-      
-      // Trouver l'enregistrement qui correspond à notre projet
-      const projectRecord = detailsRecords.find(record => {
-        // Tester différentes propriétés de FK
-        const matches = [
-          record.id_projet_id,
-          record.projet_id,
-          record.projet_auto,
-          record.projet,
-          record.project
-        ].map(val => String(val)).includes(String(projectId));
-        
-        return matches;
-      });
-
-      if (projectRecord) {
-        console.log('✅ Enregistrement Details trouvé:', projectRecord);
-        setProjectDetailsData(projectRecord);
-
-        // Charger les champs conditionnels pour ce type
-        await loadConditionalFields(foundDetailsTable, projectRecord);
-      } else {
-        console.log('⚠️ Aucun enregistrement Details trouvé pour ce projet');
-      }
-
-    } catch (err) {
-      console.error('Erreur lors du chargement des détails:', err);
-    }
-  }, [tables, projectTypes, getFieldValue, fetchRecords, projectId]);
-
-  // Charger les champs conditionnels basés sur la table Details
-  const loadConditionalFields = useCallback(async (detailsTable, projectRecord) => {
-    try {
-      // Exclure les champs FK vers Projet
-      const fieldsConfig = detailsTable.fields?.filter(field => {
-        // Exclure les champs FK qui pointent vers la table Projet
-        if (field.field_type === 'foreign_key' && field.related_table) {
-          // Vérifier si la table liée est la table Projet (par ID ou nom)
-          const relatedTableId = field.related_table.id || field.related_table;
-          const isProjectTable = relatedTableId === projectTableId || 
-                                  field.related_table.name === 'Projet' ||
-                                  field.related_table.slug === 'projet';
-          
-          if (isProjectTable) {
-            console.log(`🚫 Champ FK exclu (pointe vers Projet): ${field.name} (${field.slug})`);
-            return false;
-          }
-        }
-        
-        // Exclure aussi par le nom/slug si c'est un champ de projet
-        if (field.slug.includes('projet') || field.slug.includes('project') || 
-            field.name.toLowerCase().includes('projet') || field.name.toLowerCase().includes('project')) {
-          console.log(`🚫 Champ projet exclu par nom/slug: ${field.name} (${field.slug})`);
-          return false;
-        }
-        
-        return true;
-      }).map(field => ({
-        name: field.slug,
-        label: field.name,
-        field_type: field.field_type,
-        required: field.is_required || false,
-        related_table: field.related_table,
-        options: []
-      })) || [];
-
-      console.log('📋 Champs conditionnels configurés:', fieldsConfig);
-
-      // Charger les options pour chaque champ
-      const fieldsWithOptions = await Promise.all(
-        fieldsConfig.map(async (field) => {
-          const options = await loadFieldOptions(field);
-          return { ...field, options };
-        })
-      );
-
-      setConditionalFields(fieldsWithOptions);
-
-      // Extraire les valeurs actuelles des champs conditionnels
-      const conditionalValues = {};
-      fieldsWithOptions.forEach(field => {
-        const value = getFieldValue(projectRecord, field.name);
-        if (value) {
-          conditionalValues[field.name] = value;
-        }
-      });
-
-      console.log('📋 Valeurs conditionnelles extraites:', conditionalValues);
-      
-      setFormData(prev => ({
-        ...prev,
-        conditionalFields: conditionalValues
-      }));
-
-    } catch (err) {
-      console.error('Erreur lors du chargement des champs conditionnels:', err);
-    }
-  }, [getFieldValue]);
-
-  // Charger les options pour un champ
-  const loadFieldOptions = useCallback(async (field) => {
-    if (field.field_type === 'foreign_key' && field.related_table) {
-      try {
-        const response = await api.get(`/api/database/tables/${field.related_table.id || field.related_table}/records`);
-        const recordsList = response || [];
-
-        console.log(`🔍 Chargement options pour ${field.label}:`, {
-          field: field.name,
-          related_table: field.related_table,
-          records_count: recordsList.length
-        });
-
-        const uniqueValues = new Set();
-        const options = [];
-
-        recordsList.forEach((record) => {
-          // D'abord essayer les champs génériques
-          let extractedValue = getFieldValue(record, 'nom', 'name', 'label', 'title', 'value');
-          
-          // Si pas trouvé, essayer des colonnes spécifiques basées sur le nom du champ
-          if (!extractedValue || extractedValue.trim() === '') {
-            const fieldNameLower = field.name.toLowerCase();
-            
-            // Mapping dynamique selon le type de projet pour les sous types
-            if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype')) {
-              // Construire dynamiquement le nom de la colonne selon le type de projet
-              const selectedType = projectTypes.find(type => {
-                const typeId = String(type.id);
-                return typeId === String(formData.type_projet);
-              });
-              
-              if (selectedType) {
-                const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
-                if (typeName) {
-                  const dynamicColumnName = `sous_type_${typeName.toLowerCase()}`;
-                  console.log(`🎯 Colonne dynamique pour sous type: ${dynamicColumnName}`);
-                  extractedValue = getFieldValue(record, dynamicColumnName, 'sous_type', 'soustype');
-                }
-              }
-            } else if (fieldNameLower.includes('espece') || fieldNameLower.includes('espèce')) {
-              extractedValue = getFieldValue(record, 'espece', 'espèce', 'species');
-            } else {
-              // Essayer avec le nom du champ lui-même
-              extractedValue = getFieldValue(record, field.name, fieldNameLower);
-            }
-          }
-          
-          if (extractedValue && typeof extractedValue === 'string') {
-            const trimmedValue = extractedValue.trim();
-            
-            if (trimmedValue && !uniqueValues.has(trimmedValue)) {
-              uniqueValues.add(trimmedValue);
-              options.push({
-                value: trimmedValue,
-                label: trimmedValue
-              });
-            }
-          }
-        });
-
-        console.log(`✅ Options chargées pour ${field.label}:`, options);
-        return options.sort((a, b) => a.label.localeCompare(b.label));
-        
-      } catch (error) {
-        console.error('Erreur lors du chargement des options FK:', error);
-        return [];
-      }
-    }
-    return [];
-  }, [getFieldValue, projectTypes, formData.type_projet]);
-
-  // Recharger les champs conditionnels quand le type change
-  useEffect(() => {
-    const reloadConditionalFields = async () => {
-      if (!formData.type_projet || !projectTypes.length || !tables.length) {
-        setConditionalFields([]);
-        return;
-      }
-
-      try {
-        const selectedType = projectTypes.find(type => {
-          const typeId = String(type.id);
-          return typeId === String(formData.type_projet);
-        });
-        
-        if (!selectedType) {
-          setConditionalFields([]);
-          return;
-        }
-
-        const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
-        
-        if (!typeName) {
-          setConditionalFields([]);
-          return;
-        }
-
-        // Trouver la table Details correspondante
-        const detailsTable = tables.find(table => 
-          table.name === `${typeName}Details` ||
-          table.name.toLowerCase() === `${typeName}Details`.toLowerCase()
-        );
-        
-        if (!detailsTable) {
-          setConditionalFields([]);
-          return;
-        }
-
-        // Charger les champs de la table Details
-        const fieldsConfig = detailsTable.fields?.filter(field => {
-          // Exclure les champs FK vers Projet
-          if (field.field_type === 'foreign_key' && field.related_table) {
-            // Vérifier si la table liée est la table Projet (par ID ou nom)
-            const relatedTableId = field.related_table.id || field.related_table;
-            const isProjectTable = relatedTableId === projectTableId || 
-                                    field.related_table.name === 'Projet' ||
-                                    field.related_table.slug === 'projet';
-            
-            if (isProjectTable) {
-              console.log(`🚫 Champ FK exclu (pointe vers Projet): ${field.name} (${field.slug})`);
-              return false;
-            }
-          }
-          
-          // Exclure aussi par le nom/slug si c'est un champ de projet
-          if (field.slug.includes('projet') || field.slug.includes('project') || 
-              field.name.toLowerCase().includes('projet') || field.name.toLowerCase().includes('project')) {
-            console.log(`🚫 Champ projet exclu par nom/slug: ${field.name} (${field.slug})`);
-            return false;
-          }
-          
-          return true;
-        }).map(field => ({
-          name: field.slug,
-          label: field.name,
-          field_type: field.field_type,
-          required: field.is_required || false,
-          related_table: field.related_table,
-          options: []
-        })) || [];
-
-        // Charger les options pour chaque champ qui en a besoin
-        const fieldsWithOptions = await Promise.all(
-          fieldsConfig.map(async (field) => {
-            const options = await loadFieldOptions(field);
-            return { ...field, options };
-          })
-        );
-
-        setConditionalFields(fieldsWithOptions);
-
-      } catch (err) {
-        console.error('❌ Erreur lors du chargement des champs depuis la table Details:', err);
-        setConditionalFields([]);
-      }
-    };
-
-    if (!loading) {  // Ne pas recharger pendant le chargement initial
-      reloadConditionalFields();
-    }
-  }, [formData.type_projet, projectTypes, tables, getFieldValue, loadFieldOptions, loading]);
+  }, [projectTypes, contacts, formData.nom_projet, formData.type_projet, formData.contact_principal, getFieldValue]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -613,7 +615,8 @@ function EditProjectContent() {
         contact_principal: formData.contact_principal,
         type_projet: formData.type_projet,
         equipe: formData.equipe,
-        description: formData.description
+        description: formData.description,
+        statut: formData.statut
       };
 
       // Préparer les champs conditionnels pour la table Details
@@ -1175,10 +1178,39 @@ function EditProjectContent() {
                     </label>
                   )}
                 </div>
+
+                {/* Statut du projet */}
+                <div className="form-control w-full mb-4">
+                  <label className="label" htmlFor="statut">
+                    <span className="label-text font-medium">Statut du projet <span className="text-error">*</span></span>
+                  </label>
+                  <select
+                    id="statut"
+                    name="statut"
+                    value={formData.statut}
+                    onChange={handleChange}
+                    className={`select select-bordered w-full ${formErrors.statut ? 'select-error' : ''}`}
+                    required
+                  >
+                    <option value="Non commencé">🔄 Non commencé</option>
+                    <option value="En cours">⚡ En cours</option>
+                    <option value="Terminé">✅ Terminé</option>
+                    <option value="En attente">⏸️ En attente</option>
+                    <option value="Suspendu">⚠️ Suspendu</option>
+                  </select>
+                  {formErrors.statut && (
+                    <label className="label">
+                      <span className="label-text-alt text-error">{formErrors.statut}</span>
+                    </label>
+                  )}
+                </div>
               </div>
 
               {/* Section: Champs conditionnels */}
-              {conditionalFields.length > 0 && (
+              {(() => {
+                console.log('🔍 DEBUG conditionalFields:', conditionalFields, 'length:', conditionalFields.length);
+                return conditionalFields.length > 0;
+              })() && (
                 <>
                   <div className="divider"></div>
                   <div>

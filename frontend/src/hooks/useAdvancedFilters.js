@@ -24,7 +24,7 @@ export const COMPARISON_OPERATORS = {
   LESS_EQUAL: 'less_equal'
 };
 
-export function useAdvancedFilters(data = [], initialColumns = []) {
+export function useAdvancedFilters(data = [], initialColumns = [], customGetFieldValue = null) {
   const [filters, setFilters] = useState([]);
   const [sorting, setSorting] = useState([]);
   const [visibleColumns, setVisibleColumns] = useState(initialColumns);
@@ -91,8 +91,14 @@ export function useAdvancedFilters(data = [], initialColumns = []) {
     setSorting([]);
   }, []);
 
-  // Fonction pour extraire la valeur d'un champ (réutilise la logique du Dashboard)
+  // Fonction pour extraire la valeur d'un champ (logique par défaut ou personnalisée)
   const getFieldValue = useCallback((record, ...possibleFields) => {
+    // Si une fonction personnalisée est fournie, l'utiliser
+    if (customGetFieldValue && possibleFields.length === 1) {
+      return customGetFieldValue(record, possibleFields[0]);
+    }
+    
+    // Sinon, utiliser la logique par défaut
     if (!record) return '';
     
     for (const field of possibleFields) {
@@ -111,7 +117,7 @@ export function useAdvancedFilters(data = [], initialColumns = []) {
     }
     
     return '';
-  }, []);
+  }, [customGetFieldValue]);
 
   // Application des filtres
   const applyTextFilter = useCallback((fieldValue, filter) => {
