@@ -75,21 +75,39 @@ class DynamicRecordSerializer(serializers.ModelSerializer):
 
 class DynamicRecordCreateSerializer(serializers.ModelSerializer):
     values = serializers.DictField(write_only=True)
+    table = serializers.PrimaryKeyRelatedField(
+        queryset=DynamicTable.objects.all(),
+        required=False  # Ne pas exiger table lors des mises à jour
+    )
     
     class Meta:
         model = DynamicRecord
         fields = ['table', 'values', 'created_by']
         read_only_fields = ['created_by']
     
+    def validate(self, data):
+        # Lors de la création, table est obligatoire
+        if not self.instance and not data.get('table'):
+            raise serializers.ValidationError({
+                'table': 'Ce champ est obligatoire lors de la création.'
+            })
+        return data
+    
     def create(self, validated_data):
         values_data = validated_data.pop('values', {})
         table = validated_data.get('table')
         
+        # Gérer le cas des utilisateurs non authentifiés
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['created_by'] = request.user
+        else:
+            # Si pas d'utilisateur authentifié, ne pas définir created_by
+            # (le modèle doit permettre null=True, blank=True pour ce champ)
+            validated_data.pop('created_by', None)
+        
         # Créer l'enregistrement
-        record = DynamicRecord.objects.create(
-            **validated_data,
-            created_by=self.context['request'].user
-        )
+        record = DynamicRecord.objects.create(**validated_data)
         
         # Créer les valeurs
         for field_slug, value in values_data.items():
@@ -108,9 +126,10 @@ class DynamicRecordCreateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         values_data = validated_data.pop('values', {})
         
-        # Mettre à jour l'enregistrement
+        # Mettre à jour l'enregistrement (sauf table qui ne change pas)
         for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+            if attr != 'table':  # Ne pas modifier la table lors des mises à jour
+                setattr(instance, attr, value)
         instance.save()
         
         # Mettre à jour les valeurs

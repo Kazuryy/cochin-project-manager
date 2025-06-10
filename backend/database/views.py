@@ -479,6 +479,34 @@ class DynamicTableViewSet(viewsets.ModelViewSet):
                                         )
                                         print(f"✅ Enregistrement Details créé avec ID: {details_record.id}")
                                         
+                                        # ÉTAPE CRUCIALE : Créer automatiquement le lien FK vers le projet
+                                        project_fk_field = details_table.fields.filter(
+                                            field_type='foreign_key',
+                                            related_table=project_table
+                                        ).first()
+                                        
+                                        if not project_fk_field:
+                                            # Si aucun champ FK vers Projet n'existe, le créer automatiquement
+                                            project_fk_field = DynamicField.objects.create(
+                                                table=details_table,
+                                                name='Projet (Auto)',
+                                                slug='projet_auto',
+                                                field_type='foreign_key',
+                                                related_table=project_table,
+                                                is_required=False,
+                                                is_searchable=False,
+                                                order=9999  # À la fin
+                                            )
+                                            print(f"✅ Champ FK Projet créé automatiquement: {project_fk_field.name}")
+                                        
+                                        # Créer la valeur FK qui lie le Details au Projet
+                                        DynamicValue.objects.create(
+                                            record=details_record,
+                                            field=project_fk_field,
+                                            value=str(project_record.id)
+                                        )
+                                        print(f"✅ Lien FK créé: {details_table.name}#{details_record.id} -> Projet#{project_record.id}")
+                                        
                                         details_processed_fields = set()  # Pour éviter les doublons
                                         
                                         # Ajouter les valeurs des champs conditionnels
@@ -762,13 +790,14 @@ class DynamicTableViewSet(viewsets.ModelViewSet):
                                             )
                                             print(f"✅ Nouvel enregistrement Details créé avec ID: {details_record.id}")
                                             
-                                            # Ajouter la FK vers le projet
+                                            # ÉTAPE CRUCIALE : Créer automatiquement le lien FK vers le projet
                                             project_fk_field = details_table.fields.filter(
                                                 field_type='foreign_key',
                                                 related_table=project_table
                                             ).first()
                                             
                                             if not project_fk_field:
+                                                # Si aucun champ FK vers Projet n'existe, le créer automatiquement
                                                 project_fk_field = DynamicField.objects.create(
                                                     table=details_table,
                                                     name='Projet (Auto)',
@@ -777,70 +806,69 @@ class DynamicTableViewSet(viewsets.ModelViewSet):
                                                     related_table=project_table,
                                                     is_required=False,
                                                     is_searchable=False,
-                                                    order=9999
+                                                    order=9999  # À la fin
                                                 )
-                                                print(f"✅ Champ FK Projet créé automatiquement")
+                                                print(f"✅ Champ FK Projet créé automatiquement: {project_fk_field.name}")
                                             
+                                            # Créer la valeur FK qui lie le Details au Projet
                                             DynamicValue.objects.create(
                                                 record=details_record,
                                                 field=project_fk_field,
                                                 value=str(project_record.id)
                                             )
-                                            print(f"✅ FK Projet enregistrée: {project_record.id}")
-                                        else:
-                                            print(f"✅ Enregistrement Details existant trouvé: {details_record.id}")
-                                        
-                                        # Mettre à jour les valeurs des champs conditionnels
-                                        details_processed_fields = set()
-                                        
-                                        for field_name, field_value in conditional_fields.items():
-                                            print(f"🔍 Traitement champ: {field_name} = {field_value}")
+                                            print(f"✅ Lien FK créé: {details_table.name}#{details_record.id} -> Projet#{project_record.id}")
                                             
-                                            # Ignorer les champs liés au projet (déjà traités séparément)
-                                            if 'projet' in field_name.lower() or 'project' in field_name.lower():
-                                                print(f"🚫 Champ projet ignoré: {field_name}")
-                                                continue
+                                            details_processed_fields = set()
                                             
-                                            # Trouver le champ correspondant dans la table Details
-                                            details_field = details_table.fields.filter(
-                                                models.Q(slug=field_name) |
-                                                models.Q(name__iexact=field_name.replace('_', ' '))
-                                            ).first()
-                                            
-                                            if details_field and details_field.id not in details_processed_fields:
-                                                # Vérifier si c'est un champ FK vers Projet (double sécurité)
-                                                if (details_field.field_type == 'foreign_key' and 
-                                                    details_field.related_table == project_table):
-                                                    print(f"🚫 Champ FK vers Projet ignoré: {details_field.name}")
+                                            # Ajouter les valeurs des champs conditionnels
+                                            for field_name, field_value in conditional_fields.items():
+                                                print(f"🔍 Traitement champ: {field_name} = {field_value}")
+                                                
+                                                # Ignorer les champs liés au projet (déjà traités séparément)
+                                                if 'projet' in field_name.lower() or 'project' in field_name.lower():
+                                                    print(f"🚫 Champ projet ignoré: {field_name}")
                                                     continue
                                                 
-                                                # Pour les champs FK, essayer de convertir le label en ID si nécessaire
-                                                final_value = field_value
-                                                if details_field.field_type == 'foreign_key' and details_field.related_table:
-                                                    print(f"🔗 Champ FK détecté: {details_field.name} -> {details_field.related_table.name}")
+                                                # Trouver le champ correspondant dans la table Details
+                                                details_field = details_table.fields.filter(
+                                                    models.Q(slug=field_name) |
+                                                    models.Q(name__iexact=field_name.replace('_', ' '))
+                                                ).first()
+                                                
+                                                if details_field and details_field.id not in details_processed_fields:
+                                                    # Vérifier si c'est un champ FK vers Projet (double sécurité)
+                                                    if (details_field.field_type == 'foreign_key' and 
+                                                        details_field.related_table == project_table):
+                                                        print(f"🚫 Champ FK vers Projet ignoré: {details_field.name}")
+                                                        continue
                                                     
-                                                    # Vérifier si la valeur est déjà un ID numérique
-                                                    try:
-                                                        int(field_value)
-                                                        print(f"📊 Valeur numérique détectée: {field_value}")
-                                                        final_value = field_value
-                                                    except ValueError:
-                                                        print(f"🏷️ Valeur texte détectée: {field_value}")
-                                                        # Logique de conversion label->ID si nécessaire
-                                                        # (même logique que dans create_project_with_details)
-                                                
-                                                # Mettre à jour ou créer la valeur
-                                                dynamic_value, created = DynamicValue.objects.get_or_create(
-                                                    record=details_record,
-                                                    field=details_field,
-                                                    defaults={'value': str(final_value)}
-                                                )
-                                                if not created:
-                                                    dynamic_value.value = str(final_value)
-                                                    dynamic_value.save()
-                                                
-                                                details_processed_fields.add(details_field.id)
-                                                print(f"✅ Valeur Details mise à jour: {details_field.name} = {final_value}")
+                                                    # Pour les champs FK, essayer de convertir le label en ID si nécessaire
+                                                    final_value = field_value
+                                                    if details_field.field_type == 'foreign_key' and details_field.related_table:
+                                                        print(f"🔗 Champ FK détecté: {details_field.name} -> {details_field.related_table.name}")
+                                                        
+                                                        # Vérifier si la valeur est déjà un ID numérique
+                                                        try:
+                                                            int(field_value)
+                                                            print(f"📊 Valeur numérique détectée: {field_value}")
+                                                            final_value = field_value
+                                                        except ValueError:
+                                                            print(f"🏷️ Valeur texte détectée: {field_value}")
+                                                            # Logique de conversion label->ID si nécessaire
+                                                            # (même logique que dans create_project_with_details)
+                                                    
+                                                    # Mettre à jour ou créer la valeur
+                                                    dynamic_value, created = DynamicValue.objects.get_or_create(
+                                                        record=details_record,
+                                                        field=details_field,
+                                                        defaults={'value': str(final_value)}
+                                                    )
+                                                    if not created:
+                                                        dynamic_value.value = str(final_value)
+                                                        dynamic_value.save()
+                                                    
+                                                    details_processed_fields.add(details_field.id)
+                                                    print(f"✅ Valeur Details mise à jour: {details_field.name} = {final_value}")
                                             else:
                                                 if not details_field:
                                                     print(f"❌ Champ non trouvé dans {details_table.name}: {field_name}")
@@ -1083,8 +1111,14 @@ class DynamicRecordViewSet(viewsets.ModelViewSet):
         """
         Met à jour un enregistrement avec ses valeurs en une seule requête
         """
+        print(f"🔄 update_with_values appelé pour l'enregistrement {pk}")
+        print(f"📤 Données reçues: {request.data}")
+        
         record = self.get_object()
         table = record.table
+        
+        print(f"📋 Enregistrement: {record.id} (table: {table.name})")
+        print(f"🎯 Context: request={request}, table={table}")
         
         serializer = DynamicRecordCreateSerializer(
             instance=record,
@@ -1093,12 +1127,26 @@ class DynamicRecordViewSet(viewsets.ModelViewSet):
             partial=request.method == 'PATCH'
         )
         
+        print("🔍 Validation du serializer...")
         if serializer.is_valid():
-            record = serializer.save()
-            return Response(
-                FlatDynamicRecordSerializer(record).data
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            print("✅ Serializer valide, mise à jour de l'enregistrement...")
+            try:
+                record = serializer.save()
+                print(f"✅ Enregistrement mis à jour avec succès: ID {record.id}")
+                return Response(
+                    FlatDynamicRecordSerializer(record).data
+                )
+            except Exception as e:
+                print(f"❌ Erreur lors de la sauvegarde: {e}")
+                import traceback
+                traceback.print_exc()
+                return Response(
+                    {"detail": f"Erreur lors de la sauvegarde: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            print(f"❌ Erreurs de validation du serializer: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class DynamicValueViewSet(viewsets.ModelViewSet):
