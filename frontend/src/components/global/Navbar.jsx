@@ -77,7 +77,7 @@ function Navbar() {
         {/* Bouton Nouveau Projet - affiché seulement si connecté */}
         {isAuthenticated && (
           <Link to="/projects/create" className="mr-4">
-            <Button variant="primary" size="sm">
+            <Button variant="info" size="sm">
               <FiPlus className="mr-2" />
               Nouveau Projet
             </Button>
