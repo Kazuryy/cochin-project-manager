@@ -22,4 +22,5 @@ urlpatterns = [
     path('api/auth/', include('authentication.urls')),
     path('api/database/', include('database.urls')),
     path('api/conditional-fields/', include('conditional_fields.urls')),
+    path('api/backup/', include('backup_manager.urls')),  # API de sauvegarde
 ]

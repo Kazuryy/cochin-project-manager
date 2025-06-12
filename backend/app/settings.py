@@ -14,27 +14,55 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import secrets
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables
 load_dotenv()
 
+# Environment detection
 DJANGO_ENV = os.getenv("DJANGO_ENV", "development")
+IS_DEVELOPMENT = DJANGO_ENV == "development"
+IS_PRODUCTION = DJANGO_ENV == "production"
+IS_BUILD = DJANGO_ENV == "build"
 
-# Use a temporary secret key if we are in build phase
-if DJANGO_ENV == "build":
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+# Secret key validation and generation
+if IS_BUILD:
+    # Use a temporary secret key during build phase
     SECRET_KEY = secrets.token_urlsafe(50)
 else:
     SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        if IS_DEVELOPMENT:
+            # Generate a random key for development
+            SECRET_KEY = secrets.token_urlsafe(50)
+            print("⚠️  WARNING: Using auto-generated SECRET_KEY for development")
+        else:
+            raise ValueError("SECRET_KEY environment variable is required for production")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Debug mode - never True in production
+DEBUG = IS_DEVELOPMENT and os.getenv("DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+# Allowed hosts configuration
+if IS_DEVELOPMENT:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+elif IS_PRODUCTION:
+    allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "")
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(",") if host.strip()]
+    if not ALLOWED_HOSTS:
+        raise ValueError("ALLOWED_HOSTS environment variable is required for production")
+else:
+    ALLOWED_HOSTS = []
 
-
-# Application definition
+# =============================================================================
+# APPLICATION DEFINITION
+# =============================================================================
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -47,11 +75,13 @@ INSTALLED_APPS = [
     'crispy_forms',
     'crispy_bootstrap5',
     'crispy_tailwind',
+    'rest_framework',
+    'conditional_fields',
+    # Local apps
     'authentication',
     'app',
     'database',
-    'rest_framework',
-    'conditional_fields',
+    'backup_manager',
 ]
 
 MIDDLEWARE = [
@@ -65,10 +95,24 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-]
+# =============================================================================
+# CORS CONFIGURATION
+# =============================================================================
+
+if IS_DEVELOPMENT:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+else:
+    cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+
 CORS_ALLOW_CREDENTIALS = True
+
+# =============================================================================
+# URL AND TEMPLATE CONFIGURATION
+# =============================================================================
 
 ROOT_URLCONF = 'app.urls'
 
@@ -90,23 +134,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'app.wsgi.application'
 
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Default to SQLite for development, allow override for production
+if IS_PRODUCTION and os.getenv("DATABASE_URL"):
+    # Production database configuration
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.parse(os.getenv("DATABASE_URL"))
     }
-}
+else:
+    # Development SQLite database
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
-# Utilisation du modèle User personnalisé
+# Custom User model
 AUTH_USER_MODEL = 'authentication.User'
 
-
-# Validation des mots de passe
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+# =============================================================================
+# PASSWORD VALIDATION
+# =============================================================================
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -126,119 +179,221 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
+# =============================================================================
+# INTERNATIONALIZATION
+# =============================================================================
 
 LANGUAGE_CODE = 'fr-fr'
-
 TIME_ZONE = 'Europe/Paris'
-
 USE_I18N = True
-
 USE_TZ = True
 
-# Configuration de crispy-forms
+# =============================================================================
+# STATIC FILES CONFIGURATION
+# =============================================================================
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles' if IS_PRODUCTION else None
+
+# =============================================================================
+# FORMS CONFIGURATION
+# =============================================================================
+
 CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
 CRISPY_TEMPLATE_PACK = "tailwind"
 
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
+# CSRF and Session configuration
+if IS_DEVELOPMENT:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+else:
+    # Production security settings
+    csrf_origins_str = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_str.split(",") if origin.strip()]
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
-STATIC_URL = 'static/'
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Configuration de la session - MODIFIÉ POUR LE DÉVELOPPEMENT
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-]
-# En développement, ne pas utiliser les paramètres de sécurité stricts
-SESSION_COOKIE_SECURE = False  # Désactivé pour le développement (pas de HTTPS)
-CSRF_COOKIE_SECURE = False  # Désactivé pour le développement (pas de HTTPS)
+# Common security settings
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_HTTPONLY = False  # Autorise JavaScript à accéder au cookie CSRF
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for CSRF token
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-SESSION_COOKIE_AGE = 3600  # 1 heure
+SESSION_COOKIE_AGE = int(os.getenv("SESSION_TIMEOUT", "3600"))  # Default: 1 hour
 
-# Configuration de sécurité
+# Security headers
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
-# Paramètres de sécurité recommandés par l'ANSSI
-PASSWORD_RESET_TIMEOUT = 3600
-ACCOUNT_LOCKOUT_DURATION = 15
-MAX_LOGIN_ATTEMPTS = 5
-PASSWORD_EXPIRY_DAYS = 90
+# Additional security settings for production
+if IS_PRODUCTION:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
-# Configuration des logs
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'app.log',
-            'formatter': 'verbose',
-        },
-        'console': {
-            'level': 'DEBUG',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-        'security': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'security.log',
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['file', 'console'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'django.security': {
-            'handlers': ['security'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'authentication': {
-            'handlers': ['file', 'security'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
-}
+# =============================================================================
+# AUTHENTICATION SETTINGS
+# =============================================================================
 
-# Créer le dossier de logs s'il n'existe pas
-os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+ACCOUNT_LOCKOUT_DURATION = int(os.getenv("ACCOUNT_LOCKOUT_DURATION", "15"))
+MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+PASSWORD_EXPIRY_DAYS = int(os.getenv("PASSWORD_EXPIRY_DAYS", "90"))
 
-# Configuration pour le debug toolbar
-INTERNAL_IPS = [
-    '127.0.0.1',
-]
+# =============================================================================
+# BACKUP CONFIGURATION
+# =============================================================================
 
-# Configuration CSP
-CSP_DEFAULT_SRC = ["'self'"]
-CSP_SCRIPT_SRC = ["'self'", "'unsafe-eval'", "'unsafe-inline'"]
-CSP_STYLE_SRC = ["'self'", "'unsafe-inline'"]
-CSP_IMG_SRC = ["'self'", "data:", "https:"]
-CSP_FONT_SRC = ["'self'", "data:", "https:"]
+BACKUP_ROOT = BASE_DIR / 'backups'
+BACKUP_STORAGE_PATH = BACKUP_ROOT / 'storage'
+
+# Backup encryption key - must be provided in production
+BACKUP_ENCRYPTION_KEY = os.getenv('BACKUP_ENCRYPTION_KEY')
+if not BACKUP_ENCRYPTION_KEY:
+    if IS_PRODUCTION:
+        raise ValueError("BACKUP_ENCRYPTION_KEY environment variable is required for production")
+    else:
+        # Generate a secure key for development
+        BACKUP_ENCRYPTION_KEY = secrets.token_urlsafe(32)
+        print("⚠️  WARNING: Using auto-generated BACKUP_ENCRYPTION_KEY for development")
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+
+def setup_logging():
+    """Configure logging with proper error handling."""
+    logs_dir = BASE_DIR / 'logs'
+    
+    try:
+        logs_dir.mkdir(exist_ok=True)
+    except PermissionError:
+        # Fallback to console-only logging if we can't create log directory
+        print(f"⚠️  WARNING: Cannot create logs directory at {logs_dir}. Using console logging only.")
+        return {
+            'version': 1,
+            'disable_existing_loggers': False,
+            'formatters': {
+                'simple': {
+                    'format': '{levelname} {asctime} {name} {message}',
+                    'style': '{',
+                },
+            },
+            'handlers': {
+                'console': {
+                    'level': 'DEBUG' if DEBUG else 'INFO',
+                    'class': 'logging.StreamHandler',
+                    'formatter': 'simple',
+                },
+            },
+            'root': {
+                'handlers': ['console'],
+                'level': 'DEBUG' if DEBUG else 'INFO',
+            },
+        }
+    
+    return {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'verbose': {
+                'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+                'style': '{',
+            },
+            'simple': {
+                'format': '{levelname} {asctime} {name} {message}',
+                'style': '{',
+            },
+        },
+        'handlers': {
+            'file': {
+                'level': 'INFO',
+                'class': 'logging.FileHandler',
+                'filename': logs_dir / 'app.log',
+                'formatter': 'verbose',
+            },
+            'console': {
+                'level': 'DEBUG' if DEBUG else 'INFO',
+                'class': 'logging.StreamHandler',
+                'formatter': 'simple',
+            },
+            'security': {
+                'level': 'INFO',
+                'class': 'logging.FileHandler',
+                'filename': logs_dir / 'security.log',
+                'formatter': 'verbose',
+            },
+        },
+        'loggers': {
+            'django': {
+                'handlers': ['file', 'console'],
+                'level': 'INFO',
+                'propagate': True,
+            },
+            'django.security': {
+                'handlers': ['security'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'authentication': {
+                'handlers': ['file', 'security'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+        },
+    }
+
+LOGGING = setup_logging()
+
+# =============================================================================
+# DEVELOPMENT SETTINGS
+# =============================================================================
+
+if IS_DEVELOPMENT:
+    INTERNAL_IPS = ['127.0.0.1']
+    
+    # Create necessary directories for development
+    def create_dev_directories():
+        """Create necessary directories for development with error handling."""
+        directories = [BACKUP_ROOT, BACKUP_STORAGE_PATH]
+        for directory in directories:
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                print(f"⚠️  WARNING: Cannot create directory {directory}")
+    
+    create_dev_directories()
+
+# =============================================================================
+# CONTENT SECURITY POLICY
+# =============================================================================
+
+# CSP constants
+CSP_SELF = "'self'"
+
+CSP_DEFAULT_SRC = [CSP_SELF]
+CSP_SCRIPT_SRC = [CSP_SELF, "'unsafe-eval'", "'unsafe-inline'"]
+CSP_STYLE_SRC = [CSP_SELF, "'unsafe-inline'"]
+CSP_IMG_SRC = [CSP_SELF, "data:", "https:"]
+CSP_FONT_SRC = [CSP_SELF, "data:", "https:"]
+
+# =============================================================================
+# DJANGO REST FRAMEWORK (if needed)
+# =============================================================================
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Print configuration summary in development
+if IS_DEVELOPMENT and not IS_BUILD:
+    print(f"🚀 Django started in {DJANGO_ENV} mode")
+    print(f"📊 Debug mode: {DEBUG}")
+    print(f"🌍 Allowed hosts: {ALLOWED_HOSTS}")
+    print(f"🔐 Using {'auto-generated' if 'auto-generated' in globals().get('SECRET_KEY', '') else 'environment'} SECRET_KEY")
