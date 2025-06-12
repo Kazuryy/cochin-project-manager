@@ -10,10 +10,13 @@ import AdvancedFilterPanel from '../components/filters/AdvancedFilterPanel';
 import ColumnSelector from '../components/filters/ColumnSelector';
 import PresetManager from '../components/filters/PresetManager';
 import SortManager from '../components/filters/SortManager';
+import ExportConfigModal from '../components/export/ExportConfigModal';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
+import { useActivityTracker } from '../hooks/useActivityTracker';
 
 function DashboardContent() {
   const { tables, fetchTables, fetchRecords, isLoading, error } = useDynamicTables();
+  const { trackActivity } = useActivityTracker();
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTypes, setSelectedTypes] = useState([]);
@@ -28,6 +31,8 @@ function DashboardContent() {
   // États de chargement global
   const [isDashboardReady, setIsDashboardReady] = useState(false);
   const [isFullyStabilized, setIsFullyStabilized] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [loadingStates, setLoadingStates] = useState({
     tables: true,
     projects: true,
@@ -352,6 +357,53 @@ function DashboardContent() {
           }
         }
         
+        // Ajouter les numéros/noms des devis du projet à la recherche
+        const progressInfo = projectProgress[project.id];
+        if (progressInfo && progressInfo.activeDevisNumbers && progressInfo.activeDevisNumbers.length > 0) {
+          // Ajouter tous les numéros de devis actifs
+          progressInfo.activeDevisNumbers.forEach(devisNumber => {
+            if (devisNumber && typeof devisNumber === 'string') {
+              searchableValues.push(devisNumber.toLowerCase());
+              
+              // Si le numéro contient "Devis #", ajouter aussi juste le numéro
+              if (devisNumber.startsWith('Devis #')) {
+                const justNumber = devisNumber.replace('Devis #', '').trim();
+                if (justNumber) {
+                  searchableValues.push(justNumber.toLowerCase());
+                }
+              }
+              
+              // Extraire des parties du numéro de devis pour une recherche plus flexible
+              // Ex: "PRJ-2024-001" → ["PRJ", "2024", "001", "PRJ-2024", "2024-001"]
+              const parts = devisNumber.split(/[-_\s]+/);
+              if (parts.length > 1) {
+                // Ajouter chaque partie individuellement
+                parts.forEach(part => {
+                  if (part && part.length >= 2) {
+                    searchableValues.push(part.toLowerCase());
+                  }
+                });
+                
+                // Ajouter des combinaisons de parties adjacentes
+                for (let i = 0; i < parts.length - 1; i++) {
+                  const combination = `${parts[i]}-${parts[i + 1]}`;
+                  searchableValues.push(combination.toLowerCase());
+                }
+              }
+              
+              // Extraire les nombres du numéro pour recherche numérique
+              const numbers = devisNumber.match(/\d+/g);
+              if (numbers) {
+                numbers.forEach(num => {
+                  if (num.length >= 2) { // Ignorer les nombres trop courts
+                    searchableValues.push(num);
+                  }
+                });
+              }
+            }
+          });
+        }
+        
         const matchesSearch = searchableValues.some(value => 
           value.includes(searchTerm.toLowerCase())
         );
@@ -371,7 +423,7 @@ function DashboardContent() {
       
       return true;
     });
-  }, [searchTerm, selectedTypes, getFieldValueLegacy, getProjectType, getFieldValue, contacts]);
+  }, [searchTerm, selectedTypes, getFieldValueLegacy, getProjectType, getFieldValue, contacts, projectProgress]);
 
   // Données filtrées par les filtres legacy en premier
   const legacyFilteredProjects = useMemo(() => {
@@ -792,12 +844,23 @@ function DashboardContent() {
   const paginatedProjects = finalFilteredProjects.slice(startIndex, startIndex + rowsPerPage);
 
   const resetFilters = useCallback(() => {
+    // Signaler l'activité utilisateur
+    trackActivity('reset_filters');
+    
+    // Réinitialiser tous les filtres et états
     setSearchTerm('');
     setSelectedTypes([]);
     setCurrentPage(0);
+    setRowsPerPage(10); // Réinitialiser aussi le nombre de lignes par page
+    
+    // Réinitialiser les filtres avancés
     clearFilters();
     clearSorting();
-  }, [clearFilters, clearSorting]);
+    
+    // Réinitialiser les colonnes visibles à leur état par défaut
+    setVisibleColumns(['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'statut', 'progress']);
+    
+  }, [clearFilters, clearSorting, setVisibleColumns, trackActivity]);
 
   // Fonction helper pour les badges de statut
   const getStatusBadge = (statut) => {
@@ -824,6 +887,227 @@ function DashboardContent() {
     if (totalCount === 0) return 'Aucun projet trouvé - Ajoutez des projets via les actions rapides ci-dessus';
     return 'Aucun projet à afficher';
   };
+
+  // Fonction pour ouvrir le modal d'export
+  const openExportModal = useCallback(() => {
+    if (finalFilteredProjects.length === 0) {
+      alert('Aucun projet à exporter');
+      return;
+    }
+    setShowExportModal(true);
+  }, [finalFilteredProjects.length]);
+
+  // Fonction pour exporter les données en TSV avec colonnes sélectionnées
+  const exportToTSV = useCallback(async (selectedColumns) => {
+    setIsExporting(true);
+    trackActivity('export_tsv');
+    
+    try {
+      // Petit délai pour montrer le feedback visuel
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Mappage des colonnes vers les en-têtes et extracteurs de données
+      const columnConfig = {
+        'nom_projet': {
+          header: 'Nom du projet',
+          extract: (project) => getFieldValue(project, 'nom_projet') || 'Projet sans nom'
+        },
+        'description': {
+          header: 'Description',
+          extract: (project) => getFieldValue(project, 'description') || ''
+        },
+        'numero_projet': {
+          header: 'Numéro projet',
+          extract: (project) => getFieldValue(project, 'numero_projet') || ''
+        },
+        'type_projet': {
+          header: 'Type de projet',
+          extract: (project) => {
+            const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
+            return getProjectType(typeId);
+          }
+        },
+        'sous_type_projet': {
+          header: 'Sous-type',
+          extract: (project) => {
+            const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
+            const projectType = getProjectType(typeId);
+            return getProjectSubtype(project, projectType);
+          }
+        },
+        'equipe': {
+          header: 'Équipe',
+          extract: (project) => getFieldValue(project, 'equipe') || ''
+        },
+        'contact_principal': {
+          header: 'Contact principal',
+          extract: (project) => {
+            const contactValue = getFieldValue(project, 'contact_principal');
+            if (!contactValue || contactValue === 'Contact non défini') return '';
+            
+            let cleanContactName = contactValue;
+            if (contactValue.startsWith('[Référence manquante:') && contactValue.endsWith(']')) {
+              cleanContactName = contactValue.replace('[Référence manquante:', '').replace(']', '').trim();
+            }
+            
+            const matchingContact = contacts.find(contact => {
+              const contactNom = getFieldValueLegacy(contact, 'nom', 'name', 'label') || '';
+              const contactPrenom = getFieldValueLegacy(contact, 'prenom', 'first_name', 'firstname') || '';
+              const fullName = contactPrenom ? `${contactPrenom} ${contactNom}` : contactNom;
+              return fullName === cleanContactName || contactNom === cleanContactName;
+            });
+            
+            if (matchingContact) {
+              const nom = getFieldValueLegacy(matchingContact, 'nom', 'name', 'label') || '';
+              const prenom = getFieldValueLegacy(matchingContact, 'prenom', 'first_name', 'firstname') || '';
+              return prenom ? `${prenom} ${nom.toUpperCase()}` : nom;
+            }
+            return cleanContactName;
+          }
+        },
+        'email_contact': {
+          header: 'Email contact',
+          extract: (project) => {
+            const contactValue = getFieldValue(project, 'contact_principal');
+            if (!contactValue || contactValue === 'Contact non défini') return '';
+            
+            let cleanContactName = contactValue;
+            if (contactValue.startsWith('[Référence manquante:') && contactValue.endsWith(']')) {
+              cleanContactName = contactValue.replace('[Référence manquante:', '').replace(']', '').trim();
+            }
+            
+            const matchingContact = contacts.find(contact => {
+              const contactNom = getFieldValueLegacy(contact, 'nom', 'name', 'label') || '';
+              const contactPrenom = getFieldValueLegacy(contact, 'prenom', 'first_name', 'firstname') || '';
+              const fullName = contactPrenom ? `${contactPrenom} ${contactNom}` : contactNom;
+              return fullName === cleanContactName || contactNom === cleanContactName;
+            });
+            
+            return matchingContact ? getFieldValueLegacy(matchingContact, 'email', 'mail', 'e_mail', 'courriel') || '' : '';
+          }
+        },
+        'devis_actifs': {
+          header: 'Devis actifs',
+          extract: (project) => {
+            const progressInfo = projectProgress[project.id];
+            return progressInfo?.activeDevisNumbers?.join(', ') || '';
+          }
+        },
+        'statut': {
+          header: 'Statut',
+          extract: (project) => getFieldValue(project, 'statut') || ''
+        },
+        'progression': {
+          header: 'Progression (%)',
+          extract: (project) => {
+            const progressInfo = projectProgress[project.id];
+            return progressInfo?.progress || 0;
+          }
+        },
+        'echeance_prochaine': {
+          header: 'Échéance prochaine',
+          extract: (project) => {
+            const progressInfo = projectProgress[project.id];
+            if (progressInfo?.nearestDeadline && progressInfo?.nearestDeadlineDevis) {
+              const dateStr = progressInfo.nearestDeadline.toLocaleDateString('fr-FR');
+              return `${progressInfo.nearestDeadlineDevis} (${dateStr})`;
+            }
+            return '';
+          }
+        },
+        'date_creation': {
+          header: 'Date création',
+          extract: (project) => {
+            const dateValue = getFieldValue(project, 'date_creation');
+            if (!dateValue) return '';
+            try {
+              return new Date(dateValue).toLocaleDateString('fr-FR');
+            } catch {
+              return dateValue;
+            }
+          }
+        }
+      };
+      
+      // Construire les en-têtes pour les colonnes sélectionnées
+      const headers = selectedColumns.map(colId => columnConfig[colId]?.header || colId);
+      
+      // Préparer les données pour l'export
+      const tsvData = finalFilteredProjects.map(project => {
+        return selectedColumns.map(colId => {
+          const config = columnConfig[colId];
+          if (!config) return '';
+          
+          const value = config.extract(project);
+          // Pour TSV, remplacer les tabulations et retours à la ligne par des espaces
+          return String(value || '').replace(/[\t\n\r]/g, ' ');
+        });
+      });
+      
+      // Construire le contenu TSV
+      const tsvContent = [
+        headers.join('\t'),
+        ...tsvData.map(row => row.join('\t'))
+      ].join('\n');
+      
+      // Créer et télécharger le fichier
+      const blob = new Blob([tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        
+        // Nom du fichier avec date et nombre de projets
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `projets_export_${finalFilteredProjects.length}_${timestamp}.tsv`;
+        link.setAttribute('download', filename);
+        
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Message de succès
+        console.log(`✅ Export TSV réussi: ${finalFilteredProjects.length} projets exportés vers ${filename}`);
+        
+        // Feedback visuel temporaire
+        const successMsg = document.createElement('div');
+        successMsg.className = 'toast toast-top toast-end';
+        successMsg.innerHTML = `
+          <div class="alert alert-success">
+            <span>📥 Export réussi: ${finalFilteredProjects.length} projets</span>
+          </div>
+        `;
+        document.body.appendChild(successMsg);
+        setTimeout(() => {
+          if (document.body.contains(successMsg)) {
+            document.body.removeChild(successMsg);
+          }
+        }, 3000);
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export TSV:', error);
+      
+      // Feedback d'erreur temporaire
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'toast toast-top toast-end';
+      errorMsg.innerHTML = `
+        <div class="alert alert-error">
+          <span>❌ Erreur lors de l'export TSV</span>
+        </div>
+      `;
+      document.body.appendChild(errorMsg);
+      setTimeout(() => {
+        if (document.body.contains(errorMsg)) {
+          document.body.removeChild(errorMsg);
+        }
+      }, 5000);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [finalFilteredProjects, getFieldValue, getFieldValueLegacy, getProjectType, getProjectSubtype, contacts, projectProgress, trackActivity]);
 
   if (isLoading || !isFullyStabilized) {
     // Calculer le pourcentage de progression pour un meilleur feedback
@@ -896,18 +1180,6 @@ function DashboardContent() {
 
   return (
     <div className="p-4">
-      {/* Quick Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button className="btn btn-sm btn-outline">
-          <FiFilter className="mr-2" />
-          Projets récents
-        </button>
-        <button className="btn btn-sm btn-outline">Projets en cours</button>
-        <button className="btn btn-sm btn-outline">Projets terminés</button>
-        <button className="btn btn-sm btn-outline">Mes projets</button>
-        <button className="btn btn-sm btn-outline btn-circle">+</button>
-      </div>
-
       <div className="flex gap-4">
         {/* Left Sidebar */}
         <div className="w-82">
@@ -918,7 +1190,7 @@ function DashboardContent() {
                 <FiFilter className="w-5 h-5 text-primary" />
                 <h3 className="font-semibold text-lg">Filtres & Outils</h3>
               </div>
-              
+
               {/* Search Section */}
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-3">
@@ -928,15 +1200,21 @@ function DashboardContent() {
                 <div className="input-group">
                   <input 
                     type="text" 
-                    placeholder="Nom, description, contact..." 
+                    placeholder="Nom, description, contact, n° devis..." 
                     className="input input-bordered input-sm w-full"
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      trackActivity('search_filter');
+                      setSearchTerm(e.target.value);
+                    }}
                   />
                   {searchTerm && (
                     <button 
                       className="btn btn-sm btn-square btn-ghost" 
-                      onClick={() => setSearchTerm('')}
+                      onClick={() => {
+                        trackActivity('clear_search');
+                        setSearchTerm('');
+                      }}
                       title="Effacer la recherche"
                     >
                       <span className="text-lg">×</span>
@@ -948,6 +1226,11 @@ function DashboardContent() {
                     🔍 Recherche active : "{searchTerm}"
                   </div>
                 )}
+                {!searchTerm && (
+                  <div className="text-xs text-base-content/50 mt-1">
+                    💡 Astuce : vous pouvez rechercher par numéro de devis (ex: "PRJ-2024-001")
+                  </div>
+                )}
               </div>
 
               {/* Project Types Section */}
@@ -957,27 +1240,35 @@ function DashboardContent() {
                   <h4 className="font-medium text-sm uppercase tracking-wide text-base-content/70">Types de projet</h4>
                   <div className="badge badge-outline badge-xs">{projectTypes.length} types</div>
                 </div>
-                <MultipleSelector 
+                  <MultipleSelector 
                   options={projectTypes}
-                  onChange={setSelectedTypes}
+                  selectedValues={selectedTypes}
+                  onChange={(newTypes) => {
+                    trackActivity('type_filter');
+                    setSelectedTypes(newTypes);
+                  }}
                   placeholder="Choisissez des types..."
                 />
-                {selectedTypes.length > 0 && (
-                  <div className="text-xs text-secondary mt-1">
-                    📂 {selectedTypes.length} type(s) sélectionné(s)
-                  </div>
-                )}
               </div>
 
               {/* Quick Actions */}
               <div className="mb-6">
                 <button 
-                  className="btn btn-outline btn-sm w-full gap-2" 
+                  className={`btn btn-sm w-full gap-2 ${
+                    filters.length > 0 || sorting.length > 0 || searchTerm || selectedTypes.length > 0 
+                      ? 'btn-warning' 
+                      : 'btn-outline'
+                  }`}
                   onClick={resetFilters}
                   title="Effacer tous les filtres et réinitialiser la vue"
                 >
                   <FiRefreshCw className="w-4 h-4" />
                   Réinitialiser tout
+                  {(filters.length > 0 || sorting.length > 0 || searchTerm || selectedTypes.length > 0) && (
+                    <div className="badge badge-xs">
+                      {filters.length + (searchTerm ? 1 : 0) + selectedTypes.length + sorting.length}
+                    </div>
+                  )}
                 </button>
               </div>
 
@@ -999,8 +1290,8 @@ function DashboardContent() {
                       onLoadPresetsFromStorage={loadPresetsFromStorage}
                       className="w-full"
                     />
-                  </div>
-                  
+              </div>
+
                   {/* Sort */}
                   <div>
                     <label className="block text-xs font-medium text-base-content/60 mb-1">Tri des données</label>
@@ -1062,20 +1353,21 @@ function DashboardContent() {
                   {/* Pagination Control */}
                   <div className="flex items-center gap-3 bg-base-200 rounded-lg px-4 py-2">
                     <span className="text-sm font-medium whitespace-nowrap">Lignes par page:</span>
-                    <select 
+                  <select 
                       className="select select-bordered select-sm min-w-20"
-                      value={rowsPerPage}
-                      onChange={(e) => {
-                        setRowsPerPage(Number(e.target.value));
-                        setCurrentPage(0);
-                      }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </div>
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                        trackActivity('change_page_size');
+                      setRowsPerPage(Number(e.target.value));
+                      setCurrentPage(0);
+                    }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
                   
                   {/* Status indicators */}
                   <div className="text-sm text-base-content/60 bg-base-200 rounded-lg px-4 py-2">
@@ -1090,8 +1382,23 @@ function DashboardContent() {
                 
                 {/* Export Button */}
                 <div className="flex justify-end">
-                  <button className="btn btn-success btn-sm">
-                    Exporter en TSV
+                  <button 
+                    className={`btn btn-success btn-sm gap-2 ${isExporting ? 'loading' : ''}`}
+                    onClick={openExportModal}
+                    disabled={isExporting || finalFilteredProjects.length === 0}
+                    title={`Exporter ${finalFilteredProjects.length} projet(s) en TSV`}
+                  >
+                    {isExporting ? (
+                      <>
+                        <span className="loading loading-spinner loading-xs"></span>
+                        Export en cours...
+                      </>
+                    ) : (
+                      <>
+                        <FiDatabase className="w-4 h-4" />
+                        Exporter en TSV ({finalFilteredProjects.length})
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1168,7 +1475,7 @@ function DashboardContent() {
                         }
                         
                         // Essayer de récupérer l'ID du type
-                        const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id', 'categorie_id');
+                        const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
                         
                         const projectType = getProjectType(typeId);
                         
@@ -1195,34 +1502,34 @@ function DashboardContent() {
                         return (
                           <tr key={project.id} className="hover">
                             {visibleColumns.includes('project_name') && (
-                              <td>
+                            <td>
                                 <div className="w-full">
                                   <div className="w-full">
-                                    <div className="font-bold text-lg">{projectName}</div>
+                                  <div className="font-bold text-lg">{projectName}</div>
                                     {visibleColumns.includes('project_description') && (
-                                      <div className="text-sm opacity-70 max-w-md">
-                                        {projectDescription.length > 100 
-                                          ? `${projectDescription.substring(0, 100)}...` 
-                                          : projectDescription
-                                        }
-                                      </div>
+                                  <div className="text-sm opacity-70 max-w-md">
+                                    {projectDescription.length > 100 
+                                      ? `${projectDescription.substring(0, 100)}...` 
+                                      : projectDescription
+                                    }
+                                  </div>
                                     )}
                                     {visibleColumns.includes('project_number') && (
-                                      <div className="text-xs opacity-50 mt-1">
-                                        N° {projectNumber}
-                                      </div>
+                                  <div className="text-xs opacity-50 mt-1">
+                                    N° {projectNumber}
+                                  </div>
                                     )}
-                                    <div className="mt-2">
+                                  <div className="mt-2">
                                       {visibleColumns.includes('project_type') && (
-                                        <div className="badge badge-accent mr-2">{projectType}</div>
+                                    <div className="badge badge-accent mr-2">{projectType}</div>
                                       )}
                                       {visibleColumns.includes('project_subtype') && (
                                         <div className="badge badge-outline badge-secondary mr-2">{projectSubtype}</div>
                                       )}
                                       {visibleColumns.includes('equipe') && (
-                                        <div className="badge badge-outline badge-secondary mr-2">{equipe}</div>
+                                    <div className="badge badge-outline badge-secondary mr-2">{equipe}</div>
                                       )}
-                                    </div>
+                                  </div>
                                     
                                     {/* Barre de progression */}
                                     {visibleColumns.includes('progress') && progressInfo.totalDevis > 0 && (
@@ -1266,22 +1573,22 @@ function DashboardContent() {
                                         )}
                                       </div>
                                     )}
-                                  </div>
                                 </div>
-                              </td>
+                              </div>
+                            </td>
                             )}
                             {visibleColumns.includes('contact_principal') && (
-                              <td>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <FiUser className="text-sm" />
-                                    <span className="font-medium">{contactInfo.nom}</span>
-                                  </div>
-                                  {contactInfo.email && visibleColumns.includes('contact_email') && (
-                                    <div className="text-sm opacity-70">{contactInfo.email}</div>
-                                  )}
+                            <td>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <FiUser className="text-sm" />
+                                  <span className="font-medium">{contactInfo.nom}</span>
                                 </div>
-                              </td>
+                                  {contactInfo.email && visibleColumns.includes('contact_email') && (
+                                  <div className="text-sm opacity-70">{contactInfo.email}</div>
+                                )}
+                              </div>
+                            </td>
                             )}
                             <td>
                               <div className="flex flex-col gap-2">
@@ -1323,7 +1630,10 @@ function DashboardContent() {
                     <button 
                       className="join-item btn"
                       disabled={currentPage === 0}
-                      onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+                      onClick={() => {
+                        trackActivity('previous_page');
+                        setCurrentPage(Math.max(0, currentPage - 1));
+                      }}
                     >
                       «
                     </button>
@@ -1331,7 +1641,10 @@ function DashboardContent() {
                       <button
                         key={i}
                         className={`join-item btn ${currentPage === i ? 'btn-active' : ''}`}
-                        onClick={() => setCurrentPage(i)}
+                        onClick={() => {
+                          trackActivity('goto_page');
+                          setCurrentPage(i);
+                        }}
                       >
                         {i + 1}
                       </button>
@@ -1339,7 +1652,10 @@ function DashboardContent() {
                     <button 
                       className="join-item btn"
                       disabled={currentPage === totalPages - 1}
-                      onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
+                      onClick={() => {
+                        trackActivity('next_page');
+                        setCurrentPage(Math.min(totalPages - 1, currentPage + 1));
+                      }}
                     >
                       »
                     </button>
@@ -1354,7 +1670,7 @@ function DashboardContent() {
                   {(filters.length > 0 || sorting.length > 0) && (
                     <span className="ml-2 text-primary">
                       • {filters.length} filtre(s) • {sorting.length} tri(s)
-                    </span>
+                </span>
                   )}
                 </span>
               </div>
@@ -1362,6 +1678,14 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+      
+      {/* Modal d'export */}
+      <ExportConfigModal 
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={exportToTSV}
+        projectCount={finalFilteredProjects.length}
+      />
     </div>
   );
 }
