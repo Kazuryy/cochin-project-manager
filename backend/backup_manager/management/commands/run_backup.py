@@ -1,0 +1,169 @@
+"""
+Commande Django pour lancer les sauvegardes automatiques
+"""
+
+from django.core.management.base import BaseCommand, CommandError
+from django.contrib.auth import get_user_model
+from backup_manager.models import BackupConfiguration
+from backup_manager.services import BackupService
+from django.utils import timezone
+import json
+
+User = get_user_model()
+
+
+class Command(BaseCommand):
+    help = 'Lance les sauvegardes configurées'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--config',
+            type=str,
+            help='Nom de la configuration de sauvegarde à lancer'
+        )
+        parser.add_argument(
+            '--all',
+            action='store_true',
+            help='Lance toutes les configurations actives'
+        )
+        parser.add_argument(
+            '--frequency',
+            type=str,
+            choices=['daily', 'weekly', 'monthly'],
+            help='Lance les configurations avec cette fréquence'
+        )
+        parser.add_argument(
+            '--user',
+            type=str,
+            default='system',
+            help='Nom d\'utilisateur pour la sauvegarde (défaut: system)'
+        )
+    
+    def handle(self, *args, **options):
+        user = self._get_or_create_user(options['user'])
+        configs = self._get_configurations_to_run(options)
+        
+        if not configs:
+            self.stdout.write(self.style.WARNING('Aucune configuration de sauvegarde trouvée'))
+            return
+        
+        self._run_backups(configs, user)
+    
+    def _get_or_create_user(self, username):
+        """Récupère ou crée l'utilisateur pour la sauvegarde"""
+        try:
+            if username == 'system':
+                user, created = User.objects.get_or_create(
+                    username='system_backup',
+                    defaults={
+                        'email': 'system@backup.local',
+                        'is_active': False,
+                        'is_staff': False
+                    }
+                )
+                if created:
+                    self.stdout.write(self.style.SUCCESS('Utilisateur système de sauvegarde créé'))
+                return user
+            else:
+                return User.objects.get(username=username)
+        except User.DoesNotExist:
+            raise CommandError(f"Utilisateur '{username}' introuvable")
+    
+    def _get_configurations_to_run(self, options):
+        """Détermine les configurations à lancer selon les options"""
+        if options['config']:
+            try:
+                return [BackupConfiguration.objects.get(name=options['config'], is_active=True)]
+            except BackupConfiguration.DoesNotExist:
+                raise CommandError(f"Configuration '{options['config']}' introuvable ou inactive")
+        
+        elif options['all']:
+            return BackupConfiguration.objects.filter(is_active=True)
+        
+        elif options['frequency']:
+            return BackupConfiguration.objects.filter(frequency=options['frequency'], is_active=True)
+        
+        else:
+            return BackupConfiguration.objects.filter(frequency='manual', is_active=True)
+    
+    def _run_backups(self, configs, user):
+        """Lance les sauvegardes et affiche le résumé"""
+        total_configs = len(configs)
+        successful_backups = 0
+        failed_backups = 0
+        
+        self.stdout.write(f"Lancement de {total_configs} sauvegarde(s)...")
+        
+        for config in configs:
+            if self._run_single_backup(config, user):
+                successful_backups += 1
+            else:
+                failed_backups += 1
+        
+        self._display_summary(total_configs, successful_backups, failed_backups)
+    
+    def _run_single_backup(self, config, user):
+        """Lance une sauvegarde unique et retourne True si succès"""
+        try:
+            self.stdout.write(f"🚀 Début de la sauvegarde '{config.name}'...")
+            
+            backup_data = {
+                'configuration_id': config.id,
+                'backup_name': f"{config.name}_auto_{timezone.now().strftime('%Y%m%d_%H%M%S')}",
+                'is_automatic': True
+            }
+            
+            response = self._call_backup_api(backup_data, user)
+            
+            if response.status_code == 200:
+                response_data = json.loads(response.content)
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"✅ Sauvegarde '{config.name}' lancée avec succès "
+                        f"(ID: {response_data.get('backup_id')})"
+                    )
+                )
+                return True
+            else:
+                response_data = json.loads(response.content)
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"❌ Sauvegarde '{config.name}' échouée: {response_data.get('error', 'Erreur inconnue')}"
+                    )
+                )
+                return False
+                
+        except Exception as e:
+            self.stdout.write(
+                self.style.ERROR(f"❌ Erreur lors de la sauvegarde '{config.name}': {str(e)}")
+            )
+            return False
+    
+    def _call_backup_api(self, backup_data, user):
+        """Appelle l'API de sauvegarde interne"""
+        from django.test import RequestFactory
+        from backup_manager.views import create_backup_view
+        
+        factory = RequestFactory()
+        request = factory.post(
+            '/api/backup/create/',
+            data=json.dumps(backup_data),
+            content_type='application/json'
+        )
+        request.user = user
+        return create_backup_view(request)
+    
+    def _display_summary(self, total_configs, successful_backups, failed_backups):
+        """Affiche le résumé final"""
+        self.stdout.write("\n" + "="*50)
+        self.stdout.write("📊 RÉSUMÉ:")
+        self.stdout.write(f"   • Total: {total_configs}")
+        self.stdout.write(self.style.SUCCESS(f"   • Réussies: {successful_backups}"))
+        
+        if failed_backups > 0:
+            self.stdout.write(self.style.ERROR(f"   • Échouées: {failed_backups}"))
+            self.stdout.write("="*50)
+            raise CommandError(f"{failed_backups} sauvegarde(s) ont échoué")
+        
+        self.stdout.write("="*50)
+        self.stdout.write(self.style.SUCCESS("Toutes les sauvegardes ont été réalisées avec succès !")) 
