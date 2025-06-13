@@ -5,9 +5,24 @@ import Page from "../../../components/global/Page";
 import RecordForm from "../../../components/tables/RecordForm";
 import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
-function EditRecordPage() {
+/**
+ * Page d'édition d'un enregistrement dans une table dynamique
+ * @returns {JSX.Element} Le composant de page d'édition
+ */
+const EditRecordPage = React.memo(() => {
   const { tableId, recordId } = useParams();
-  
+
+  // Vérification des paramètres requis
+  if (!tableId || !recordId) {
+    return (
+      <Page>
+        <div className="pt-8 flex justify-center">
+          <p className="text-red-500">Paramètres manquants</p>
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <div className="pt-8 flex justify-center">
@@ -17,6 +32,8 @@ function EditRecordPage() {
       </div>
     </Page>
   );
-}
+});
+
+EditRecordPage.displayName = 'EditRecordPage';
 
 export default EditRecordPage;

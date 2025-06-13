@@ -4,11 +4,30 @@ import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
 import api from '../services/api';
 
-// Provider du contexte
+/**
+ * @typedef {Object} Table
+ * @property {number} id - Identifiant unique de la table
+ * @property {string} name - Nom de la table
+ * @property {Array<Field>} fields - Champs de la table
+ */
+
+/**
+ * @typedef {Object} Field
+ * @property {number} id - Identifiant unique du champ
+ * @property {string} name - Nom du champ
+ * @property {string} type - Type du champ
+ */
+
+/**
+ * Provider du contexte pour la gestion des tables dynamiques
+ * @param {Object} props - Propriétés du composant
+ * @param {React.ReactNode} props.children - Composants enfants
+ */
 export function DynamicTableProvider({ children }) {
   const [tables, setTables] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cache, setCache] = useState(new Map());
 
   // Fonction pour récupérer toutes les tables
   const fetchTables = useCallback(async () => {
@@ -18,6 +37,12 @@ export function DynamicTableProvider({ children }) {
     try {
       const data = await api.get('/api/database/tables/');
       setTables(data);
+      // Mise en cache des tables
+      setCache(prev => {
+        const newCache = new Map(prev);
+        data.forEach(table => newCache.set(`table_${table.id}`, table));
+        return newCache;
+      });
     } catch (err) {
       console.error('Erreur lors de la récupération des tables:', err);
       setError(err.message || 'Une erreur est survenue lors de la récupération des tables');
@@ -28,18 +53,32 @@ export function DynamicTableProvider({ children }) {
 
   // Fonction pour récupérer une table spécifique avec ses champs
   const fetchTableWithFields = useCallback(async (tableId) => {
+    const cacheKey = `table_${tableId}_with_fields`;
+    
+    // Vérifier le cache
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
+    }
+
     setIsLoading(true);
     setError(null);
     
     try {
-      // Récupération de la table
-      const table = await api.get(`/api/database/tables/${tableId}/`);
+      const [table, fields] = await Promise.all([
+        api.get(`/api/database/tables/${tableId}/`),
+        api.get(`/api/database/tables/${tableId}/fields/`)
+      ]);
       
-      // Récupération des champs
-      const fields = await api.get(`/api/database/tables/${tableId}/fields/`);
+      const result = { ...table, fields };
       
-      // Combiner la table et ses champs
-      return { ...table, fields };
+      // Mise en cache
+      setCache(prev => {
+        const newCache = new Map(prev);
+        newCache.set(cacheKey, result);
+        return newCache;
+      });
+      
+      return result;
     } catch (err) {
       console.error(`Erreur lors de la récupération de la table ${tableId}:`, err);
       setError(err.message || `Une erreur est survenue lors de la récupération de la table ${tableId}`);
@@ -47,18 +86,27 @@ export function DynamicTableProvider({ children }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [cache]);
 
   // Fonction pour créer une nouvelle table
   const createTable = useCallback(async (tableData) => {
+    if (!tableData?.name) {
+      setError('Le nom de la table est requis');
+      return null;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       const newTable = await api.post('/api/database/tables/', tableData);
       
-      // Mettre à jour la liste des tables
-      setTables((prevTables) => [...prevTables, newTable]);
+      setTables(prevTables => [...prevTables, newTable]);
+      setCache(prev => {
+        const newCache = new Map(prev);
+        newCache.set(`table_${newTable.id}`, newTable);
+        return newCache;
+      });
       
       return newTable;
     } catch (err) {
@@ -266,7 +314,7 @@ export function DynamicTableProvider({ children }) {
     fetchTables();
   }, [fetchTables]);
 
-  // Valeur du contexte
+  // Valeur du contexte optimisée
   const value = useMemo(() => ({
     tables,
     isLoading,

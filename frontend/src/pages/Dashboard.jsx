@@ -1,6 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiPlus, FiDatabase } from 'react-icons/fi';
+import { FiFilter, FiHeart, FiRefreshCw, FiUser, FiDatabase } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { useAdvancedFilters } from '../hooks/useAdvancedFilters';
@@ -650,6 +650,8 @@ function DashboardContent() {
 
   // Charger les tables et identifier les IDs
   useEffect(() => {
+    let timeoutId;
+    
     const loadTables = async () => {
       try {
         await fetchTables();
@@ -659,7 +661,12 @@ function DashboardContent() {
         markStepComplete('tables'); // Marquer comme terminé même en cas d'erreur
       }
     };
+
     loadTables();
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [fetchTables, markStepComplete]);
 
   // Trouver les IDs des tables nécessaires

@@ -1,6 +1,10 @@
 import { useState, useCallback, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 
-// Types de filtres supportés
+/**
+ * Types de filtres supportés
+ * @enum {string}
+ */
 export const FILTER_TYPES = {
   TEXT: 'text',
   SELECT_MULTIPLE: 'select_multiple',
@@ -10,7 +14,10 @@ export const FILTER_TYPES = {
   COMPARISON: 'comparison'
 };
 
-// Opérateurs de comparaison
+/**
+ * Opérateurs de comparaison
+ * @enum {string}
+ */
 export const COMPARISON_OPERATORS = {
   EQUALS: 'equals',
   NOT_EQUALS: 'not_equals',
@@ -24,102 +31,20 @@ export const COMPARISON_OPERATORS = {
   LESS_EQUAL: 'less_equal'
 };
 
+/**
+ * Hook personnalisé pour gérer les filtres avancés
+ * @param {Array} data - Données à filtrer
+ * @param {Array} initialColumns - Colonnes initiales visibles
+ * @param {Function} customGetFieldValue - Fonction personnalisée pour extraire les valeurs
+ * @returns {Object} Objet contenant les fonctions et états de filtrage
+ */
 export function useAdvancedFilters(data = [], initialColumns = [], customGetFieldValue = null) {
   const [filters, setFilters] = useState([]);
   const [sorting, setSorting] = useState([]);
   const [visibleColumns, setVisibleColumns] = useState(initialColumns);
   const [presets, setPresets] = useState([]);
 
-  // Ajouter un filtre
-  const addFilter = useCallback((filterConfig) => {
-    const newFilter = {
-      id: Date.now().toString(),
-      field: '',
-      type: FILTER_TYPES.TEXT,
-      operator: COMPARISON_OPERATORS.CONTAINS,
-      value: null,
-      label: '',
-      ...filterConfig
-    };
-    setFilters(prev => [...prev, newFilter]);
-  }, []);
-
-  // Supprimer un filtre
-  const removeFilter = useCallback((filterId) => {
-    setFilters(prev => prev.filter(f => f.id !== filterId));
-  }, []);
-
-  // Mettre à jour un filtre
-  const updateFilter = useCallback((filterId, updates) => {
-    setFilters(prev => 
-      prev.map(filter => 
-        filter.id === filterId 
-          ? { ...filter, ...updates }
-          : filter
-      )
-    );
-  }, []);
-
-  // Réinitialiser les filtres
-  const clearFilters = useCallback(() => {
-    setFilters([]);
-  }, []);
-
-  // Gestion du tri
-  const addSort = useCallback((field, direction = 'asc') => {
-    setSorting(prev => {
-      const existing = prev.find(s => s.field === field);
-      if (existing) {
-        // Mise à jour du tri existant
-        return prev.map(s => 
-          s.field === field 
-            ? { ...s, direction }
-            : s
-        );
-      } else {
-        // Nouveau tri
-        return [...prev, { field, direction, priority: prev.length }];
-      }
-    });
-  }, []);
-
-  const removeSort = useCallback((field) => {
-    setSorting(prev => prev.filter(s => s.field !== field));
-  }, []);
-
-  const clearSorting = useCallback(() => {
-    setSorting([]);
-  }, []);
-
-  // Fonction pour extraire la valeur d'un champ (logique par défaut ou personnalisée)
-  const getFieldValue = useCallback((record, ...possibleFields) => {
-    // Si une fonction personnalisée est fournie, l'utiliser
-    if (customGetFieldValue && possibleFields.length === 1) {
-      return customGetFieldValue(record, possibleFields[0]);
-    }
-    
-    // Sinon, utiliser la logique par défaut
-    if (!record) return '';
-    
-    for (const field of possibleFields) {
-      if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
-        return record[field];
-      }
-    }
-    
-    if (record.values && Array.isArray(record.values)) {
-      for (const field of possibleFields) {
-        const valueField = record.values.find(v => v.field_slug === field);
-        if (valueField?.value !== undefined && valueField?.value !== null && valueField?.value !== '') {
-          return valueField.value;
-        }
-      }
-    }
-    
-    return '';
-  }, [customGetFieldValue]);
-
-  // Application des filtres
+  // Mémoisation des fonctions de filtrage
   const applyTextFilter = useCallback((fieldValue, filter) => {
     const textValue = String(fieldValue).toLowerCase();
     const searchTerm = String(filter.value).toLowerCase();
@@ -185,6 +110,33 @@ export function useAdvancedFilters(data = [], initialColumns = [], customGetFiel
     }
   }, []);
 
+  // Fonction pour extraire la valeur d'un champ
+  const getFieldValue = useCallback((record, ...possibleFields) => {
+    if (customGetFieldValue && possibleFields.length === 1) {
+      return customGetFieldValue(record, possibleFields[0]);
+    }
+    
+    if (!record) return '';
+    
+    for (const field of possibleFields) {
+      if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
+        return record[field];
+      }
+    }
+    
+    if (record.values && Array.isArray(record.values)) {
+      for (const field of possibleFields) {
+        const valueField = record.values.find(v => v.field_slug === field);
+        if (valueField?.value !== undefined && valueField?.value !== null && valueField?.value !== '') {
+          return valueField.value;
+        }
+      }
+    }
+    
+    return '';
+  }, [customGetFieldValue]);
+
+  // Application des filtres
   const applyFilters = useCallback((item) => {
     return filters.every(filter => {
       if (!filter.field || filter.value === null || filter.value === undefined) {
@@ -196,23 +148,17 @@ export function useAdvancedFilters(data = [], initialColumns = [], customGetFiel
       switch (filter.type) {
         case FILTER_TYPES.TEXT:
           return applyTextFilter(fieldValue, filter);
-
         case FILTER_TYPES.SELECT_MULTIPLE:
           if (!Array.isArray(filter.value) || filter.value.length === 0) return true;
           return filter.value.includes(String(fieldValue));
-
         case FILTER_TYPES.BOOLEAN:
           return Boolean(fieldValue) === filter.value;
-
         case FILTER_TYPES.DATE_RANGE:
           return applyDateRangeFilter(fieldValue, filter);
-
         case FILTER_TYPES.NUMBER_RANGE:
           return applyNumberRangeFilter(fieldValue, filter);
-
         case FILTER_TYPES.COMPARISON:
           return applyComparisonFilter(fieldValue, filter);
-
         default:
           return true;
       }
@@ -224,20 +170,18 @@ export function useAdvancedFilters(data = [], initialColumns = [], customGetFiel
     if (sorting.length === 0) return items;
 
     return [...items].sort((a, b) => {
-      for (const sort of sorting.toSorted((x, y) => x.priority - y.priority)) {
+      for (const sort of [...sorting].sort((x, y) => x.priority - y.priority)) {
         const aValue = getFieldValue(a, sort.field);
         const bValue = getFieldValue(b, sort.field);
         
         let comparison = 0;
         
-        // Comparaison numérique si possible
         const aNum = Number(aValue);
         const bNum = Number(bValue);
         
         if (!isNaN(aNum) && !isNaN(bNum)) {
           comparison = aNum - bNum;
         } else {
-          // Comparaison textuelle
           comparison = String(aValue).localeCompare(String(bValue));
         }
         
@@ -258,44 +202,58 @@ export function useAdvancedFilters(data = [], initialColumns = [], customGetFiel
 
   // Gestion des presets
   const savePreset = useCallback((name, description = '') => {
-    const preset = {
-      id: Date.now().toString(),
-      name,
-      description,
-      filters: [...filters],
-      sorting: [...sorting],
-      visibleColumns: [...visibleColumns],
-      createdAt: new Date().toISOString()
-    };
-    setPresets(prev => [...prev, preset]);
-    
-    // Sauvegarder dans localStorage
-    const existingPresets = JSON.parse(localStorage.getItem('filter_presets') || '[]');
-    const updatedPresets = [...existingPresets, preset];
-    localStorage.setItem('filter_presets', JSON.stringify(updatedPresets));
-    
-    return preset;
+    try {
+      const preset = {
+        id: uuidv4(),
+        name,
+        description,
+        filters: [...filters],
+        sorting: [...sorting],
+        visibleColumns: [...visibleColumns],
+        createdAt: new Date().toISOString()
+      };
+      
+      setPresets(prev => [...prev, preset]);
+      
+      const existingPresets = JSON.parse(localStorage.getItem('filter_presets') || '[]');
+      const updatedPresets = [...existingPresets, preset];
+      localStorage.setItem('filter_presets', JSON.stringify(updatedPresets));
+      
+      return preset;
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du preset:', error);
+      return null;
+    }
   }, [filters, sorting, visibleColumns]);
 
   const loadPreset = useCallback((preset) => {
+    if (!preset || typeof preset !== 'object') return;
+    
     setFilters(preset.filters || []);
     setSorting(preset.sorting || []);
     setVisibleColumns(preset.visibleColumns || []);
   }, []);
 
   const deletePreset = useCallback((presetId) => {
-    setPresets(prev => prev.filter(p => p.id !== presetId));
-    
-    // Supprimer du localStorage
-    const existingPresets = JSON.parse(localStorage.getItem('filter_presets') || '[]');
-    const updatedPresets = existingPresets.filter(p => p.id !== presetId);
-    localStorage.setItem('filter_presets', JSON.stringify(updatedPresets));
+    try {
+      setPresets(prev => prev.filter(p => p.id !== presetId));
+      
+      const existingPresets = JSON.parse(localStorage.getItem('filter_presets') || '[]');
+      const updatedPresets = existingPresets.filter(p => p.id !== presetId);
+      localStorage.setItem('filter_presets', JSON.stringify(updatedPresets));
+    } catch (error) {
+      console.error('Erreur lors de la suppression du preset:', error);
+    }
   }, []);
 
-  // Charger les presets depuis localStorage au démarrage
   const loadPresetsFromStorage = useCallback(() => {
-    const stored = JSON.parse(localStorage.getItem('filter_presets') || '[]');
-    setPresets(stored);
+    try {
+      const stored = JSON.parse(localStorage.getItem('filter_presets') || '[]');
+      setPresets(stored);
+    } catch (error) {
+      console.error('Erreur lors du chargement des presets:', error);
+      setPresets([]);
+    }
   }, []);
 
   return {
@@ -304,13 +262,53 @@ export function useAdvancedFilters(data = [], initialColumns = [], customGetFiel
     visibleColumns,
     presets,
     filteredData,
-    addFilter,
-    removeFilter,
-    updateFilter,
-    clearFilters,
-    addSort,
-    removeSort,
-    clearSorting,
+    addFilter: useCallback((filterConfig) => {
+      const newFilter = {
+        id: uuidv4(),
+        field: '',
+        type: FILTER_TYPES.TEXT,
+        operator: COMPARISON_OPERATORS.CONTAINS,
+        value: null,
+        label: '',
+        ...filterConfig
+      };
+      setFilters(prev => [...prev, newFilter]);
+    }, []),
+    removeFilter: useCallback((filterId) => {
+      setFilters(prev => prev.filter(f => f.id !== filterId));
+    }, []),
+    updateFilter: useCallback((filterId, updates) => {
+      setFilters(prev => 
+        prev.map(filter => 
+          filter.id === filterId 
+            ? { ...filter, ...updates }
+            : filter
+        )
+      );
+    }, []),
+    clearFilters: useCallback(() => {
+      setFilters([]);
+    }, []),
+    addSort: useCallback((field, direction = 'asc') => {
+      setSorting(prev => {
+        const existing = prev.find(s => s.field === field);
+        if (existing) {
+          return prev.map(s => 
+            s.field === field 
+              ? { ...s, direction }
+              : s
+          );
+        } else {
+          return [...prev, { field, direction, priority: prev.length }];
+        }
+      });
+    }, []),
+    removeSort: useCallback((field) => {
+      setSorting(prev => prev.filter(s => s.field !== field));
+    }, []),
+    clearSorting: useCallback(() => {
+      setSorting([]);
+    }, []),
     setVisibleColumns,
     savePreset,
     loadPreset,

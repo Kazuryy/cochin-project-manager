@@ -78,7 +78,6 @@ function ProjectDetailsContent() {
 
       // Charger l'enregistrement du projet
       const response = await api.get(`/api/database/records/${projectId}/`);
-      console.log('📋 Données du projet chargées:', response);
       
       setProjectData(response);
       return response;

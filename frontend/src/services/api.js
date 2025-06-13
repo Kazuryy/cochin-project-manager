@@ -174,6 +174,20 @@ const getCsrfToken = () => {
       };
       throw error;
     }
+    
+    // Si la requête est réussie, signaler l'activité utilisateur
+    if (getAuthContext) {
+      try {
+        const authContext = getAuthContext();
+        if (authContext?.initializeSession) {
+          authContext.initializeSession();
+        }
+      } catch (error) {
+        // Ignorer les erreurs du contexte d'authentification
+        console.debug('Impossible de renouveler la session:', error.message);
+      }
+    }
+    
     return response;
   };
   
@@ -201,17 +215,33 @@ const getCsrfToken = () => {
     post: async (url, data, options = {}) => {
       const csrfToken = getCsrfToken();
       
-      const response = await fetch(`${API_BASE_URL}${url}`, {
+      // Détecter si les données sont FormData pour l'upload de fichiers
+      const isFormData = data instanceof FormData;
+      
+      const fetchOptions = {
         method: 'POST',
-        headers: {
+        credentials: 'include',
+        ...options,
+      };
+      
+      if (isFormData) {
+        // Pour FormData : ne pas définir Content-Type (boundary automatique) et ne pas stringify
+        fetchOptions.headers = {
+          'X-CSRFToken': csrfToken,
+          ...(options.headers || {}),
+        };
+        fetchOptions.body = data;
+      } else {
+        // Pour JSON : comportement normal
+        fetchOptions.headers = {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken,
           ...(options.headers || {}),
-        },
-        credentials: 'include',
-        body: JSON.stringify(data),
-        ...options,
-      });
+        };
+        fetchOptions.body = JSON.stringify(data);
+      }
+      
+      const response = await fetch(`${API_BASE_URL}${url}`, fetchOptions);
       
       await handleError(response);
       return response.json();
@@ -287,6 +317,14 @@ const getCsrfToken = () => {
       
       return response.json().catch(() => null);
     },
+  };
+  
+  // Fonction pour obtenir le contexte d'authentification (sera définie par l'application)
+  let getAuthContext = null;
+
+  // Fonction pour définir le contexte d'authentification depuis l'AuthProvider
+  export const setAuthContext = (authContextGetter) => {
+    getAuthContext = authContextGetter;
   };
   
   export default api;

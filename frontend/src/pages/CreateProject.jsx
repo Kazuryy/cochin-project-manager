@@ -8,18 +8,44 @@ import { useFormPersistence } from '../hooks/useFormPersistence';
 import api from '../services/api';
 import DevisManager from '../components/devis/DevisManager';
 
+// 1. Extraction des constantes
+const DEFAULT_PROJECT_STATUS = 'Non commencé';
+const TOAST_DURATION = 2000;
+
 function CreateProjectContent() {
   const navigate = useNavigate();
   const { tables, fetchTables, fetchRecords, createRecord, isLoading } = useDynamicTables();
   
-  const [formData, setFormData] = useState({
+  // 2. Optimisation des hooks personnalisés
+  const useProjectForm = (initialData) => {
+    const [formData, setFormData] = useState(initialData);
+    const [errors, setErrors] = useState({});
+    
+    const validateField = useCallback((name, value) => {
+      // Logique de validation centralisée
+      if (!value && name !== 'email') {
+        return `${name} est requis`;
+      }
+      return '';
+    }, []);
+    
+    return {
+      formData,
+      errors,
+      setFormData,
+      setErrors,
+      validateField
+    };
+  };
+
+  const [formData, setFormData, formErrors, setFormErrors] = useProjectForm({
     nom_projet: '',
     numero_projet: '',
     contact_principal: '',
     type_projet: '',
     equipe: '',
     description: '',
-    statut: 'Non commencé', // Valeur par défaut
+    statut: DEFAULT_PROJECT_STATUS, // Valeur par défaut
     // Champs conditionnels dynamiques
     conditionalFields: {}
   });
@@ -36,7 +62,6 @@ function CreateProjectContent() {
     ['conditionalFields'] // Exclure les champs conditionnels de la persistance
   );
   
-  const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [contacts, setContacts] = useState([]);
   const [projectTypes, setProjectTypes] = useState([]);
@@ -445,7 +470,7 @@ function CreateProjectContent() {
       console.error('❌ Erreur lors du chargement des champs depuis la table Details:', err);
       setConditionalFields([]);
     }
-  }, [formData.type_projet, projectTypes, findSelectedType, getFieldValue, findDetailsTable, fetchTableData, transformTableFieldsToDisplayConfig, loadFieldOptions]);
+  }, [formData.type_projet, projectTypes, findSelectedType, getFieldValue, findDetailsTable, fetchTableData, transformTableFieldsToDisplayConfig, loadFieldOptions, setFormData]);
 
   // Logique pour les champs conditionnels
   useEffect(() => {
@@ -823,29 +848,11 @@ function CreateProjectContent() {
       if (result.success) {
         setSuccessMessage('Projet créé avec succès !');
         
-        console.log('🎯 === VÉRIFICATION DE L\'ID PROJET ===');
-        console.log('🔍 result.project existe?', !!result.project);
-        console.log('🔍 result.project:', result.project);
-        console.log('🔍 result.data existe?', !!result.data);
-        console.log('🔍 result.data:', result.data);
-        if (result.project) {
-          console.log('🔍 result.project.id existe?', !!result.project.id);
-          console.log('🔍 result.project.id:', result.project.id);
-        }
-        if (result.data) {
-          console.log('🔍 result.data.project existe?', !!result.data.project);
-          console.log('🔍 result.data.project:', result.data.project);
-          if (result.data.project) {
-            console.log('🔍 result.data.project.id existe?', !!result.data.project.id);
-            console.log('🔍 result.data.project.id:', result.data.project.id);
-          }
-        }
-        
         // Enregistrer le projet créé pour les devis (avec vérification défensive)
         // Les données du projet sont dans result.data, pas directement dans result
         const projectCreated = result.data?.project || result.project;
         if (projectCreated && projectCreated.id) {
-          console.log('✅ ID projet trouvé, création de createdProject');
+          console.log('✅ Projet créé avec ID:', projectCreated.id);
           setCreatedProject({
             id: projectCreated.id,
             name: projectData.nom_projet
@@ -853,10 +860,9 @@ function CreateProjectContent() {
           
           // Afficher la section de choix (devis ou dashboard)
           setShowDevisChoice(true);
-          console.log('✅ showDevisChoice défini à true');
         } else {
           // Si pas d'ID retourné, rediriger directement vers le dashboard
-          console.warn('⚠️ Projet créé avec succès mais aucun ID retourné:', result);
+          console.warn('⚠️ Projet créé sans ID retourné, redirection vers dashboard');
           setTimeout(() => {
             navigate('/dashboard');
           }, 1500);
@@ -877,7 +883,7 @@ function CreateProjectContent() {
     }
   };
 
-  const showToast = (message, type = 'info', duration = 2000) => {
+  const showToast = (message, type = 'info', duration = TOAST_DURATION) => {
     setToast({ message, type });
     setTimeout(() => setToast(null), duration);
   };

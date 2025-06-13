@@ -10,4 +10,5 @@ INSTALLED_APPS = [
     'django_filters',
     'database',
     'conditional_fields',  # Nouvelle app pour les champs conditionnels
+    'backup_manager',  # App pour la gestion des sauvegardes
 ] 

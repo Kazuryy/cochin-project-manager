@@ -3,10 +3,51 @@ import PropTypes from 'prop-types';
 import { DynamicTableContext } from './context';
 import api from '../services/api';
 
+// Constantes pour la validation
+const SYSTEM_FIELDS = [
+  'id', 'custom_id', 'primary_identifier', 'custom_id_field_name', 
+  'created_at', 'updated_at', 'created_by', 'updated_by', 
+  'is_active', 'table', 'table_name'
+];
+
+const EXCLUDE_PATTERNS = [
+  /^id_\w+$/,
+  /^\w+_id$/
+];
+
+// Fonction utilitaire pour la validation des paramètres
+const validateTableId = (tableId) => {
+  if (!tableId || isNaN(parseInt(tableId))) {
+    throw new Error('ID de table invalide');
+  }
+  return parseInt(tableId);
+};
+
+// Fonction utilitaire pour la gestion des erreurs
+const handleApiError = (error, context) => {
+  const errorMessage = error.message || `Une erreur est survenue lors de ${context}`;
+  if (import.meta.env.DEV) {
+    console.error(`Erreur ${context}:`, error);
+  }
+  return errorMessage;
+};
+
+// Fonction utilitaire pour la transformation des valeurs
+const transformValue = (key, value) => {
+  if (typeof value === 'boolean') {
+    return value.toString();
+  }
+  if (key.endsWith('_id') || key === 'id') {
+    return parseInt(value);
+  }
+  return value.toString();
+};
+
 export function DynamicTableProvider({ children }) {
   const [tables, setTables] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cache, setCache] = useState(new Map());
 
   // Fonction pour récupérer toutes les tables
   const fetchTables = useCallback(async () => {
@@ -16,9 +57,10 @@ export function DynamicTableProvider({ children }) {
     try {
       const data = await api.get('/api/database/tables/');
       setTables(data);
+      // Mise en cache des tables
+      setCache(prev => new Map(prev).set('tables', data));
     } catch (err) {
-      console.error('Erreur lors de la récupération des tables:', err);
-      setError(err.message || 'Une erreur est survenue lors de la récupération des tables');
+      setError(handleApiError(err, 'la récupération des tables'));
     } finally {
       setIsLoading(false);
     }
@@ -30,18 +72,27 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Un seul appel car l'API retourne déjà la table avec ses champs
+      validateTableId(tableId);
+      const cacheKey = `table_${tableId}`;
+      
+      // Vérifier le cache
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey);
+      }
+      
       const table = await api.get(`/api/database/tables/${tableId}/`);
+      
+      // Mise en cache
+      setCache(prev => new Map(prev).set(cacheKey, table));
       
       return table;
     } catch (err) {
-      console.error(`Erreur lors de la récupération de la table ${tableId}:`, err);
-      setError(err.message || `Une erreur est survenue lors de la récupération de la table ${tableId}`);
+      setError(handleApiError(err, `la récupération de la table ${tableId}`));
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [cache]);
 
   // Fonction pour créer une nouvelle table
   const createTable = useCallback(async (tableData) => {
@@ -213,7 +264,8 @@ export function DynamicTableProvider({ children }) {
     setError(null);
     
     try {
-      // Préparer les données au format attendu par le backend
+      validateTableId(tableId);
+      
       const dataToSend = {
         table_id: parseInt(tableId),
         values: {},
@@ -223,28 +275,24 @@ export function DynamicTableProvider({ children }) {
       // Nettoyer les valeurs
       Object.entries(values).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
-          // Ne pas inclure contact_principal_id dans values car il est géré séparément
-          if (key === 'contact_principal_id') {
-            return;
-          }
-          
-          if (typeof value === 'boolean') {
-            dataToSend.values[key] = value ? 'true' : 'false';
-          } else if (key.endsWith('_id') || key === 'id') {
-            // Garder les IDs en tant que nombres
-            dataToSend.values[key] = parseInt(value);
-          } else {
-            dataToSend.values[key] = value.toString();
-          }
+          if (key === 'contact_principal_id') return;
+          dataToSend.values[key] = transformValue(key, value);
         }
       });
       
       const newRecord = await api.post('/api/database/records/create_with_values/', dataToSend);
       
+      // Invalider le cache
+      setCache(prev => {
+        const newCache = new Map(prev);
+        newCache.delete(`records_${tableId}`);
+        return newCache;
+      });
+      
       return newRecord;
     } catch (err) {
-      console.error(`Erreur lors de la création d'un enregistrement dans la table ${tableId}:`, err);
-      throw err; // Propager l'erreur pour une meilleure gestion
+      setError(handleApiError(err, `la création d'un enregistrement dans la table ${tableId}`));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -356,7 +404,7 @@ export function DynamicTableProvider({ children }) {
     fetchTables();
   }, [fetchTables]);
 
-  // Valeur du contexte
+  // Valeur du contexte optimisée
   const value = useMemo(() => ({
     tables,
     isLoading,

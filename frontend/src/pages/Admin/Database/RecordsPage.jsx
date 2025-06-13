@@ -5,9 +5,23 @@ import Page from "../../../components/global/Page";
 import RecordList from "../../../components/tables/RecordList";
 import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
-function RecordsPage() {
+/**
+ * Page d'affichage des enregistrements d'une table spécifique
+ * @returns {JSX.Element} Le composant RecordsPage
+ */
+const RecordsPage = React.memo(() => {
   const { tableId } = useParams();
-  
+
+  if (!tableId) {
+    return (
+      <Page>
+        <div className="pt-8">
+          <p className="text-red-500">Erreur : ID de table non spécifié</p>
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <div className="pt-8">
@@ -17,6 +31,8 @@ function RecordsPage() {
       </div>
     </Page>
   );
-}
+});
+
+RecordsPage.displayName = 'RecordsPage';
 
 export default RecordsPage;

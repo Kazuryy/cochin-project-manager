@@ -12,33 +12,35 @@ function EditProjectContent() {
   const navigate = useNavigate();
   const { tables, fetchTables, fetchRecords, isLoading } = useDynamicTables();
 
-  const [formData, setFormData] = useState({
-    nom_projet: '',
-    numero_projet: '',
-    contact_principal: '',
-    type_projet: '',
-    equipe: '',
-    description: '',
-    statut: 'Non commencé',
-    // Champs conditionnels dynamiques
-    conditionalFields: {}
+  // Optimisation de la gestion des états
+  const [formState, setFormState] = useState({
+    data: {
+      nom_projet: '',
+      numero_projet: '',
+      contact_principal: '',
+      type_projet: '',
+      equipe: '',
+      description: '',
+      statut: 'Non commencé',
+      conditionalFields: {}
+    },
+    errors: {},
+    isSubmitting: false,
+    isLoading: true
   });
 
-  const [formErrors, setFormErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [contacts, setContacts] = useState([]);
   const [projectTypes, setProjectTypes] = useState([]);
   const [projectTableId, setProjectTableId] = useState(null);
   const [contactTableId, setContactTableId] = useState(null);
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
-  const [, setDetailsTable] = useState(null);
-  const [, setProjectDetailsData] = useState(null);
+  const [detailsTable, setDetailsTable] = useState(null);
+  const [projectDetailsData, setProjectDetailsData] = useState(null);
 
   // États pour la modal d'ajout de contact
   const [showAddContactModal, setShowAddContactModal] = useState(false);
@@ -90,23 +92,16 @@ function EditProjectContent() {
           records_count: recordsList.length
         });
 
-        const uniqueValues = new Set();
-        const options = [];
-
-        recordsList.forEach((record) => {
-          // D'abord essayer les champs génériques
+        const processRecord = (record) => {
           let extractedValue = getFieldValue(record, 'nom', 'name', 'label', 'title', 'value');
           
-          // Si pas trouvé, essayer des colonnes spécifiques basées sur le nom du champ
           if (!extractedValue || extractedValue.trim() === '') {
             const fieldNameLower = field.name.toLowerCase();
             
-            // Mapping dynamique selon le type de projet pour les sous types
             if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype')) {
-              // Construire dynamiquement le nom de la colonne selon le type de projet
               const selectedType = projectTypes.find(type => {
                 const typeId = String(type.id);
-                return typeId === String(formData.type_projet);
+                return typeId === String(formState.data.type_projet);
               });
               
               if (selectedType) {
@@ -120,23 +115,23 @@ function EditProjectContent() {
             } else if (fieldNameLower.includes('espece') || fieldNameLower.includes('espèce')) {
               extractedValue = getFieldValue(record, 'espece', 'espèce', 'species');
             } else {
-              // Essayer avec le nom du champ lui-même
               extractedValue = getFieldValue(record, field.name, fieldNameLower);
             }
           }
           
-          if (extractedValue && typeof extractedValue === 'string') {
-            const trimmedValue = extractedValue.trim();
-            
-            if (trimmedValue && !uniqueValues.has(trimmedValue)) {
-              uniqueValues.add(trimmedValue);
-              options.push({
-                value: trimmedValue,
-                label: trimmedValue
-              });
-            }
-          }
-        });
+          return extractedValue;
+        };
+
+        const uniqueValues = new Set();
+        const options = recordsList
+          .map(processRecord)
+          .filter(value => value && typeof value === 'string')
+          .map(value => value.trim())
+          .filter(value => value && !uniqueValues.has(value))
+          .map(value => {
+            uniqueValues.add(value);
+            return { value, label: value };
+          });
 
         console.log(`✅ Options chargées pour ${field.label}:`, options);
         return options.sort((a, b) => a.label.localeCompare(b.label));
@@ -147,7 +142,7 @@ function EditProjectContent() {
       }
     }
     return [];
-  }, [getFieldValue, projectTypes, formData.type_projet]);
+  }, [getFieldValue, projectTypes, formState.data.type_projet]);
 
   // Charger les champs conditionnels basés sur la table Details
   const loadConditionalFields = useCallback(async (detailsTable, projectRecord) => {
@@ -209,9 +204,12 @@ function EditProjectContent() {
       console.log('📋 Valeurs conditionnelles extraites:', conditionalValues);
       
       // Mettre à jour le formData avec les valeurs conditionnelles
-      setFormData(prev => ({
+      setFormState(prev => ({
         ...prev,
-        conditionalFields: conditionalValues
+        data: {
+          ...prev.data,
+          conditionalFields: conditionalValues
+        }
       }));
 
     } catch (err) {
@@ -394,110 +392,108 @@ function EditProjectContent() {
   }, [tableNamesTableId, fetchRecords]);
 
   // Charger les données du projet existant
-  useEffect(() => {
-    const loadProjectData = async () => {
-      if (!projectId || !projectTableId) return;
+  const loadProjectData = useCallback(async () => {
+    if (!projectId || !projectTableId) return;
 
-      try {
-        setLoading(true);
-        
-        // Charger les données du projet principal
-        const projectResponse = await api.get(`/api/database/records/${projectId}/`);
-        console.log('📋 Données du projet chargées:', projectResponse);
-
-        // Extraire les valeurs pour le formulaire
-        const projectData = {
-          nom_projet: getFieldValue(projectResponse, 'nom_projet', 'nom', 'name', 'titre', 'title'),
-          numero_projet: getFieldValue(projectResponse, 'numero_projet', 'numero', 'number', 'num'),
-          contact_principal: getFieldValue(projectResponse, 'contact_principal', 'contact_principal_id', 'contact_id', 'contact'),
-          type_projet: getFieldValue(projectResponse, 'type_projet', 'type_id', 'type'),
-          equipe: getFieldValue(projectResponse, 'equipe', 'team', 'groupe'),
-          description: getFieldValue(projectResponse, 'description', 'desc', 'details'),
-          statut: getFieldValue(projectResponse, 'statut', 'status', 'etat') || 'Non commencé',
-          conditionalFields: {}
-        };
-
-        console.log('📋 Données extraites pour le formulaire:', projectData);
-        console.log('🔍 Détail contact_principal extrait:', projectData.contact_principal);
-        console.log('🔍 Détail type_projet extrait:', projectData.type_projet);
-        console.log('🔍 Toutes les clés de projectResponse:', Object.keys(projectResponse));
-        
-        setFormData(projectData);
-
-        // Note: Le chargement des détails spécifiques est maintenant géré par un useEffect séparé
-
-      } catch (err) {
-        console.error('Erreur lors du chargement du projet:', err);
-        showToast('Erreur lors du chargement du projet', 'error');
-      } finally {
-        setLoading(false);
+    try {
+      setLoading(true);
+      
+      const projectResponse = await api.get(`/api/database/records/${projectId}/`);
+      
+      if (!projectResponse) {
+        throw new Error('Données du projet non trouvées');
       }
-    };
 
-    loadProjectData();
+      const projectData = {
+        nom_projet: getFieldValue(projectResponse, 'nom_projet', 'nom', 'name', 'titre', 'title'),
+        numero_projet: getFieldValue(projectResponse, 'numero_projet', 'numero', 'number', 'num'),
+        contact_principal: getFieldValue(projectResponse, 'contact_principal', 'contact_principal_id', 'contact_id', 'contact'),
+        type_projet: getFieldValue(projectResponse, 'type_projet', 'type_id', 'type'),
+        equipe: getFieldValue(projectResponse, 'equipe', 'team', 'groupe'),
+        description: getFieldValue(projectResponse, 'description', 'desc', 'details'),
+        statut: getFieldValue(projectResponse, 'statut', 'status', 'etat') || 'Non commencé',
+        conditionalFields: {}
+      };
+      
+      setFormState(prev => ({
+        ...prev,
+        data: projectData,
+        isLoading: false
+      }));
+
+    } catch (err) {
+      console.error('Erreur lors du chargement du projet:', err);
+      showToast('Erreur lors du chargement du projet', 'error');
+    } finally {
+      setLoading(false);
+    }
   }, [projectId, projectTableId, getFieldValue]);
+
+  // Optimisation des effets
+  useEffect(() => {
+    loadProjectData();
+  }, [loadProjectData]);
 
   // Charger les détails spécifiques du projet quand toutes les conditions sont réunies
   useEffect(() => {
     const loadProjectDetailsWhenReady = async () => {
-      if (!formData.nom_projet || !formData.type_projet || !projectTypes.length || !tables.length) {
+      if (!formState.data.nom_projet || !formState.data.type_projet || !projectTypes.length || !tables.length) {
         console.log('⚠️ Conditions non réunies pour charger les détails:', {
-          hasProjectData: !!formData.nom_projet,
-          hasTypeProjet: !!formData.type_projet,
+          hasProjectData: !!formState.data.nom_projet,
+          hasTypeProjet: !!formState.data.type_projet,
           projectTypesLoaded: projectTypes.length,
           tablesLoaded: tables.length
         });
         return;
       }
 
-      console.log('🎯 Toutes les conditions réunies, chargement des détails pour type:', formData.type_projet);
+      console.log('🎯 Toutes les conditions réunies, chargement des détails pour type:', formState.data.type_projet);
       console.log('🎯 projectTypes disponibles:', projectTypes.length);
       console.log('🎯 tables disponibles:', tables.length);
 
       try {
-        // Recharger les données du projet pour passer à loadProjectDetails
         const projectResponse = await api.get(`/api/database/records/${projectId}/`);
-        await loadProjectDetails(projectResponse, formData.type_projet);
+        await loadProjectDetails(projectResponse, formState.data.type_projet);
       } catch (err) {
         console.error('Erreur lors du chargement des détails du projet:', err);
       }
     };
 
     loadProjectDetailsWhenReady();
-  }, [formData.nom_projet, formData.type_projet, projectTypes, tables, projectId]);
+  }, [formState.data.nom_projet, formState.data.type_projet, projectTypes, tables, projectId, loadProjectDetails]);
 
   // Convertir les valeurs texte en IDs une fois que les options sont disponibles
   useEffect(() => {
-    if (!formData.nom_projet) return; // Attendre que les données du projet soient chargées
+    if (!formState.data.nom_projet) return; // Attendre que les données du projet soient chargées
     
     const convertValues = () => {
       let hasChanges = false;
-      const updatedFormData = { ...formData };
+      const updatedFormData = { ...formState.data };
       
       // Convertir le type de projet si les types sont chargés
-      if (projectTypes.length > 0 && formData.type_projet) {
+      if (projectTypes.length > 0 && formState.data.type_projet) {
         // Si c'est déjà un ID numérique, ne pas convertir
-        if (isNaN(formData.type_projet)) {
-          const matchingType = projectTypes.find(type => {
-            const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
-            return typeName === formData.type_projet;
-          });
-          
-          if (matchingType) {
-            const convertedType = String(matchingType.id);
-            if (convertedType !== formData.type_projet) {
-              updatedFormData.type_projet = convertedType;
-              hasChanges = true;
-              console.log('🔄 Type de projet converti:', formData.type_projet, '→', convertedType);
-            }
+        if (isNaN(formState.data.type_projet)) {
+        const matchingType = projectTypes.find(type => {
+          const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label');
+          return typeName === formState.data.type_projet;
+        });
+        
+        if (matchingType) {
+          const convertedType = String(matchingType.id);
+          if (convertedType !== formState.data.type_projet) {
+            updatedFormData.type_projet = convertedType;
+            hasChanges = true;
+            console.log('🔄 Type de projet converti:', formState.data.type_projet, '→', convertedType);
           }
         }
       }
+      }
       
       // Convertir le contact principal si les contacts sont chargés
-      if (contacts.length > 0 && formData.contact_principal) {
+      if (contacts.length > 0 && formState.data.contact_principal) {
         // Vérifier si c'est un nom complet qui doit être converti en ID ou format attendu
-        const currentContact = formData.contact_principal;
+        const currentContact = formState.data.contact_principal;
         
         // Chercher le contact correspondant dans la liste
         const matchingContact = contacts.find(contact => {
@@ -523,120 +519,120 @@ function EditProjectContent() {
       }
       
       if (hasChanges) {
-        setFormData(updatedFormData);
+        setFormState(prev => ({
+          ...prev,
+          data: updatedFormData
+        }));
       }
     };
     
     convertValues();
-  }, [projectTypes, contacts, formData.nom_projet, formData.type_projet, formData.contact_principal, getFieldValue]);
+  }, [projectTypes, contacts, formState.data.nom_projet, formState.data.type_projet, formState.data.contact_principal, getFieldValue]);
 
-  const handleChange = (e) => {
+  // Optimisation de la validation des données
+  const validateField = useCallback((name, value) => {
+    switch (name) {
+      case 'nom_projet':
+        return !value?.trim() ? 'Le nom du projet est requis' : '';
+      case 'numero_projet':
+        return !value?.trim() ? 'Le numéro du projet est requis' : '';
+      case 'contact_principal':
+        return !value ? 'Le contact principal est requis' : '';
+      case 'type_projet':
+        return !value ? 'Le type de projet est requis' : '';
+      case 'equipe':
+        return !value?.trim() ? 'L\'équipe est requise' : '';
+      case 'description':
+        return !value?.trim() ? 'La description est requise' : '';
+      default:
+        if (name.startsWith('conditional_')) {
+          const fieldName = name.replace('conditional_', '');
+          const field = conditionalFields.find(f => f.name === fieldName);
+          if (field?.required && !value) {
+            return `${field.label} est requis`;
+          }
+        }
+        return '';
+    }
+  }, [conditionalFields]);
+
+  // Optimisation du handleChange
+  const handleChange = useCallback((e) => {
     const { name, value } = e.target;
     
-    // Gérer les champs conditionnels séparément
-    if (name.startsWith('conditional_')) {
-      const fieldName = name.replace('conditional_', '');
-      setFormData(prev => ({
-        ...prev,
-        conditionalFields: {
-          ...prev.conditionalFields,
+    setFormState(prev => {
+      const newData = { ...prev.data };
+      const newErrors = { ...prev.errors };
+      
+      if (name.startsWith('conditional_')) {
+        const fieldName = name.replace('conditional_', '');
+        newData.conditionalFields = {
+          ...newData.conditionalFields,
           [fieldName]: value
-        }
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-    
-    if (formErrors[name]) {
-      setFormErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!formData.nom_projet.trim()) {
-      errors.nom_projet = 'Le nom du projet est requis';
-    }
-    
-    if (!formData.numero_projet.trim()) {
-      errors.numero_projet = 'Le numéro du projet est requis';
-    }
-    
-    if (!formData.contact_principal) {
-      errors.contact_principal = 'Le contact principal est requis';
-    }
-    
-    if (!formData.type_projet) {
-      errors.type_projet = 'Le type de projet est requis';
-    }
-    
-    if (!formData.equipe.trim()) {
-      errors.equipe = 'L\'équipe est requise';
-    }
-    
-    if (!formData.description.trim()) {
-      errors.description = 'La description est requise';
-    }
-    
-    // Validation des champs conditionnels obligatoires
-    conditionalFields.forEach(field => {
-      if (field.required && !formData.conditionalFields[field.name]) {
-        errors[`conditional_${field.name}`] = `${field.label} est requis`;
+        };
+      } else {
+        newData[name] = value;
       }
+      
+      // Validation immédiate du champ modifié
+      const error = validateField(name, value);
+      if (error) {
+        newErrors[name] = error;
+      } else {
+        delete newErrors[name];
+      }
+      
+      return {
+        ...prev,
+        data: newData,
+        errors: newErrors
+      };
     });
-    
-    return errors;
-  };
+  }, [validateField]);
 
-  const handleSubmit = async (e) => {
+  // Optimisation du handleSubmit
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    setIsSubmitting(true);
-    setFormErrors({});
-
+    setFormState(prev => ({ ...prev, isSubmitting: true }));
+    
     try {
-      // Préparer les données du projet principal
+      // Validation complète du formulaire
+      const errors = {};
+      Object.entries(formState.data).forEach(([key, value]) => {
+        const error = validateField(key, value);
+        if (error) errors[key] = error;
+      });
+      
+      if (Object.keys(errors).length > 0) {
+        setFormState(prev => ({
+          ...prev,
+          errors,
+          isSubmitting: false
+        }));
+        return;
+      }
+      
+      // Préparation des données
       const projectData = {
-        nom_projet: formData.nom_projet,
-        numero_projet: formData.numero_projet,
-        contact_principal: formData.contact_principal,
-        type_projet: formData.type_projet,
-        equipe: formData.equipe,
-        description: formData.description,
-        statut: formData.statut
+        nom_projet: formState.data.nom_projet,
+        numero_projet: formState.data.numero_projet,
+        contact_principal: formState.data.contact_principal,
+        type_projet: formState.data.type_projet,
+        equipe: formState.data.equipe,
+        description: formState.data.description,
+        statut: formState.data.statut
       };
 
-      // Préparer les champs conditionnels pour la table Details
-      const conditionalFieldsData = formData.conditionalFields;
-
-      console.log('📤 === DONNÉES DE MODIFICATION ===');
-      console.log('🏗️ Données projet:', projectData);
-      console.log('⚙️ Champs conditionnels:', conditionalFieldsData);
-      console.log('🎯 Type de projet ID:', formData.type_projet);
-
-      // Utiliser le service pour mettre à jour le projet
       const result = await typeService.updateProjectWithDetails(
         projectId,
         projectData,
-        conditionalFieldsData,
-        formData.type_projet
+        formState.data.conditionalFields,
+        formState.data.type_projet
       );
 
       if (result.success) {
-        setSuccessMessage('Projet modifié avec succès !');
+        showToast('Projet modifié avec succès !', 'success');
         setTimeout(() => {
           navigate(`/projects/${projectId}`);
         }, 2000);
@@ -646,14 +642,17 @@ function EditProjectContent() {
 
     } catch (err) {
       console.error('Erreur lors de la modification du projet:', err);
-      setFormErrors({
-        submit: err.message || 'Une erreur est survenue lors de la modification'
-      });
+      setFormState(prev => ({
+        ...prev,
+        errors: {
+          submit: err.message || 'Une erreur est survenue lors de la modification'
+        }
+      }));
       showToast('Erreur lors de la modification', 'error');
     } finally {
-      setIsSubmitting(false);
+      setFormState(prev => ({ ...prev, isSubmitting: false }));
     }
-  };
+  }, [formState.data, projectId, validateField, navigate]);
 
   // Fonction pour ajouter un nouveau type de projet
   const addNewProjectType = async (typeName, columns) => {
@@ -670,9 +669,12 @@ function EditProjectContent() {
         }
         
         // Sélectionner automatiquement le nouveau type
-        setFormData(prev => ({
+        setFormState(prev => ({
           ...prev,
-          type_projet: result.type_record.id
+          data: {
+            ...prev.data,
+            type_projet: result.type_record.id
+          }
         }));
         
         showToast(`Type "${typeName}" créé avec succès`, 'success');
@@ -715,9 +717,12 @@ function EditProjectContent() {
 
         // Sélectionner automatiquement le nouveau contact
         const newContactValue = `${newContactData.prenom} ${newContactData.nom}`.trim();
-        setFormData(prev => ({
+        setFormState(prev => ({
           ...prev,
-          contact_principal: newContactValue
+          data: {
+            ...prev.data,
+            contact_principal: newContactValue
+          }
         }));
 
         // Fermer la modal et réinitialiser
@@ -766,7 +771,7 @@ function EditProjectContent() {
         // Construire dynamiquement le nom de la colonne selon le type de projet
         const selectedType = projectTypes.find(type => {
           const typeId = String(type.id);
-          return typeId === String(formData.type_projet);
+          return typeId === String(formState.data.type_projet);
         });
         
         if (selectedType) {
@@ -804,11 +809,11 @@ function EditProjectContent() {
       if (result && result.id) {
         // Recharger les champs conditionnels pour mettre à jour les options
         const reloadConditionalFields = async () => {
-          if (!formData.type_projet || !projectTypes.length || !tables.length) return;
+          if (!formState.data.type_projet || !projectTypes.length || !tables.length) return;
 
           const selectedType = projectTypes.find(type => {
             const typeId = String(type.id);
-            return typeId === String(formData.type_projet);
+            return typeId === String(formState.data.type_projet);
           });
           
           if (!selectedType) return;
@@ -868,11 +873,14 @@ function EditProjectContent() {
         await reloadConditionalFields();
 
         // Sélectionner automatiquement la nouvelle valeur
-        setFormData(prev => ({
+        setFormState(prev => ({
           ...prev,
-          conditionalFields: {
-            ...prev.conditionalFields,
-            [fieldName]: newValue
+          data: {
+            ...prev.data,
+            conditionalFields: {
+              ...prev.data.conditionalFields,
+              [fieldName]: newValue
+            }
           }
         }));
 
@@ -894,6 +902,120 @@ function EditProjectContent() {
   const openAddContactModal = () => {
     setShowAddContactModal(true);
   };
+
+  // Optimisation du rendu conditionnel
+  const renderConditionalFields = useCallback(() => {
+    if (!conditionalFields.length) return null;
+
+    return (
+      <>
+        <div className="divider"></div>
+        <div>
+          <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
+            ⚙️ Paramètres spécifiques
+          </h2>
+          
+          {conditionalFields.map((field) => {
+            const fieldId = `conditional_${field.name}`;
+            const fieldValue = formState.data.conditionalFields[field.name] || '';
+            const fieldError = formState.errors[fieldId];
+
+            return (
+              <div key={field.name} className="form-control w-full mb-4">
+                <label className="label" htmlFor={fieldId}>
+                  <span className="label-text font-medium">
+                    {field.label} 
+                    {field.required && <span className="text-error">*</span>}
+                  </span>
+                </label>
+                
+                {/* Rendu selon le type de champ */}
+                {field.field_type === 'text' && (
+                  <input
+                    type="text"
+                    id={fieldId}
+                    name={fieldId}
+                    value={fieldValue}
+                    onChange={handleChange}
+                    placeholder={`Saisir ${field.label.toLowerCase()}`}
+                    className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.field_type === 'long_text' && (
+                  <textarea
+                    id={fieldId}
+                    name={fieldId}
+                    value={fieldValue}
+                    onChange={handleChange}
+                    placeholder={`Saisir ${field.label.toLowerCase()}`}
+                    className={`textarea textarea-bordered w-full ${fieldError ? 'textarea-error' : ''}`}
+                    required={field.required}
+                    rows="3"
+                  />
+                )}
+                
+                {field.field_type === 'number' && (
+                  <input
+                    type="number"
+                    id={fieldId}
+                    name={fieldId}
+                    value={fieldValue}
+                    onChange={handleChange}
+                    placeholder={`Saisir ${field.label.toLowerCase()}`}
+                    className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                    required={field.required}
+                  />
+                )}
+                
+                {field.field_type === 'foreign_key' && (
+                  <SelectWithAddOption
+                    id={fieldId}
+                    name={fieldId}
+                    value={fieldValue}
+                    onChange={handleChange}
+                    options={field.options.map(option => ({
+                      value: option.value,
+                      label: option.label
+                    }))}
+                    placeholder={`Choisir ${field.label.toLowerCase()}`}
+                    required={field.required}
+                    className={fieldError ? 'select-error' : ''}
+                    isLoading={false}
+                    isTypeMode={false}
+                    onAddOption={async (newValue) => {
+                      await addNewChoiceValue(field.name, newValue);
+                    }}
+                    addButtonTitle={`Ajouter une nouvelle valeur pour ${field.label}`}
+                    emptyMessage={`Aucune option disponible pour ${field.label}`}
+                  />
+                )}
+                
+                {field.field_type === 'date' && (
+                  <input
+                    type="date"
+                    id={fieldId}
+                    name={fieldId}
+                    value={fieldValue}
+                    onChange={handleChange}
+                    className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
+                    required={field.required}
+                  />
+                )}
+                
+                {fieldError && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{fieldError}</span>
+                  </label>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }, [conditionalFields, formState.data.conditionalFields, formState.errors]);
 
   if (loading || isLoading) {
     return (
@@ -942,21 +1064,12 @@ function EditProjectContent() {
           </p>
         </div>
 
-        {successMessage && (
-          <div className="alert alert-success mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>{successMessage}</span>
-          </div>
-        )}
-
-        {formErrors.submit && (
+        {formState.errors.submit && (
           <div className="alert alert-error mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{formErrors.submit}</span>
+            <span>{formState.errors.submit}</span>
           </div>
         )}
 
@@ -986,16 +1099,16 @@ function EditProjectContent() {
                       type="text"
                       id="nom_projet"
                       name="nom_projet"
-                      value={formData.nom_projet}
+                      value={formState.data.nom_projet}
                       onChange={handleChange}
                       placeholder="Saisir le nom du projet"
-                      className={`input input-bordered w-full pl-10 ${formErrors.nom_projet ? 'input-error' : ''}`}
+                      className={`input input-bordered w-full pl-10 ${formState.errors.nom_projet ? 'input-error' : ''}`}
                       required
                     />
                   </div>
-                  {formErrors.nom_projet && (
+                  {formState.errors.nom_projet && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.nom_projet}</span>
+                      <span className="label-text-alt text-error">{formState.errors.nom_projet}</span>
                     </label>
                   )}
                 </div>
@@ -1009,15 +1122,15 @@ function EditProjectContent() {
                     type="text"
                     id="numero_projet"
                     name="numero_projet"
-                    value={formData.numero_projet}
+                    value={formState.data.numero_projet}
                     onChange={handleChange}
                     placeholder="PRJ-202401-001"
-                    className={`input input-bordered w-full ${formErrors.numero_projet ? 'input-error' : ''}`}
+                    className={`input input-bordered w-full ${formState.errors.numero_projet ? 'input-error' : ''}`}
                     required
                   />
-                  {formErrors.numero_projet && (
+                  {formState.errors.numero_projet && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.numero_projet}</span>
+                      <span className="label-text-alt text-error">{formState.errors.numero_projet}</span>
                     </label>
                   )}
                 </div>
@@ -1041,9 +1154,9 @@ function EditProjectContent() {
                     <select
                       id="contact_principal"
                       name="contact_principal"
-                      value={formData.contact_principal}
+                      value={formState.data.contact_principal}
                       onChange={handleChange}
-                      className={`select select-bordered join-item flex-1 ${formErrors.contact_principal ? 'select-error' : ''}`}
+                      className={`select select-bordered join-item flex-1 ${formState.errors.contact_principal ? 'select-error' : ''}`}
                       required={true}
                       disabled={isLoading}
                     >
@@ -1078,9 +1191,9 @@ function EditProjectContent() {
                     </div>
                   )}
                   
-                  {formErrors.contact_principal && (
+                  {formState.errors.contact_principal && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.contact_principal}</span>
+                      <span className="label-text-alt text-error">{formState.errors.contact_principal}</span>
                     </label>
                   )}
                 </div>
@@ -1094,15 +1207,15 @@ function EditProjectContent() {
                     type="text"
                     id="equipe"
                     name="equipe"
-                    value={formData.equipe}
+                    value={formState.data.equipe}
                     onChange={handleChange}
                     placeholder="Ex: Équipe GenomiC"
-                    className={`input input-bordered w-full ${formErrors.equipe ? 'input-error' : ''}`}
+                    className={`input input-bordered w-full ${formState.errors.equipe ? 'input-error' : ''}`}
                     required
                   />
-                  {formErrors.equipe && (
+                  {formState.errors.equipe && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.equipe}</span>
+                      <span className="label-text-alt text-error">{formState.errors.equipe}</span>
                     </label>
                   )}
                 </div>
@@ -1123,15 +1236,15 @@ function EditProjectContent() {
                   <textarea
                     id="description"
                     name="description"
-                    value={formData.description}
+                    value={formState.data.description}
                     onChange={handleChange}
                     placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
-                    className={`textarea textarea-bordered h-32 ${formErrors.description ? 'textarea-error' : ''}`}
+                    className={`textarea textarea-bordered h-32 ${formState.errors.description ? 'textarea-error' : ''}`}
                     required
                   ></textarea>
-                  {formErrors.description && (
+                  {formState.errors.description && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.description}</span>
+                      <span className="label-text-alt text-error">{formState.errors.description}</span>
                     </label>
                   )}
                 </div>
@@ -1153,7 +1266,7 @@ function EditProjectContent() {
                   <SelectWithAddOption
                     id="type_projet"
                     name="type_projet"
-                    value={formData.type_projet}
+                    value={formState.data.type_projet}
                     onChange={handleChange}
                     options={projectTypes.map(type => {
                       const typeName = getFieldValue(type, 'nom', 'name', 'title', 'titre', 'label') || `Type #${type.id}`;
@@ -1165,16 +1278,16 @@ function EditProjectContent() {
                     })}
                     placeholder="Sélectionner un type"
                     required={true}
-                    className={formErrors.type_projet ? 'select-error' : ''}
+                    className={formState.errors.type_projet ? 'select-error' : ''}
                     isLoading={isLoading}
                     isTypeMode={true}
                     onCreateType={addNewProjectType}
                     addButtonTitle="Créer un nouveau type de projet complet"
                     emptyMessage={<Link to="/admin/database/tables" className="link link-primary text-xs">Créer un type de projet</Link>}
                   />
-                  {formErrors.type_projet && (
+                  {formState.errors.type_projet && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.type_projet}</span>
+                      <span className="label-text-alt text-error">{formState.errors.type_projet}</span>
                     </label>
                   )}
                 </div>
@@ -1187,9 +1300,9 @@ function EditProjectContent() {
                   <select
                     id="statut"
                     name="statut"
-                    value={formData.statut}
+                    value={formState.data.statut}
                     onChange={handleChange}
-                    className={`select select-bordered w-full ${formErrors.statut ? 'select-error' : ''}`}
+                    className={`select select-bordered w-full ${formState.errors.statut ? 'select-error' : ''}`}
                     required
                   >
                     <option value="Non commencé">🔄 Non commencé</option>
@@ -1198,126 +1311,16 @@ function EditProjectContent() {
                     <option value="En attente">⏸️ En attente</option>
                     <option value="Suspendu">⚠️ Suspendu</option>
                   </select>
-                  {formErrors.statut && (
+                  {formState.errors.statut && (
                     <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.statut}</span>
+                      <span className="label-text-alt text-error">{formState.errors.statut}</span>
                     </label>
                   )}
                 </div>
               </div>
 
               {/* Section: Champs conditionnels */}
-              {(() => {
-                console.log('🔍 DEBUG conditionalFields:', conditionalFields, 'length:', conditionalFields.length);
-                return conditionalFields.length > 0;
-              })() && (
-                <>
-                  <div className="divider"></div>
-                  <div>
-                    <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
-                      ⚙️ Paramètres spécifiques
-                    </h2>
-                    
-                    {conditionalFields.map((field) => {
-                      const fieldId = `conditional_${field.name}`;
-                      const fieldValue = formData.conditionalFields[field.name] || '';
-                      const fieldError = formErrors[fieldId];
-
-                      return (
-                        <div key={field.name} className="form-control w-full mb-4">
-                          <label className="label" htmlFor={fieldId}>
-                            <span className="label-text font-medium">
-                              {field.label} 
-                              {field.required && <span className="text-error">*</span>}
-                            </span>
-                          </label>
-                          
-                          {/* Rendu selon le type de champ */}
-                          {field.field_type === 'text' && (
-                            <input
-                              type="text"
-                              id={fieldId}
-                              name={fieldId}
-                              value={fieldValue}
-                              onChange={handleChange}
-                              placeholder={`Saisir ${field.label.toLowerCase()}`}
-                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
-                              required={field.required}
-                            />
-                          )}
-                          
-                          {field.field_type === 'long_text' && (
-                            <textarea
-                              id={fieldId}
-                              name={fieldId}
-                              value={fieldValue}
-                              onChange={handleChange}
-                              placeholder={`Saisir ${field.label.toLowerCase()}`}
-                              className={`textarea textarea-bordered w-full ${fieldError ? 'textarea-error' : ''}`}
-                              required={field.required}
-                              rows="3"
-                            />
-                          )}
-                          
-                          {field.field_type === 'number' && (
-                            <input
-                              type="number"
-                              id={fieldId}
-                              name={fieldId}
-                              value={fieldValue}
-                              onChange={handleChange}
-                              placeholder={`Saisir ${field.label.toLowerCase()}`}
-                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
-                              required={field.required}
-                            />
-                          )}
-                          
-                          {field.field_type === 'foreign_key' && (
-                            <SelectWithAddOption
-                              id={fieldId}
-                              name={fieldId}
-                              value={fieldValue}
-                              onChange={handleChange}
-                              options={field.options.map(option => ({
-                                value: option.value,
-                                label: option.label
-                              }))}
-                              placeholder={`Choisir ${field.label.toLowerCase()}`}
-                              required={field.required}
-                              className={fieldError ? 'select-error' : ''}
-                              isLoading={false}
-                              isTypeMode={false}
-                              onAddOption={async (newValue) => {
-                                await addNewChoiceValue(field.name, newValue);
-                              }}
-                              addButtonTitle={`Ajouter une nouvelle valeur pour ${field.label}`}
-                              emptyMessage={`Aucune option disponible pour ${field.label}`}
-                            />
-                          )}
-                          
-                          {field.field_type === 'date' && (
-                            <input
-                              type="date"
-                              id={fieldId}
-                              name={fieldId}
-                              value={fieldValue}
-                              onChange={handleChange}
-                              className={`input input-bordered w-full ${fieldError ? 'input-error' : ''}`}
-                              required={field.required}
-                            />
-                          )}
-                          
-                          {fieldError && (
-                            <label className="label">
-                              <span className="label-text-alt text-error">{fieldError}</span>
-                            </label>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+              {renderConditionalFields()}
 
               {/* Actions */}
               <div className="card-actions justify-between pt-6">
@@ -1331,10 +1334,10 @@ function EditProjectContent() {
                 
                 <button
                   type="submit"
-                  className={`btn btn-primary ${isSubmitting ? 'loading' : ''}`}
-                  disabled={isSubmitting}
+                  className={`btn btn-primary ${formState.isSubmitting ? 'loading' : ''}`}
+                  disabled={formState.isSubmitting}
                 >
-                  {isSubmitting ? 'Modification...' : 'Modifier le projet'}
+                  {formState.isSubmitting ? 'Modification...' : 'Modifier le projet'}
                 </button>
               </div>
             </form>

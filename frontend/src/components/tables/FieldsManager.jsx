@@ -290,7 +290,7 @@ function FieldsManager({ tableId }) {
       setTimeout(() => setSuccessMessage(''), 2000);
     } catch (err) {
       // En cas d'erreur, revenir à l'ordre précédent
-      setFields(fields);
+      setFields(prevFields => [...prevFields]);
       setFieldFormErrors({
         submit: err.message || 'Erreur lors de la sauvegarde de l\'ordre des champs'
       });

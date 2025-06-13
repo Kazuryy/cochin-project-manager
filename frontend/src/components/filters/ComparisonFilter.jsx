@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { COMPARISON_OPERATORS } from '../../hooks/useAdvancedFilters';
+
+// Constantes extraites pour éviter les recalculs
+const DEFAULT_OPERATORS = Object.values(COMPARISON_OPERATORS);
 
 const operatorLabels = {
   [COMPARISON_OPERATORS.EQUALS]: 'Égal à',
@@ -22,30 +25,59 @@ function ComparisonFilter({
   onOperatorChange,
   label = "Filtre de comparaison",
   placeholder = "Valeur à comparer",
-  availableOperators = Object.values(COMPARISON_OPERATORS)
+  availableOperators = DEFAULT_OPERATORS
 }) {
-  const handleValueChange = (e) => {
-    onChange(e.target.value);
-  };
+  // Références pour l'accessibilité et la gestion du focus
+  const inputRef = useRef(null);
+  const operatorId = useMemo(() => `operator-${Math.random().toString(36).substr(2, 9)}`, []);
+  const valueId = useMemo(() => `value-${Math.random().toString(36).substr(2, 9)}`, []);
 
-  const handleOperatorChange = (e) => {
-    onOperatorChange(e.target.value);
-  };
+  // Optimisation : mémorisation des handlers d'événements
+  const handleValueChange = useCallback((e) => {
+    const newValue = e.target.value;
+    onChange(newValue);
+  }, [onChange]);
 
-  const clearValue = () => {
+  const handleOperatorChange = useCallback((e) => {
+    const newOperator = e.target.value;
+    onOperatorChange(newOperator);
+  }, [onOperatorChange]);
+
+  const clearValue = useCallback(() => {
     onChange('');
-  };
+    // Amélioration UX : remettre le focus sur l'input après effacement
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [onChange]);
+
+  // Optimisation : mémorisation du texte de prévisualisation
+  const previewText = useMemo(() => {
+    if (!value) return null;
+    return `${operatorLabels[operator]} "${value}"`;
+  }, [value, operator]);
+
+  // Conversion sécurisée de la valeur pour affichage
+  const displayValue = useMemo(() => {
+    return value?.toString() || '';
+  }, [value]);
 
   return (
     <div className="space-y-2">
-      {label && <label className="label-text font-medium">{label}</label>}
+      {label && (
+        <label htmlFor={operatorId} className="label-text font-medium">
+          {label}
+        </label>
+      )}
       
       <div className="space-y-2">
-        {/* Sélecteur d'opérateur */}
+        {/* Sélecteur d'opérateur avec accessibilité améliorée */}
         <select
+          id={operatorId}
           className="select select-bordered select-sm w-full"
           value={operator}
           onChange={handleOperatorChange}
+          aria-label={label || "Opérateur de comparaison"}
         >
           {availableOperators.map(op => (
             <option key={op} value={op}>
@@ -54,14 +86,18 @@ function ComparisonFilter({
           ))}
         </select>
         
-        {/* Champ de valeur */}
+        {/* Champ de valeur avec accessibilité améliorée */}
         <div className="flex gap-2">
           <input
+            ref={inputRef}
+            id={valueId}
             type="text"
             className="input input-bordered input-sm flex-1"
-            value={value}
+            value={displayValue}
             onChange={handleValueChange}
             placeholder={placeholder}
+            aria-label="Valeur de comparaison"
+            aria-describedby={value ? `${valueId}-preview` : undefined}
           />
           
           {value && (
@@ -70,6 +106,7 @@ function ComparisonFilter({
               className="btn btn-ghost btn-sm btn-circle"
               onClick={clearValue}
               title="Effacer la valeur"
+              aria-label="Effacer la valeur de filtre"
             >
               ×
             </button>
@@ -77,9 +114,15 @@ function ComparisonFilter({
         </div>
       </div>
       
-      {value && (
-        <div className="text-xs text-base-content/60">
-          {operatorLabels[operator]} "{value}"
+      {/* Prévisualisation avec accessibilité */}
+      {previewText && (
+        <div 
+          id={`${valueId}-preview`}
+          className="text-xs text-base-content/60"
+          role="status"
+          aria-live="polite"
+        >
+          {previewText}
         </div>
       )}
     </div>
@@ -96,4 +139,5 @@ ComparisonFilter.propTypes = {
   availableOperators: PropTypes.arrayOf(PropTypes.string)
 };
 
-export default ComparisonFilter; 
+// Optimisation : mémorisation du composant pour éviter les re-renders inutiles
+export default React.memo(ComparisonFilter); 

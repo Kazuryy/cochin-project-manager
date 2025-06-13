@@ -6,6 +6,245 @@ import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
 import { Card, Button, FormField, Alert } from '../ui';
 import api from '../../services/api';
 
+// Composants de rendu extraits
+const TextField = React.memo(({ field, value, error, onChange }) => (
+  <FormField
+    key={field.id}
+    id={field.slug}
+    name={field.slug}
+    label={field.name}
+    type="text"
+    value={value}
+    onChange={onChange}
+    required={field.is_required}
+    error={error}
+    helperText={field.description}
+    aria-invalid={!!error}
+    aria-describedby={error ? `${field.slug}-error` : undefined}
+  />
+));
+
+const LongTextField = React.memo(({ field, value, error, onChange }) => (
+  <div key={field.id} className="form-control w-full">
+    <label className="label">
+      <span className="label-text">
+        {field.name}
+        {field.is_required && <span className="text-error ml-1" aria-hidden="true">*</span>}
+      </span>
+    </label>
+    <textarea
+      id={field.slug}
+      name={field.slug}
+      value={value}
+      onChange={onChange}
+      required={field.is_required}
+      className={`textarea textarea-bordered h-24 w-full ${error ? 'textarea-error' : ''}`}
+      placeholder={`Saisir ${field.name.toLowerCase()}`}
+      aria-invalid={!!error}
+      aria-describedby={error ? `${field.slug}-error` : undefined}
+    />
+    {(error || field.description) && (
+      <label className="label">
+        {error ? (
+          <span id={`${field.slug}-error`} className="label-text-alt text-error">{error}</span>
+        ) : (
+          <span className="label-text-alt">{field.description}</span>
+        )}
+      </label>
+    )}
+  </div>
+));
+
+const NumberField = React.memo(({ field, value, error, onChange }) => (
+  <FormField
+    key={field.id}
+    id={field.slug}
+    name={field.slug}
+    label={field.name}
+    type="number"
+    value={value}
+    onChange={onChange}
+    required={field.is_required}
+    error={error}
+    helperText={field.description}
+    step={field.field_type === 'decimal' ? '0.01' : '1'}
+    aria-invalid={!!error}
+    aria-describedby={error ? `${field.slug}-error` : undefined}
+  />
+));
+
+const DateField = React.memo(({ field, value, error, onChange, type = 'date' }) => (
+  <FormField
+    key={field.id}
+    id={field.slug}
+    name={field.slug}
+    label={field.name}
+    type={type}
+    value={value}
+    onChange={onChange}
+    required={field.is_required}
+    error={error}
+    helperText={field.description}
+    aria-invalid={!!error}
+    aria-describedby={error ? `${field.slug}-error` : undefined}
+  />
+));
+
+const BooleanField = React.memo(({ field, value, error, onChange }) => (
+  <div key={field.id} className="form-control w-full">
+    <label className="label cursor-pointer">
+      <span className="label-text">
+        {field.name}
+        {field.is_required && <span className="text-error ml-1" aria-hidden="true">*</span>}
+      </span>
+      <input
+        type="checkbox"
+        id={field.slug}
+        name={field.slug}
+        checked={Boolean(value)}
+        onChange={onChange}
+        className="toggle toggle-primary"
+        aria-invalid={!!error}
+        aria-describedby={error ? `${field.slug}-error` : undefined}
+      />
+    </label>
+    {(error || field.description) && (
+      <label className="label">
+        {error ? (
+          <span id={`${field.slug}-error`} className="label-text-alt text-error">{error}</span>
+        ) : (
+          <span className="label-text-alt">{field.description}</span>
+        )}
+      </label>
+    )}
+  </div>
+));
+
+const ChoiceField = React.memo(({ field, value, error, onChange }) => {
+  try {
+    const options = field.options ? JSON.parse(field.options) : [];
+    return (
+      <div key={field.id} className="form-control w-full">
+        <label className="label">
+          <span className="label-text">
+            {field.name}
+            {field.is_required && <span className="text-error ml-1" aria-hidden="true">*</span>}
+          </span>
+        </label>
+        <select
+          id={field.slug}
+          name={field.slug}
+          value={value}
+          onChange={onChange}
+          required={field.is_required}
+          className={`select select-bordered w-full ${error ? 'select-error' : ''}`}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${field.slug}-error` : undefined}
+        >
+          <option value="">Sélectionner une option</option>
+          {Array.isArray(options) && options.map(option => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+        {(error || field.description) && (
+          <label className="label">
+            {error ? (
+              <span id={`${field.slug}-error`} className="label-text-alt text-error">{error}</span>
+            ) : (
+              <span className="label-text-alt">{field.description}</span>
+            )}
+          </label>
+        )}
+      </div>
+    );
+  } catch (e) {
+    console.error(`Erreur lors du parsing des options pour le champ ${field.name}:`, e);
+    return (
+      <Alert type="error" message={`Erreur: Options invalides pour le champ ${field.name}`} />
+    );
+  }
+});
+
+const ForeignKeyField = React.memo(({ field, value, error, onChange, fkState }) => {
+  const fieldState = fkState[field.id] || { loading: false, choices: [] };
+  
+  return (
+    <div key={field.id} className="form-control w-full">
+      <label className="label">
+        <span className="label-text">
+          {field.name}
+          {field.is_required && <span className="text-error ml-1" aria-hidden="true">*</span>}
+        </span>
+      </label>
+      
+      {fieldState.loading ? (
+        <div className="flex items-center space-x-2 p-3 border border-base-300 rounded-lg">
+          <span className="loading loading-spinner loading-sm"></span>
+          <span>Chargement des options...</span>
+        </div>
+      ) : (
+        <select
+          id={field.slug}
+          name={field.slug}
+          value={value || ''}
+          onChange={onChange}
+          required={field.is_required}
+          className={`select select-bordered w-full ${error ? 'select-error' : ''}`}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${field.slug}-error` : undefined}
+        >
+          <option value="">Sélectionner une option</option>
+          {fieldState.choices.map(choice => (
+            <option key={choice.value} value={choice.value}>
+              {choice.display}
+            </option>
+          ))}
+        </select>
+      )}
+      
+      {(error || field.description) && (
+        <label className="label">
+          {error ? (
+            <span id={`${field.slug}-error`} className="label-text-alt text-error">{error}</span>
+          ) : (
+            <span className="label-text-alt">{field.description}</span>
+          )}
+        </label>
+      )}
+    </div>
+  );
+});
+
+// Validation des props pour les composants de rendu
+const fieldPropTypes = {
+  field: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    slug: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    is_required: PropTypes.bool,
+    description: PropTypes.string,
+    field_type: PropTypes.string.isRequired,
+    options: PropTypes.string
+  }).isRequired,
+  value: PropTypes.any,
+  error: PropTypes.string,
+  onChange: PropTypes.func.isRequired
+};
+
+TextField.propTypes = fieldPropTypes;
+LongTextField.propTypes = fieldPropTypes;
+NumberField.propTypes = fieldPropTypes;
+DateField.propTypes = {
+  ...fieldPropTypes,
+  type: PropTypes.string
+};
+BooleanField.propTypes = fieldPropTypes;
+ChoiceField.propTypes = fieldPropTypes;
+ForeignKeyField.propTypes = {
+  ...fieldPropTypes,
+  fkState: PropTypes.object.isRequired
+};
+
 function RecordForm({ tableId, recordId }) {
   const navigate = useNavigate();
   const { 
@@ -21,8 +260,7 @@ function RecordForm({ tableId, recordId }) {
   const [formData, setFormData] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
-  const [fkChoices, setFkChoices] = useState({});
-  const [fkLoading, setFkLoading] = useState({});
+  const [fkState, setFkState] = useState({});
 
   // Fonction utilitaire pour extraire des valeurs d'un enregistrement avec fallbacks
   const getFieldValue = useCallback((record, ...possibleFields) => {
@@ -46,88 +284,20 @@ function RecordForm({ tableId, recordId }) {
     return '';
   }, []);
 
-  // Fonction pour trier les choix par ordre alphabétique
-  const sortChoices = useCallback((choices) => {
-    if (!Array.isArray(choices)) return [];
-    return choices.sort((a, b) => a.display.localeCompare(b.display));
-  }, []);
-
+  // Optimisation du chargement des FK
   const loadFkChoicesForField = useCallback(async (field) => {
-    setFkLoading(prev => ({ ...prev, [field.id]: true }));
+    setFkState(prev => ({ ...prev, [field.id]: { loading: true } }));
     
     try {
-      console.log(`🚀 === DÉBUT CHARGEMENT FK POUR ${field.name} ===`);
-      console.log(`📋 Champ:`, {
-        name: field.name,
-        id: field.id,
-        related_table: field.related_table
-      });
-      console.log(`🏗️ Table courante:`, table?.name);
-      
       const response = await api.get(`/api/database/tables/${field.related_table}/records`);
       const recordsList = response || [];
-
-      console.log(`📊 ${recordsList.length} enregistrements reçus pour ${field.name}`);
       
-      if (recordsList.length > 0) {
-        console.log(`🔍 Premier enregistrement exemple:`, recordsList[0]);
-        console.log(`🔍 Clés disponibles:`, Object.keys(recordsList[0]));
-      }
-
       const uniqueValues = new Set();
       const options = [];
 
-      recordsList.forEach((record, index) => {
-        console.log(`\n--- TRAITEMENT RECORD ${index} ---`);
-        
-        // Déterminer la colonne cible selon le type de champ
-        let targetColumn = '';
-        const fieldNameLower = field.name.toLowerCase();
-        
-        console.log(`🎯 Nom du champ analysé: "${field.name}" → "${fieldNameLower}"`);
-        
-        // Pour les champs "sous_type" : construire dynamiquement selon la table courante
-        if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
-          const tableName = table?.name || '';
-          const typeFromTable = tableName.replace('Details', '').toLowerCase();
-          console.log(`🔧 Détection sous_type: table="${tableName}" → type="${typeFromTable}"`);
-          
-          if (typeFromTable) {
-            targetColumn = `sous_type_${typeFromTable}`;
-            console.log(`🎯 Colonne dynamique calculée: "${targetColumn}"`);
-          }
-        } 
-        // Pour les autres champs : mapping direct nom du champ → nom de colonne
-        else {
-          // Normaliser le nom du champ pour matcher la colonne (ex: "Espèce" → "espèce")
-          targetColumn = fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // Enlever accents
-          console.log(`🔧 Mapping direct: "${field.name}" → "${targetColumn}"`);
-        }
-        
-        console.log(`📍 Colonne cible finale: "${targetColumn}"`);
-        
-        // Chercher la valeur : D'ABORD dans la colonne spécifique, PUIS champs génériques
-        let extractedValue = '';
-        
-        if (targetColumn) {
-          // 1. Chercher d'abord dans la colonne calculée
-          extractedValue = getFieldValue(record, targetColumn);
-          console.log(`🔍 Recherche dans colonne "${targetColumn}": "${extractedValue}"`);
-        }
-        
-        // 2. Si pas trouvé, chercher dans les champs génériques
-        if (!extractedValue || extractedValue.trim() === '') {
-          extractedValue = getFieldValue(record, 'nom_projet', 'nom', 'name', 'label', 'title', 'value');
-          console.log(`🔍 Fallback champs génériques: "${extractedValue}"`);
-        }
-        
-        // 3. Si toujours pas trouvé, essayer avec le nom du champ lui-même
-        if (!extractedValue || extractedValue.trim() === '') {
-          extractedValue = getFieldValue(record, field.name, fieldNameLower);
-          console.log(`🔍 Fallback nom du champ: "${extractedValue}"`);
-        }
-        
-        console.log(`📤 Valeur finale extraite: "${extractedValue}"`);
+      recordsList.forEach(record => {
+        const targetColumn = getTargetColumn(field);
+        const extractedValue = extractValue(record, targetColumn, field);
         
         if (extractedValue && typeof extractedValue === 'string') {
           const trimmedValue = extractedValue.trim();
@@ -138,39 +308,66 @@ function RecordForm({ tableId, recordId }) {
               value: trimmedValue,
               label: trimmedValue
             });
-            console.log(`✅ Option ajoutée: "${trimmedValue}"`);
-          } else {
-            console.log(`🚫 Option ignorée (vide ou dupliquée): "${trimmedValue}"`);
           }
-        } else {
-          console.log(`🚫 Valeur rejetée (type ${typeof extractedValue}): ${extractedValue}`);
         }
       });
 
-      console.log(`📊 RÉSUMÉ: ${options.length} options uniques trouvées:`, options);
-      
-      // Créer les choix avec le format attendu par le select
       const choices = options.map(option => ({
         value: option.value,
         display: option.label
       }));
       
-      console.log(`🎯 Choix finaux pour ${field.name}:`, choices);
-      
-      setFkChoices(prev => ({
+      setFkState(prev => ({
         ...prev,
-        [field.id]: sortChoices(choices)
+        [field.id]: {
+          loading: false,
+          choices: sortChoices(choices)
+        }
       }));
       
-      console.log(`🏁 === FIN CHARGEMENT FK POUR ${field.name} ===\n`);
-      
     } catch (err) {
-      console.error(`❌ Erreur lors du chargement des choix FK pour ${field.name}:`, err);
-      setFkChoices(prev => ({ ...prev, [field.id]: [] }));
-    } finally {
-      setFkLoading(prev => ({ ...prev, [field.id]: false }));
+      console.error(`Erreur lors du chargement des choix FK pour ${field.name}:`, err);
+      setFkState(prev => ({
+        ...prev,
+        [field.id]: {
+          loading: false,
+          choices: [],
+          error: err.message
+        }
+      }));
     }
-  }, [getFieldValue, table, sortChoices]);
+  }, [getTargetColumn, extractValue, sortChoices]);
+
+  // Fonctions utilitaires extraites
+  const getTargetColumn = useCallback((field) => {
+    const fieldNameLower = field.name.toLowerCase();
+    
+    if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
+      const tableName = table?.name || '';
+      const typeFromTable = tableName.replace('Details', '').toLowerCase();
+      return typeFromTable ? `sous_type_${typeFromTable}` : '';
+    }
+    
+    return fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }, [table]);
+
+  const extractValue = useCallback((record, targetColumn, field) => {
+    if (targetColumn) {
+      const value = getFieldValue(record, targetColumn, field);
+      if (value) return value;
+    }
+    
+    const genericValue = getFieldValue(record, 'nom_projet', 'nom', 'name', 'label', 'title', 'value');
+    if (genericValue) return genericValue;
+    
+    return getFieldValue(record, field.name, field.name.toLowerCase());
+  }, [getFieldValue]);
+
+  // Fonction pour trier les choix par ordre alphabétique
+  const sortChoices = useCallback((choices) => {
+    if (!Array.isArray(choices)) return [];
+    return choices.sort((a, b) => a.display.localeCompare(b.display));
+  }, []);
 
   // Charger les données de la table et ses champs
   useEffect(() => {
@@ -196,7 +393,7 @@ function RecordForm({ tableId, recordId }) {
     const loadAllFkChoices = async () => {
       const fkFields = fields.filter(field => field.field_type === 'foreign_key');
       for (const field of fkFields) {
-        if (field.related_table && !fkChoices[field.id]) {
+        if (field.related_table && !fkState[field.id]) {
           await loadFkChoicesForField(field);
         }
       }
@@ -205,7 +402,7 @@ function RecordForm({ tableId, recordId }) {
     if (fields.length > 0) {
       loadAllFkChoices();
     }
-  }, [fields, fkChoices, loadFkChoicesForField]);
+  }, [fields, fkState, loadFkChoicesForField]);
   
   // Si on est en mode édition, charger les données de l'enregistrement
   useEffect(() => {
@@ -275,22 +472,86 @@ function RecordForm({ tableId, recordId }) {
     }
   };
   
-  const validateForm = () => {
+  // Validation des données
+  const validateForm = useCallback(() => {
     const errors = {};
     
-    // Vérifier les champs obligatoires
     fields.forEach(field => {
+      const value = formData[field.slug];
+      
+      // Validation des champs obligatoires
       if (field.is_required && 
-          (formData[field.slug] === undefined || 
-           formData[field.slug] === null || 
-           formData[field.slug] === '')) {
+          (value === undefined || value === null || value === '')) {
         errors[field.slug] = 'Ce champ est obligatoire';
+      }
+      
+      // Validation spécifique selon le type de champ
+      if (value !== undefined && value !== null && value !== '') {
+        switch (field.field_type) {
+          case 'number':
+          case 'decimal':
+            if (isNaN(Number(value))) {
+              errors[field.slug] = 'Veuillez entrer un nombre valide';
+            }
+            break;
+          case 'date':
+          case 'datetime':
+            if (!isValidDate(value)) {
+              errors[field.slug] = 'Veuillez entrer une date valide';
+            }
+            break;
+          case 'foreign_key':
+            if (!fkState[field.id]?.choices?.some(choice => choice.value === value)) {
+              errors[field.slug] = 'Veuillez sélectionner une option valide';
+            }
+            break;
+          default:
+            break;
+        }
       }
     });
     
     return errors;
-  };
-  
+  }, [fields, formData, fkState, isValidDate]);
+
+  // Fonction utilitaire pour valider les dates
+  const isValidDate = useCallback((dateString) => {
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date);
+  }, []);
+
+  // Gestion des erreurs API
+  const handleApiError = useCallback((error, context) => {
+    console.error(`Erreur ${context}:`, error);
+    
+    let errorMessage = 'Une erreur est survenue';
+    
+    if (error.response) {
+      // Erreur avec réponse du serveur
+      const { data, status } = error.response;
+      
+      if (data?.detail) {
+        errorMessage = data.detail;
+      } else if (data?.message) {
+        errorMessage = data.message;
+      } else if (status === 404) {
+        errorMessage = 'La ressource demandée n\'existe pas';
+      } else if (status === 403) {
+        errorMessage = 'Vous n\'avez pas les droits nécessaires';
+      } else if (status === 401) {
+        errorMessage = 'Vous devez être connecté pour effectuer cette action';
+      }
+    } else if (error.request) {
+      // Erreur sans réponse du serveur
+      errorMessage = 'Le serveur ne répond pas';
+    }
+    
+    setFormErrors(prev => ({
+      ...prev,
+      submit: errorMessage
+    }));
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -304,10 +565,8 @@ function RecordForm({ tableId, recordId }) {
       let result;
       
       if (recordId) {
-        // Mode édition - Utiliser la fonction du contexte
         result = await updateRecord(recordId, formData);
       } else {
-        // Mode création - Utiliser la fonction du contexte
         result = await createRecord(tableId, formData);
       }
       
@@ -324,242 +583,42 @@ function RecordForm({ tableId, recordId }) {
         }, 1500);
       }
     } catch (err) {
-      console.error(
-        recordId
-          ? `Erreur lors de la mise à jour de l'enregistrement ${recordId}:`
-          : `Erreur lors de la création d'un enregistrement dans la table ${tableId}:`,
-        err
-      );
-      
-      // Afficher l'erreur dans le formulaire
-      setFormErrors({
-        submit: err.message || 'Une erreur est survenue lors de la sauvegarde'
-      });
+      handleApiError(err, recordId ? 'lors de la mise à jour' : 'lors de la création');
     }
   };
   
-  // Fonctions de rendu pour chaque type de champ
-  const renderTextField = (field, value, error) => (
-    <FormField
-      key={field.id}
-      id={field.slug}
-      name={field.slug}
-      label={field.name}
-      type="text"
-      value={value}
-      onChange={handleChange}
-      required={field.is_required}
-      error={error}
-      helperText={field.description}
-    />
-  );
-
-  const renderLongTextField = (field, value, error) => (
-    <div key={field.id} className="form-control w-full">
-      <label className="label">
-        <span className="label-text">
-          {field.name}
-          {field.is_required && <span className="text-error ml-1">*</span>}
-        </span>
-      </label>
-      <textarea
-        id={field.slug}
-        name={field.slug}
-        value={value}
-        onChange={handleChange}
-        required={field.is_required}
-        className={`textarea textarea-bordered h-24 w-full ${error ? 'textarea-error' : ''}`}
-        placeholder={`Saisir ${field.name.toLowerCase()}`}
-      />
-      {(error || field.description) && (
-        <label className="label">
-          {error ? (
-            <span className="label-text-alt text-error">{error}</span>
-          ) : (
-            <span className="label-text-alt">{field.description}</span>
-          )}
-        </label>
-      )}
-    </div>
-  );
-
-  const renderNumberField = (field, value, error) => (
-    <FormField
-      key={field.id}
-      id={field.slug}
-      name={field.slug}
-      label={field.name}
-      type="number"
-      value={value}
-      onChange={handleChange}
-      required={field.is_required}
-      error={error}
-      helperText={field.description}
-      step={field.field_type === 'decimal' ? '0.01' : '1'}
-    />
-  );
-
-  const renderDateField = (field, value, error, type = 'date') => (
-    <FormField
-      key={field.id}
-      id={field.slug}
-      name={field.slug}
-      label={field.name}
-      type={type}
-      value={value}
-      onChange={handleChange}
-      required={field.is_required}
-      error={error}
-      helperText={field.description}
-    />
-  );
-
-  const renderBooleanField = (field, value, error) => (
-    <div key={field.id} className="form-control w-full">
-      <label className="label cursor-pointer">
-        <span className="label-text">
-          {field.name}
-          {field.is_required && <span className="text-error ml-1">*</span>}
-        </span>
-        <input
-          type="checkbox"
-          id={field.slug}
-          name={field.slug}
-          checked={Boolean(value)}
-          onChange={handleChange}
-          className="toggle toggle-primary"
-        />
-      </label>
-      {(error || field.description) && (
-        <label className="label">
-          {error ? (
-            <span className="label-text-alt text-error">{error}</span>
-          ) : (
-            <span className="label-text-alt">{field.description}</span>
-          )}
-        </label>
-      )}
-    </div>
-  );
-
-  const renderChoiceField = (field, value, error) => {
-    try {
-      const options = field.options ? JSON.parse(field.options) : [];
-      return (
-        <div key={field.id} className="form-control w-full">
-          <label className="label">
-            <span className="label-text">
-              {field.name}
-              {field.is_required && <span className="text-error ml-1">*</span>}
-            </span>
-          </label>
-          <select
-            id={field.slug}
-            name={field.slug}
-            value={value}
-            onChange={handleChange}
-            required={field.is_required}
-            className={`select select-bordered w-full ${error ? 'select-error' : ''}`}
-          >
-            <option value="">Sélectionner une option</option>
-            {Array.isArray(options) && options.map(option => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-          {(error || field.description) && (
-            <label className="label">
-              {error ? (
-                <span className="label-text-alt text-error">{error}</span>
-              ) : (
-                <span className="label-text-alt">{field.description}</span>
-              )}
-            </label>
-          )}
-        </div>
-      );
-    } catch (e) {
-      console.error(`Erreur lors du parsing des options pour le champ ${field.name}:`, e);
-      return (
-        <Alert type="error" message={`Erreur: Options invalides pour le champ ${field.name}`} />
-      );
-    }
-  };
-
-  // CORRIGÉ: Rendu pour les champs de clé étrangère (sans hooks internes)
-  const renderForeignKeyField = (field, value, error) => {
-    const choices = fkChoices[field.id] || [];
-    const loading = fkLoading[field.id] || false;
-    
-    return (
-      <div key={field.id} className="form-control w-full">
-        <label className="label">
-          <span className="label-text">
-            {field.name}
-            {field.is_required && <span className="text-error ml-1">*</span>}
-          </span>
-        </label>
-        
-        {loading ? (
-          <div className="flex items-center space-x-2 p-3 border border-base-300 rounded-lg">
-            <span className="loading loading-spinner loading-sm"></span>
-            <span>Chargement des options...</span>
-          </div>
-        ) : (
-          <select
-            id={field.slug}
-            name={field.slug}
-            value={value || ''}
-            onChange={handleChange}
-            required={field.is_required}
-            className={`select select-bordered w-full ${error ? 'select-error' : ''}`}
-          >
-            <option value="">Sélectionner une option</option>
-            {choices.map(choice => (
-              <option key={choice.value} value={choice.value}>
-                {choice.display}
-              </option>
-            ))}
-          </select>
-        )}
-        
-        {(error || field.description) && (
-          <label className="label">
-            {error ? (
-              <span className="label-text-alt text-error">{error}</span>
-            ) : (
-              <span className="label-text-alt">{field.description}</span>
-            )}
-          </label>
-        )}
-      </div>
-    );
-  };
-
   // Fonction principale de rendu des champs
   const renderField = (field) => {
     const value = formData[field.slug] !== undefined ? formData[field.slug] : '';
     const error = formErrors[field.slug] || '';
     
+    const commonProps = {
+      field,
+      value,
+      error,
+      onChange: handleChange
+    };
+    
     switch (field.field_type) {
       case 'text':
-        return renderTextField(field, value, error);
+        return <TextField {...commonProps} />;
       case 'long_text':
-        return renderLongTextField(field, value, error);
+        return <LongTextField {...commonProps} />;
       case 'number':
       case 'decimal':
-        return renderNumberField(field, value, error);
+        return <NumberField {...commonProps} />;
       case 'date':
-        return renderDateField(field, value, error);
+        return <DateField {...commonProps} />;
       case 'datetime':
-        return renderDateField(field, value, error, 'datetime-local');
+        return <DateField {...commonProps} type="datetime-local" />;
       case 'boolean':
-        return renderBooleanField(field, value, error);
+        return <BooleanField {...commonProps} />;
       case 'choice':
-        return renderChoiceField(field, value, error);
+        return <ChoiceField {...commonProps} />;
       case 'foreign_key':
-        return renderForeignKeyField(field, value, error);
+        return <ForeignKeyField {...commonProps} fkState={fkState} />;
       default:
-        return renderTextField(field, value, error);
+        return <TextField {...commonProps} />;
     }
   };
   

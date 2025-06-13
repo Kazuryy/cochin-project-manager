@@ -5,9 +5,23 @@ import Page from "../../../components/global/Page";
 import TableForm from "../../../components/tables/TableForm";
 import { DynamicTableProvider } from "../../../contexts/DynamicTableProvider";
 
-function EditTablePage() {
+/**
+ * Page d'édition d'une table dans l'interface d'administration
+ * @returns {JSX.Element} Le composant de la page d'édition
+ */
+const EditTablePage = React.memo(() => {
   const { tableId } = useParams();
-  
+
+  if (!tableId) {
+    return (
+      <Page>
+        <div className="pt-8 flex justify-center">
+          <p className="text-red-500">Erreur : ID de table manquant</p>
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <div className="pt-8 flex justify-center">
@@ -17,6 +31,8 @@ function EditTablePage() {
       </div>
     </Page>
   );
-}
+});
+
+EditTablePage.displayName = 'EditTablePage';
 
 export default EditTablePage;

@@ -1,5 +1,5 @@
 // frontend/src/components/tables/TableForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
@@ -24,19 +24,27 @@ function TableForm({ tableId }) {
   
   const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Charger les données de la table si on est en mode édition
   useEffect(() => {
     if (tableId) {
       const loadTable = async () => {
-        const table = await fetchTableWithFields(tableId);
-        if (table) {
-          setFormData({
-            name: table.name || '',
-            slug: table.slug || '',
-            description: table.description || '',
-            is_active: table.is_active
-          });
+        try {
+          const table = await fetchTableWithFields(tableId);
+          if (table) {
+            setFormData({
+              name: table.name || '',
+              slug: table.slug || '',
+              description: table.description || '',
+              is_active: table.is_active
+            });
+          }
+        } catch (err) {
+          setFormErrors(prev => ({
+            ...prev,
+            general: `Erreur lors du chargement de la table: ${err.message}`
+          }));
         }
       };
       
@@ -44,7 +52,7 @@ function TableForm({ tableId }) {
     }
   }, [tableId, fetchTableWithFields]);
   
-  const handleChange = (e) => {
+  const handleChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -58,66 +66,80 @@ function TableForm({ tableId }) {
         [name]: ''
       }));
     }
-  };
+  }, [formErrors]);
   
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const errors = {};
     
     if (!formData.name.trim()) {
       errors.name = 'Le nom de la table est requis';
+    } else if (formData.name.length > 50) {
+      errors.name = 'Le nom ne doit pas dépasser 50 caractères';
     }
     
     if (tableId && !formData.slug.trim()) {
       errors.slug = "L'identifiant de la table est requis";
+    } else if (formData.slug && !/^[a-z0-9-]+$/.test(formData.slug)) {
+      errors.slug = "L'identifiant ne doit contenir que des lettres minuscules, des chiffres et des tirets";
     }
     
     return errors;
-  };
+  }, [formData, tableId]);
   
-  const handleSubmit = async (e) => {
+  const generateSlug = useCallback((name) => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }, []);
+  
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
     
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
+      setIsSubmitting(false);
       return;
     }
 
-    // Créer une copie des données du formulaire
-    const dataToSubmit = { ...formData };
-    
-    // Générer automatiquement le slug si on est en mode création
-    if (!tableId) {
-      // Version simple : juste le nom en minuscules avec traitement basique
-      dataToSubmit.slug = formData.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')  // Caractères non alphanumériques → tirets
-        .replace(/(^-|-$)/g, '');     // Enlever tirets au début/fin
-        
-      // Fallback pour les cas extrêmes
-      if (!dataToSubmit.slug) {
-        dataToSubmit.slug = 'table';
-      }
-    }
-    
-    let result;
-    if (tableId) {
-      // Mode édition
-      result = await updateTable(tableId, formData);
-    } else {
-      // Mode création
-      result = await createTable(dataToSubmit);
-      console.log(dataToSubmit)
-    }
-    
-    if (result) {
-      setSuccessMessage(tableId ? 'Table mise à jour avec succès' : 'Table créée avec succès');
+    try {
+      const dataToSubmit = { ...formData };
       
-      setTimeout(() => {
-        navigate('/admin/database/tables');
-      }, 1500);
+      if (!tableId) {
+        dataToSubmit.slug = generateSlug(formData.name);
+        if (!dataToSubmit.slug) {
+          dataToSubmit.slug = 'table';
+        }
+      }
+      
+      const result = tableId 
+        ? await updateTable(tableId, formData)
+        : await createTable(dataToSubmit);
+      
+      if (result) {
+        setSuccessMessage(tableId ? 'Table mise à jour avec succès' : 'Table créée avec succès');
+        
+        setTimeout(() => {
+          navigate('/admin/database/tables');
+        }, 1500);
+      }
+    } catch (err) {
+      setFormErrors(prev => ({
+        ...prev,
+        general: `Une erreur est survenue lors de l'enregistrement: ${err.message}`
+      }));
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [formData, tableId, validateForm, generateSlug, updateTable, createTable, navigate]);
+  
+  const isFormValid = useMemo(() => {
+    return Object.keys(validateForm()).length === 0;
+  }, [validateForm]);
   
   return (
     <Card
@@ -126,6 +148,10 @@ function TableForm({ tableId }) {
     >
       {error && (
         <Alert type="error" message={error} className="mb-4" />
+      )}
+      
+      {formErrors.general && (
+        <Alert type="error" message={formErrors.general} className="mb-4" />
       )}
       
       {successMessage && (
@@ -142,6 +168,7 @@ function TableForm({ tableId }) {
           onChange={handleChange}
           error={formErrors.name}
           required
+          maxLength={50}
         />
         
         {tableId && (
@@ -155,6 +182,7 @@ function TableForm({ tableId }) {
             error={formErrors.slug}
             helperText="Identifiant unique utilisé dans l'API"
             required
+            pattern="[a-z0-9-]+"
           />
         )}
         
@@ -166,6 +194,7 @@ function TableForm({ tableId }) {
           value={formData.description}
           onChange={handleChange}
           error={formErrors.description}
+          maxLength={500}
         />
         
         <div className="form-control">
@@ -186,6 +215,7 @@ function TableForm({ tableId }) {
             type="button"
             variant="ghost"
             onClick={() => navigate('/admin/database/tables')}
+            disabled={isSubmitting}
           >
             Annuler
           </Button>
@@ -193,8 +223,8 @@ function TableForm({ tableId }) {
           <Button
             type="submit"
             variant="primary"
-            isLoading={isLoading}
-            isDisabled={isLoading}
+            isLoading={isLoading || isSubmitting}
+            isDisabled={isLoading || isSubmitting || !isFormValid}
           >
             {tableId ? 'Mettre à jour' : 'Créer'}
           </Button>

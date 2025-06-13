@@ -1,45 +1,51 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../hooks/useAuth';
 
 /**
  * Composant pour protéger les routes nécessitant une authentification
- * Version améliorée qui évite le "flash" de contenu avant la redirection
+ * Gère automatiquement la redirection et l'affichage du chargement
+ * 
+ * @param {Object} props - Les propriétés du composant
+ * @param {React.ReactNode} props.children - Le contenu à protéger
+ * @param {boolean} props.requireAdmin - Si true, nécessite des droits administrateur
  */
 function ProtectedRoute({ children, requireAdmin = false }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
-  const [isReady, setIsReady] = useState(false);
   
-  // Utiliser useEffect pour confirmer la fin de la vérification d'authentification
-  useEffect(() => {
-    // Ne définir isReady à true que lorsque isLoading devient false
-    if (!isLoading) {
-      setIsReady(true);
-    }
-  }, [isLoading]);
-  
-  // Ne rien afficher tant que nous n'avons pas terminé la vérification d'authentification
-  if (isLoading || !isReady) {
+  // Affichage du chargement pendant la vérification d'authentification
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="loading loading-spinner loading-lg"></div>
+      <div 
+        className="flex items-center justify-center h-screen"
+        role="status"
+        aria-label="Vérification de l'authentification en cours"
+      >
+        <div 
+          className="loading loading-spinner loading-lg"
+          aria-hidden="true"
+        ></div>
+        <span className="sr-only">Chargement...</span>
       </div>
     );
   }
   
-  // Si l'utilisateur n'est pas authentifié, rediriger vers la page de connexion
+  // Redirection si l'utilisateur n'est pas authentifié
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   
-  // Si la route nécessite des droits d'administrateur et que l'utilisateur n'en a pas
-  if (requireAdmin && user && !user.is_staff) {
-    return <Navigate to="/" replace />;
+  // Vérification des droits d'administrateur si requis
+  if (requireAdmin) {
+    const isAdmin = user?.is_staff === true;
+    if (!isAdmin) {
+      return <Navigate to="/" replace />;
+    }
   }
   
-  // Si toutes les conditions sont remplies, afficher le composant enfant
+  // Affichage du contenu protégé
   return children;
 }
 

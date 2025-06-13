@@ -1,5 +1,5 @@
 // frontend/src/components/tables/RecordList.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { useDynamicTables } from '../../contexts/hooks/useDynamicTables';
@@ -11,77 +11,113 @@ function RecordList({ tableId }) {
     fetchTableWithFields, 
     fetchRecords, 
     deleteRecord, 
-    isLoading, 
     error: contextError 
   } = useDynamicTables();
   
-  const [table, setTable] = useState(null);
-  const [fields, setFields] = useState([]);
-  const [records, setRecords] = useState([]);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [filters, setFilters] = useState({});
-  const [searchTerm, setSearchTerm] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [deleteError, setDeleteError] = useState('');
+  // Regroupement des états liés
+  const [tableState, setTableState] = useState({
+    table: null,
+    fields: [],
+    records: [],
+    isLoading: false,
+    error: null
+  });
+
+  const [filterState, setFilterState] = useState({
+    filters: {},
+    searchTerm: '',
+    sortField: null,
+    sortDirection: 'asc'
+  });
+
+  const [modalState, setModalState] = useState({
+    isFilterModalOpen: false,
+    confirmDelete: null,
+    successMessage: '',
+    deleteError: ''
+  });
   
-  // États pour le tri
-  const [sortField, setSortField] = useState(null);
-  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' ou 'desc'
+  // Gestion des erreurs améliorée
+  const handleError = useCallback((error, context) => {
+    console.error(`Erreur dans ${context}:`, error);
+    setTableState(prev => ({
+      ...prev,
+      error: `Une erreur est survenue lors de ${context}`
+    }));
+  }, []);
+
   
   // Charger les données de la table et ses champs
   useEffect(() => {
     const loadTable = async () => {
-      const tableData = await fetchTableWithFields(tableId);
-      if (tableData) {
-        setTable(tableData);
-        setFields(tableData.fields || []);
+      try {
+        setTableState(prev => ({ ...prev, isLoading: true }));
+        const tableData = await fetchTableWithFields(tableId);
+        if (tableData) {
+          setTableState(prev => ({
+            ...prev,
+            table: tableData,
+            fields: tableData.fields || [],
+            isLoading: false
+          }));
+        }
+      } catch (error) {
+        handleError(error, 'le chargement de la table');
       }
     };
     
     loadTable();
-  }, [tableId, fetchTableWithFields]);
+  }, [tableId, fetchTableWithFields, handleError]);
   
   // Charger les enregistrements
   useEffect(() => {
     const loadRecords = async () => {
-      if (table) {
-        const recordsData = await fetchRecords(tableId, filters);
+      if (tableState.table) {
+        const recordsData = await fetchRecords(tableId, filterState.filters);
         if (recordsData && Array.isArray(recordsData)) {
-          setRecords(recordsData);
+          setTableState(prev => ({
+            ...prev,
+            records: recordsData
+          }));
         } else {
-          setRecords([]);
+          setTableState(prev => ({
+            ...prev,
+            records: []
+          }));
         }
       }
     };
     
     loadRecords();
-  }, [tableId, table, filters, fetchRecords]);
+  }, [tableId, tableState.table, filterState.filters, fetchRecords]);
   
   // Fonction de tri
   const handleSort = (fieldSlug) => {
-    if (sortField === fieldSlug) {
+    if (filterState.sortField === fieldSlug) {
       // Si on clique sur la même colonne, inverser la direction
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setFilterState(prev => ({
+        ...prev,
+        sortDirection: prev.sortDirection === 'asc' ? 'desc' : 'asc'
+      }));
     } else {
       // Nouvelle colonne, tri ascendant par défaut
-      setSortField(fieldSlug);
-      setSortDirection('asc');
+      setFilterState(prev => ({
+        ...prev,
+        sortField: fieldSlug,
+        sortDirection: 'asc'
+      }));
     }
   };
   
-  // Fonction pour obtenir la valeur d'affichage d'un champ (gère les FK résolues)
-  const getDisplayValue = (record, field) => {
+  // Memoization des fonctions de tri et de filtrage
+  const getDisplayValue = useCallback((record, field) => {
     const value = record[field.slug];
     
-    // Si c'est une FK et qu'on a une valeur résolue, l'utiliser
     if (field.field_type === 'foreign_key') {
-      // Le FlatDynamicRecordSerializer peut avoir résolu la FK en nom lisible
       if (value && typeof value === 'string' && !value.startsWith('[')) {
-        return value; // Valeur résolue (nom lisible)
+        return value;
       }
       
-      // Sinon essayer avec l'ID si disponible
       const idValue = record[`${field.slug}_id`];
       if (idValue) {
         return `ID: ${idValue}`;
@@ -89,36 +125,33 @@ function RecordList({ tableId }) {
     }
     
     return value;
-  };
-  
-  // Fonction pour obtenir la valeur de tri (pour les comparaisons)
-  const getSortValue = (record, fieldSlug) => {
+  }, []);
+
+  const getSortValue = useCallback((record, fieldSlug) => {
     const value = record[fieldSlug];
-    
-    // Pour les FK, utiliser l'ID si disponible, sinon la valeur affichée
     const idValue = record[`${fieldSlug}_id`];
+    
     if (idValue) {
       return parseInt(idValue) || 0;
     }
     
-    // Pour les valeurs nulles/undefined
     if (value === null || value === undefined) {
       return '';
     }
     
-    // Pour les nombres
     if (typeof value === 'number') {
       return value;
     }
     
-    // Pour tout le reste, convertir en string pour tri alphabétique
     return value.toString().toLowerCase();
-  };
+  }, []);
   
-  // Appliquer le tri sur les enregistrements
-  const sortedRecords = React.useMemo(() => {
+  // Memoization du tri des enregistrements
+  const sortedRecords = useMemo(() => {
+    const { records } = tableState;
+    const { sortField, sortDirection } = filterState;
+
     if (!sortField) {
-      // Tri par défaut : custom_id croissant, puis ID Django
       return [...records].sort((a, b) => {
         if (a.custom_id && b.custom_id) {
           return a.custom_id - b.custom_id;
@@ -133,36 +166,40 @@ function RecordList({ tableId }) {
       const aValue = getSortValue(a, sortField);
       const bValue = getSortValue(b, sortField);
       
-      // Gestion des valeurs vides
       if (aValue === '' && bValue !== '') return 1;
       if (aValue !== '' && bValue === '') return -1;
       if (aValue === '' && bValue === '') return 0;
       
-      // Comparaison normale
       let comparison = 0;
       if (aValue > bValue) comparison = 1;
       if (aValue < bValue) comparison = -1;
       
       return sortDirection === 'desc' ? -comparison : comparison;
     });
-  }, [records, sortField, sortDirection]);
+  }, [tableState, filterState, getSortValue]);
   
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters(prev => ({
+    setFilterState(prev => ({
       ...prev,
-      [name]: value
+      filters: {
+        ...prev.filters,
+        [name]: value
+      }
     }));
   };
   
   const applyFilters = () => {
     // Les filtres sont déjà appliqués via l'effet ci-dessus
-    setIsFilterModalOpen(false);
+    setModalState(prev => ({ ...prev, isFilterModalOpen: false }));
   };
   
   const resetFilters = () => {
-    setFilters({});
-    setIsFilterModalOpen(false);
+    setFilterState(prev => ({
+      ...prev,
+      filters: {}
+    }));
+    setModalState(prev => ({ ...prev, isFilterModalOpen: false }));
   };
   
   const handleDeleteRecord = async (recordId) => {
@@ -170,31 +207,33 @@ function RecordList({ tableId }) {
       const success = await deleteRecord(recordId);
       
       if (success) {
-        setSuccessMessage('Enregistrement supprimé avec succès');
-        // Mettre à jour l'état local pour supprimer l'enregistrement
-        setRecords(prevRecords => prevRecords.filter(record => record.id !== recordId));
+        setModalState(prev => ({
+          ...prev,
+          successMessage: 'Enregistrement supprimé avec succès',
+          records: tableState.records.filter(record => record.id !== recordId)
+        }));
         // Effacer le message après 3 secondes
-        setTimeout(() => setSuccessMessage(''), 3000);
+        setTimeout(() => setModalState(prev => ({ ...prev, successMessage: '' })), 3000);
       } else {
-        setDeleteError('Erreur lors de la suppression');
+        setModalState(prev => ({ ...prev, deleteError: 'Erreur lors de la suppression' }));
       }
     } catch (error) {
       console.error('Erreur lors de la suppression:', error);
-      setDeleteError('Erreur lors de la suppression');
+      setModalState(prev => ({ ...prev, deleteError: 'Erreur lors de la suppression' }));
     } finally {
-      setConfirmDelete(null);
+      setModalState(prev => ({ ...prev, confirmDelete: null }));
     }
   };
   
   const exportToCSV = () => {
-    if (!records.length || !fields.length) return;
+    if (!tableState.records.length || !tableState.fields.length) return;
     
     // Créer les en-têtes
-    const headers = fields.map(field => field.name);
+    const headers = tableState.fields.map(field => field.name);
     
     // Créer les lignes de données
-    const dataRows = records.map(record => {
-      return fields.map(field => {
+    const dataRows = tableState.records.map(record => {
+      return tableState.fields.map(field => {
         const value = record[field.slug];
         // Gérer les valeurs null/undefined ou objets
         if (value === null || value === undefined) return '';
@@ -214,34 +253,38 @@ function RecordList({ tableId }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${table?.name || 'table'}_export.csv`);
+    link.setAttribute('download', `${tableState.table?.name || 'table'}_export.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
   
-  // Filtrage par recherche textuelle avec tri maintenu
-  const filteredRecords = searchTerm 
-    ? sortedRecords.filter(record => {
-        // Rechercher dans tous les champs de texte
-        return fields.some(field => {
-          if (field.field_type === 'text' || field.field_type === 'long_text') {
-            const value = getDisplayValue(record, field);
-            return value?.toString().toLowerCase().includes(searchTerm.toLowerCase());
-          }
-          return false;
-        });
-      })
-    : sortedRecords;
+  // Memoization du filtrage par recherche
+  const filteredRecords = useMemo(() => {
+    const { searchTerm } = filterState;
+    const { fields } = tableState;
+    
+    if (!searchTerm) return sortedRecords;
+    
+    return sortedRecords.filter(record => {
+      return fields.some(field => {
+        if (field.field_type === 'text' || field.field_type === 'long_text') {
+          const value = getDisplayValue(record, field);
+          return value?.toString().toLowerCase().includes(searchTerm.toLowerCase());
+        }
+        return false;
+      });
+    });
+  }, [sortedRecords, filterState, tableState, getDisplayValue]);
   
   // Fonction pour rendre l'icône de tri
   const renderSortIcon = (fieldSlug) => {
-    if (sortField !== fieldSlug) {
+    if (filterState.sortField !== fieldSlug) {
       return null; // Pas d'icône si ce n'est pas le champ trié
     }
     
-    return sortDirection === 'asc' ? (
+    return filterState.sortDirection === 'asc' ? (
       <FiChevronUp className="inline ml-1" />
     ) : (
       <FiChevronDown className="inline ml-1" />
@@ -252,7 +295,7 @@ function RecordList({ tableId }) {
   const renderFilterField = (field) => {
     const commonProps = {
       name: field.slug,
-      value: filters[field.slug] || '',
+      value: filterState.filters[field.slug] || '',
       onChange: handleFilterChange,
       className: "input input-bordered w-full",
       placeholder: `Filtrer par ${field.name.toLowerCase()}`
@@ -292,16 +335,16 @@ function RecordList({ tableId }) {
   };
   
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="region" aria-label="Liste des enregistrements">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">
-          {table ? `Enregistrements - ${table.name}` : 'Chargement...'}
+          {tableState.table ? `Enregistrements - ${tableState.table.name}` : 'Chargement...'}
         </h2>
         
         <div className="flex space-x-2">
           <Button
             variant="outline"
-            onClick={() => setIsFilterModalOpen(true)}
+            onClick={() => setModalState(prev => ({ ...prev, isFilterModalOpen: true }))}
           >
             <FiFilter className="mr-2" />
             Filtres
@@ -310,7 +353,7 @@ function RecordList({ tableId }) {
           <Button
             variant="outline"
             onClick={exportToCSV}
-            isDisabled={!records.length}
+            isDisabled={!tableState.records.length}
           >
             <FiDownload className="mr-2" />
             Exporter CSV
@@ -329,12 +372,12 @@ function RecordList({ tableId }) {
         <Alert type="error" message={contextError} />
       )}
       
-      {deleteError && (
-        <Alert type="error" message={deleteError} />
+      {modalState.deleteError && (
+        <Alert type="error" message={modalState.deleteError} />
       )}
       
-      {successMessage && (
-        <Alert type="success" message={successMessage} />
+      {modalState.successMessage && (
+        <Alert type="success" message={modalState.successMessage} />
       )}
       
       {/* Barre de recherche */}
@@ -344,8 +387,8 @@ function RecordList({ tableId }) {
             type="text"
             placeholder="Rechercher..."
             className="input input-bordered w-full"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={filterState.searchTerm}
+            onChange={(e) => setFilterState(prev => ({ ...prev, searchTerm: e.target.value }))}
           />
           <Button variant="ghost">
             <FiSearch />
@@ -353,7 +396,7 @@ function RecordList({ tableId }) {
         </div>
       </div>
       
-      {isLoading && !table ? (
+      {tableState.isLoading && !tableState.table ? (
         <div className="flex justify-center p-8">
           <span className="loading loading-spinner loading-lg"></span>
         </div>
@@ -365,14 +408,18 @@ function RecordList({ tableId }) {
                 <th 
                   className="cursor-pointer hover:bg-base-200"
                   onClick={() => handleSort('custom_id')}
+                  role="columnheader"
+                  aria-sort={filterState.sortField === 'custom_id' ? filterState.sortDirection : 'none'}
                 >
                   ID {renderSortIcon('custom_id')}
                 </th>
-                {fields.map(field => (
+                {tableState.fields.map(field => (
                   <th 
                     key={field.id}
                     className="cursor-pointer hover:bg-base-200"
                     onClick={() => handleSort(field.slug)}
+                    role="columnheader"
+                    aria-sort={filterState.sortField === field.slug ? filterState.sortDirection : 'none'}
                   >
                     {field.name} {renderSortIcon(field.slug)}
                   </th>
@@ -391,7 +438,7 @@ function RecordList({ tableId }) {
                         <span className="text-gray-400 text-sm">Non assigné</span>
                       )}
                     </td>
-                    {fields.map(field => (
+                    {tableState.fields.map(field => (
                       <td key={`${record.id}-${field.id}`}>
                         {formatFieldValue(getDisplayValue(record, field), field.field_type)}
                       </td>
@@ -411,7 +458,7 @@ function RecordList({ tableId }) {
                         <Button
                           variant="ghost"
                           size="xs"
-                          onClick={() => setConfirmDelete(record.id)}
+                          onClick={() => setModalState(prev => ({ ...prev, confirmDelete: record.id }))}
                         >
                           <FiTrash2 />
                         </Button>
@@ -421,8 +468,8 @@ function RecordList({ tableId }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={fields.length + 2} className="text-center py-4">
-                    {isLoading
+                  <td colSpan={tableState.fields.length + 2} className="text-center py-4">
+                    {tableState.isLoading
                       ? 'Chargement des enregistrements...'
                       : 'Aucun enregistrement trouvé'}
                   </td>
@@ -435,12 +482,12 @@ function RecordList({ tableId }) {
       
       {/* Modal de filtres */}
       <Modal
-        isOpen={isFilterModalOpen}
-        onClose={() => setIsFilterModalOpen(false)}
+        isOpen={modalState.isFilterModalOpen}
+        onClose={() => setModalState(prev => ({ ...prev, isFilterModalOpen: false }))}
         title="Filtrer les enregistrements"
       >
         <div className="space-y-4">
-          {fields
+          {tableState.fields
             .filter(field => field.is_searchable)
             .map(field => (
               <div key={field.id} className="form-control w-full">
@@ -470,8 +517,8 @@ function RecordList({ tableId }) {
       
       {/* Modal de confirmation de suppression */}
       <Modal
-        isOpen={confirmDelete !== null}
-        onClose={() => setConfirmDelete(null)}
+        isOpen={modalState.confirmDelete !== null}
+        onClose={() => setModalState(prev => ({ ...prev, confirmDelete: null }))}
         title="Confirmation de suppression"
         size="sm"
       >
@@ -482,13 +529,13 @@ function RecordList({ tableId }) {
           <div className="flex justify-end space-x-2 pt-4">
             <Button
               variant="ghost"
-              onClick={() => setConfirmDelete(null)}
+              onClick={() => setModalState(prev => ({ ...prev, confirmDelete: null }))}
             >
               Annuler
             </Button>
             <Button
               variant="error"
-              onClick={() => handleDeleteRecord(confirmDelete)}
+              onClick={() => handleDeleteRecord(modalState.confirmDelete)}
             >
               Supprimer
             </Button>

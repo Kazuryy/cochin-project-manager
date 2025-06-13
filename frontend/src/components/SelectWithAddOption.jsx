@@ -1,7 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import CreateTypeModal from './modals/CreateTypeModal';
 
+/**
+ * Composant de sélection avec possibilité d'ajouter une nouvelle option
+ * @param {Object} props - Les propriétés du composant
+ * @param {string} props.id - Identifiant unique du select
+ * @param {string} props.name - Nom du champ
+ * @param {string|number} props.value - Valeur sélectionnée
+ * @param {Function} props.onChange - Gestionnaire de changement
+ * @param {Array<{value: string|number, label: string}>} props.options - Options disponibles
+ * @param {string} [props.placeholder="Sélectionner..."] - Texte par défaut
+ * @param {boolean} [props.required=false] - Champ obligatoire
+ * @param {string} [props.className=""] - Classes CSS additionnelles
+ * @param {boolean} [props.disabled=false] - Désactive le composant
+ * @param {Function} [props.onAddOption] - Gestionnaire d'ajout d'option
+ * @param {string} [props.addButtonTitle="Ajouter une nouvelle option"] - Titre du bouton d'ajout
+ * @param {boolean} [props.showAddButton=true] - Affiche le bouton d'ajout
+ * @param {boolean} [props.isLoading=false] - État de chargement
+ * @param {React.ReactNode} [props.emptyMessage] - Message si aucune option
+ * @param {Function} [props.onError] - Gestionnaire d'erreur
+ * @param {boolean} [props.isTypeMode=false] - Mode création de type
+ * @param {Function} [props.onCreateType] - Gestionnaire de création de type
+ */
 const SelectWithAddOption = ({
   id,
   name,
@@ -18,7 +39,6 @@ const SelectWithAddOption = ({
   isLoading = false,
   emptyMessage = null,
   onError,
-  // Nouvelles props pour le mode type
   isTypeMode = false,
   onCreateType = null
 }) => {
@@ -28,20 +48,15 @@ const SelectWithAddOption = ({
   const [isAdding, setIsAdding] = useState(false);
   const [typeCreationError, setTypeCreationError] = useState(null);
 
-  // Debug: Tracer les changements de showTypeModal
-  useEffect(() => {
-    console.log('🎪 SelectWithAddOption showTypeModal changé:', showTypeModal);
-  }, [showTypeModal]);
-
-  const handleError = (message) => {
+  const handleError = useCallback((message) => {
     if (onError) {
       onError(message);
     } else {
-      alert(message); // Fallback si pas de gestionnaire d'erreur fourni
+      console.error(message);
     }
-  };
+  }, [onError]);
 
-  const handleAddOption = async () => {
+  const handleAddOption = useCallback(async () => {
     if (!newOptionData.label.trim()) {
       handleError('Veuillez remplir le libellé');
       return;
@@ -58,16 +73,13 @@ const SelectWithAddOption = ({
       setShowAddModal(false);
       setNewOptionData({ label: '' });
     } catch (error) {
-      console.error('Erreur lors de l\'ajout:', error);
       handleError(error.message || 'Erreur lors de l\'ajout de l\'option');
     } finally {
       setIsAdding(false);
     }
-  };
+  }, [newOptionData.label, onAddOption, handleError]);
 
-  const handleCreateType = async (typeName, columns) => {
-    console.log('🏭 SelectWithAddOption.handleCreateType appelé:', { typeName, columns });
-    
+  const handleCreateType = useCallback(async (typeName, columns) => {
     if (!onCreateType) {
       setTypeCreationError('Fonction de création de type non définie');
       return;
@@ -77,27 +89,24 @@ const SelectWithAddOption = ({
     setTypeCreationError(null);
     
     try {
-      console.log('🚀 Appel de onCreateType...');
       await onCreateType(typeName, columns);
-      console.log('✅ onCreateType terminé, fermeture du modal');
       setShowTypeModal(false);
     } catch (error) {
-      console.error('❌ Erreur lors de la création du type:', error);
       setTypeCreationError(error.message || 'Erreur lors de la création du type');
     } finally {
       setIsAdding(false);
     }
-  };
+  }, [onCreateType]);
 
-  const handleAddButtonClick = () => {
+  const handleAddButtonClick = useCallback(() => {
     if (isTypeMode) {
       setShowTypeModal(true);
     } else {
       setShowAddModal(true);
     }
-  };
+  }, [isTypeMode]);
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleAddOption();
@@ -105,26 +114,26 @@ const SelectWithAddOption = ({
       setShowAddModal(false);
       setNewOptionData({ label: '' });
     }
-  };
+  }, [handleAddOption]);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     if (!isAdding) {
       setShowAddModal(false);
       setNewOptionData({ label: '' });
     }
-  };
+  }, [isAdding]);
 
-  const closeTypeModal = () => {
-    console.log('🔒 SelectWithAddOption.closeTypeModal appelé:', { isAdding });
-    
+  const closeTypeModal = useCallback(() => {
     if (!isAdding) {
-      console.log('✅ Fermeture du modal type');
       setShowTypeModal(false);
       setTypeCreationError(null);
-    } else {
-      console.log('🚫 Fermeture bloquée (isAdding=true)');
     }
-  };
+  }, [isAdding]);
+
+  const selectClassName = useMemo(() => 
+    `select select-bordered join-item flex-1 ${className}`,
+    [className]
+  );
 
   return (
     <>
@@ -134,7 +143,7 @@ const SelectWithAddOption = ({
           name={name}
           value={value || ''}
           onChange={onChange}
-          className={`select select-bordered join-item flex-1 ${className}`}
+          className={selectClassName}
           required={required}
           disabled={disabled || isLoading}
           aria-describedby={`${id}-help`}
@@ -165,14 +174,12 @@ const SelectWithAddOption = ({
         )}
       </div>
 
-      {/* Message si aucune option */}
       {!isLoading && options.length === 0 && emptyMessage && (
         <div className="mt-2" id={`${id}-help`}>
           {emptyMessage}
         </div>
       )}
 
-      {/* Modal pour ajouter une nouvelle option simple */}
       {showAddModal && !isTypeMode && (
         <div className="modal modal-open" role="dialog" aria-labelledby="add-option-title" aria-modal="true">
           <div className="modal-box">
@@ -228,12 +235,15 @@ const SelectWithAddOption = ({
             </div>
           </div>
           
-          {/* Overlay pour fermer la modal */}
-          <div className="modal-backdrop" onClick={closeModal}></div>
+          <button
+            type="button"
+            className="modal-backdrop"
+            onClick={closeModal}
+            aria-label="Fermer la modal"
+          ></button>
         </div>
       )}
 
-      {/* Modal pour créer un nouveau type complet */}
       {isTypeMode && (
         <CreateTypeModal
           isOpen={showTypeModal}
@@ -268,7 +278,6 @@ SelectWithAddOption.propTypes = {
   isLoading: PropTypes.bool,
   emptyMessage: PropTypes.node,
   onError: PropTypes.func,
-  // Nouvelles props pour le mode type
   isTypeMode: PropTypes.bool,
   onCreateType: PropTypes.func,
 };

@@ -8,8 +8,6 @@ export const devisService = {
    */
   async getDevisByProject(projectId) {
     try {
-      console.log(`🔍 Récupération des devis pour le projet ${projectId}`);
-      
       // 1. Récupérer les liens dans DevisParProjet
       const devisParProjetTable = await this.findDevisParProjetTable();
       if (!devisParProjetTable) {
@@ -17,15 +15,12 @@ export const devisService = {
       }
       
       const liens = await api.get(`/api/database/records/by_table/?table_id=${devisParProjetTable.id}`);
-      console.log(`📋 Liens trouvés:`, liens);
       
       // 2. Filtrer les liens pour ce projet
       const projectLinks = liens.filter(link => {
         const projetId = link.projet_id || link.Projet_ID;
         return String(projetId) === String(projectId);
       });
-      
-      console.log(`🎯 Liens pour le projet ${projectId}:`, projectLinks);
       
       if (projectLinks.length === 0) {
         return [];
@@ -41,8 +36,6 @@ export const devisService = {
           devisIds.push(...ids);
         }
       });
-      
-      console.log(`📊 IDs devis à récupérer:`, devisIds);
       
       if (devisIds.length === 0) {
         return [];
@@ -66,7 +59,6 @@ export const devisService = {
         return devisIds.includes(String(devis.id));
       });
       
-      console.log(`✅ Devis récupérés pour le projet ${projectId}:`, projectDevis);
       return projectDevis;
       
     } catch (error) {
@@ -83,8 +75,6 @@ export const devisService = {
    */
   async createDevisForProject(projectId, devisData) {
     try {
-      console.log(`🆕 Création d'un devis pour le projet ${projectId}:`, devisData);
-      
       // 1. Valider les données selon le statut
       const validatedData = this.validateDevisData(devisData);
       
@@ -98,8 +88,6 @@ export const devisService = {
         table_id: devisTable.id,
         values: validatedData
       });
-      
-      console.log(`✅ Devis créé:`, newDevis);
       
       // Vérifier que le devis a bien été créé avec un ID
       if (!newDevis || !newDevis.id) {
@@ -126,20 +114,15 @@ export const devisService = {
    */
   async updateDevis(devisId, devisData) {
     try {
-      console.log(`🔄 Mise à jour du devis ${devisId}:`, devisData);
-      
       // Valider les données selon le statut
       const validatedData = this.validateDevisData(devisData);
-      console.log('📋 Données validées:', validatedData);
       
       const requestPayload = {
         values: validatedData
       };
-      console.log('📤 Payload à envoyer:', requestPayload);
       
       const updatedDevis = await api.put(`/api/database/records/${devisId}/update_with_values/`, requestPayload);
       
-      console.log(`✅ Devis mis à jour:`, updatedDevis);
       return updatedDevis;
       
     } catch (error) {
@@ -156,15 +139,12 @@ export const devisService = {
    */
   async deleteDevisFromProject(projectId, devisId) {
     try {
-      console.log(`🗑️ Suppression du devis ${devisId} du projet ${projectId}`);
-      
       // 1. Supprimer la liaison dans DevisParProjet
       await this.unlinkDevisFromProject(projectId, devisId);
       
       // 2. Supprimer le devis lui-même
       await api.delete(`/api/database/records/${devisId}/`);
       
-      console.log(`✅ Devis ${devisId} supprimé`);
       return true;
       
     } catch (error) {
@@ -243,8 +223,6 @@ export const devisService = {
               lien_devis: newLinks
             }
           });
-          
-          console.log(`✅ Devis ${devisId} ajouté à la liaison existante du projet ${projectId}`);
         }
       } else {
         // Créer une nouvelle liaison
@@ -255,8 +233,6 @@ export const devisService = {
             lien_devis: String(devisId)
           }
         });
-        
-        console.log(`✅ Nouvelle liaison créée: projet ${projectId} ↔ devis ${devisId}`);
       }
       
     } catch (error) {
@@ -291,7 +267,6 @@ export const devisService = {
         if (updatedIds.length === 0) {
           // Supprimer complètement la liaison si plus de devis
           await api.delete(`/api/database/records/${projectLink.id}/`);
-          console.log(`✅ Liaison supprimée pour le projet ${projectId}`);
         } else {
           // Mettre à jour la liaison avec les IDs restants
           await api.put(`/api/database/records/${projectLink.id}/update_with_values/`, {
@@ -299,7 +274,6 @@ export const devisService = {
               lien_devis: updatedIds.join(',')
             }
           });
-          console.log(`✅ Devis ${devisId} retiré de la liaison du projet ${projectId}`);
         }
       }
       

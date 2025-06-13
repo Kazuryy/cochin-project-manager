@@ -18,6 +18,7 @@ media/
 staticfiles/
 
 # Node
+backups/
 node_modules/
 dist/
 npm-debug.log
