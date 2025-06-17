@@ -3,14 +3,20 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import SelectWithAddOption from '../components/SelectWithAddOption';
-import { typeService } from '../services/typeService';
-import { useFormPersistence } from '../hooks/useFormPersistence';
-import api from '../services/api';
 import DevisManager from '../components/devis/DevisManager';
+import { typeService } from '../services/typeService';
+
+import api from '../services/api';
 
 // 1. Extraction des constantes
 const DEFAULT_PROJECT_STATUS = 'Non commencé';
 const TOAST_DURATION = 2000;
+const EMPTY_CONTACT = {
+  prenom: '',
+  nom: '',
+  email: '',
+  equipe: ''
+};
 
 function CreateProjectContent() {
   const navigate = useNavigate();
@@ -29,13 +35,7 @@ function CreateProjectContent() {
       return '';
     }, []);
     
-    return {
-      formData,
-      errors,
-      setFormData,
-      setErrors,
-      validateField
-    };
+    return [formData, setFormData, errors, setErrors, validateField];
   };
 
   const [formData, setFormData, formErrors, setFormErrors] = useProjectForm({
@@ -43,24 +43,13 @@ function CreateProjectContent() {
     numero_projet: '',
     contact_principal: '',
     type_projet: '',
-    equipe: '',
     description: '',
     statut: DEFAULT_PROJECT_STATUS, // Valeur par défaut
     // Champs conditionnels dynamiques
     conditionalFields: {}
   });
   
-  // Hook de persistance du formulaire
-  const { 
-    restoreFormData, 
-    clearSavedData, 
-    hasSavedData 
-  } = useFormPersistence(
-    'createProject_formData', 
-    formData, 
-    setFormData,
-    ['conditionalFields'] // Exclure les champs conditionnels de la persistance
-  );
+  // Nous avons retiré le hook de persistance du formulaire car il ne fonctionne pas correctement
   
   const [successMessage, setSuccessMessage] = useState('');
   const [contacts, setContacts] = useState([]);
@@ -70,19 +59,36 @@ function CreateProjectContent() {
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
-  const [showRestoreDataAlert, setShowRestoreDataAlert] = useState(false);
   
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
   
   // États pour la modal d'ajout de contact personnalisée
   const [showAddContactModal, setShowAddContactModal] = useState(false);
-  const [newContactData, setNewContactData] = useState({
-    prenom: '',
-    nom: '',
-    email: '',
-    equipe: ''
-  });
+  const [newContactData, setNewContactData] = useState(EMPTY_CONTACT);
+  const [uniqueEquipes, setUniqueEquipes] = useState([]);
+
+  // Fonction utilitaire pour extraire les valeurs des champs dynamiques
+  const getFieldValue = useCallback((record, ...possibleFields) => {
+    if (!record) return '';
+    
+    for (const field of possibleFields) {
+      if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
+        return record[field];
+      }
+    }
+    
+    if (record.values && Array.isArray(record.values)) {
+      for (const field of possibleFields) {
+        const valueField = record.values.find(v => v.field_slug === field);
+        if (valueField?.value && valueField.value !== undefined && valueField.value !== null && valueField.value !== '') {
+          return valueField.value;
+        }
+      }
+    }
+    
+    return '';
+  }, []);
 
   // État pour le projet créé (pour les devis)
   const [createdProject, setCreatedProject] = useState(null);
@@ -90,27 +96,7 @@ function CreateProjectContent() {
   const [showDevisChoice, setShowDevisChoice] = useState(false);
   const [isManagingDevis, setIsManagingDevis] = useState(false);
 
-  // Vérifier s'il y a des données à restaurer au chargement
-  useEffect(() => {
-    if (hasSavedData()) {
-      setShowRestoreDataAlert(true);
-    }
-  }, [hasSavedData]);
-
-  // Fonction pour restaurer les données
-  const handleRestoreData = () => {
-    const restored = restoreFormData();
-    if (restored) {
-      showToast('Données du formulaire restaurées', 'success');
-    }
-    setShowRestoreDataAlert(false);
-  };
-
-  // Fonction pour ignorer la restauration
-  const handleIgnoreRestore = () => {
-    clearSavedData();
-    setShowRestoreDataAlert(false);
-  };
+  // Nous avons supprimé les fonctions liées à la restauration des données
 
   // Charger les tables et identifier les IDs
   useEffect(() => {
@@ -164,6 +150,16 @@ function CreateProjectContent() {
         try {
           fetchRecords(contactTableId).then(contactData => {
             setContacts(contactData || []);
+            
+            // Extraire les équipes uniques
+            const equipes = new Set();
+            (contactData || []).forEach(contact => {
+              const equipe = getFieldValue(contact, 'equipe', 'team', 'groupe', 'group');
+              if (equipe && typeof equipe === 'string' && equipe.trim() !== '') {
+                equipes.add(equipe.trim());
+              }
+            });
+            setUniqueEquipes(Array.from(equipes).sort());
           }).catch(err => {
             console.error('Erreur lors du chargement des contacts:', err);
           });
@@ -173,7 +169,9 @@ function CreateProjectContent() {
       }
     };
     loadContacts();
-  }, [contactTableId, fetchRecords]);
+  }, [contactTableId, fetchRecords, getFieldValue]);
+  
+  // Nous avons supprimé l'effet qui mettait à jour l'équipe car elle sera maintenant gérée automatiquement côté backend
 
   // Charger les types de projets
   useEffect(() => {
@@ -192,28 +190,6 @@ function CreateProjectContent() {
     };
     loadProjectTypes();
   }, [tableNamesTableId, fetchRecords]);
-
-  // Fonction utilitaire pour extraire les valeurs des champs dynamiques
-  const getFieldValue = useCallback((record, ...possibleFields) => {
-    if (!record) return '';
-    
-    for (const field of possibleFields) {
-      if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
-        return record[field];
-      }
-    }
-    
-    if (record.values && Array.isArray(record.values)) {
-      for (const field of possibleFields) {
-        const valueField = record.values.find(v => v.field_slug === field);
-        if (valueField?.value && valueField.value !== undefined && valueField.value !== null && valueField.value !== '') {
-          return valueField.value;
-        }
-      }
-    }
-    
-    return '';
-  }, []);
 
   // Fonctions utilitaires pour réduire la complexité cognitive
   const findSelectedType = useCallback((typeId) => {
@@ -479,12 +455,7 @@ function CreateProjectContent() {
 
   // Fonction pour ouvrir la modal contact personnalisée
   const openAddContactModal = () => {
-    setNewContactData({
-      prenom: '',
-      nom: '',
-      email: '',
-      equipe: ''
-    });
+    setNewContactData(EMPTY_CONTACT);
     setShowAddContactModal(true);
   };
 
@@ -517,12 +488,7 @@ function CreateProjectContent() {
             
             // Fermer la modal et réinitialiser
             setShowAddContactModal(false);
-            setNewContactData({
-              prenom: '',
-              nom: '',
-              email: '',
-              equipe: ''
-            });
+            setNewContactData(EMPTY_CONTACT);
           });
         }
       });
@@ -773,10 +739,6 @@ function CreateProjectContent() {
       errors.type_projet = 'Le type de projet est requis';
     }
     
-    if (!formData.equipe.trim()) {
-      errors.equipe = 'L\'équipe est requise';
-    }
-    
     if (!formData.description.trim()) {
       errors.description = 'La description est requise';
     }
@@ -814,7 +776,6 @@ function CreateProjectContent() {
         numero_projet: formData.numero_projet || generateProjectNumber(),
         contact_principal: formData.contact_principal,
         type_projet: formData.type_projet,
-        equipe: formData.equipe,
         description: formData.description,
         statut: formData.statut
       };
@@ -868,8 +829,7 @@ function CreateProjectContent() {
           }, 1500);
         }
         
-        // Effacer les données sauvegardées après succès
-        clearSavedData();
+        // Nous avons supprimé la sauvegarde des données
       } else {
         throw new Error(result.error);
       }
@@ -905,26 +865,7 @@ function CreateProjectContent() {
     <div className="min-h-screen bg-base-100">
       <div className="container mx-auto p-6 max-w-2xl">
         
-        {/* Alert pour restaurer les données */}
-        {showRestoreDataAlert && (
-          <div className="alert alert-info mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <div>
-              <h3 className="font-bold">Données sauvegardées trouvées</h3>
-              <div className="text-xs">Voulez-vous restaurer les données précédemment saisies ?</div>
-            </div>
-            <div className="flex gap-2">
-              <button className="btn btn-primary btn-xs" onClick={handleRestoreData}>
-                Restaurer
-              </button>
-              <button className="btn btn-ghost btn-xs" onClick={handleIgnoreRestore}>
-                Ignorer
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Nous avons supprimé l'alerte de restauration des données */}
 
         {/* Header */}
         <div className="mb-8">
@@ -975,7 +916,7 @@ function CreateProjectContent() {
                 {/* Nom du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="nom_projet">
-                    <span className="label-text font-medium">Nom du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Nom du projet <span className="text-error">*</span></span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/60">
@@ -990,7 +931,7 @@ function CreateProjectContent() {
                       value={formData.nom_projet}
                       onChange={handleChange}
                       placeholder="Saisir le nom du projet"
-                      className={`input input-bordered w-full pl-10 ${formErrors.nom_projet ? 'input-error' : ''}`}
+                      className={`input input-bordered w-full join-item ${formErrors.nom_projet ? 'input-error' : ''}`}
                       required
                     />
                   </div>
@@ -1004,7 +945,7 @@ function CreateProjectContent() {
                 {/* Numéro du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="numero_projet">
-                    <span className="label-text font-medium">Numéro du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Numéro du projet <span className="text-error">*</span></span>
                   </label>
                   <div className="join w-full">
                     <input
@@ -1048,7 +989,7 @@ function CreateProjectContent() {
                 {/* Contact principal */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="contact_principal">
-                    <span className="label-text font-medium">Contact principal <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Contact principal <span className="text-error">*</span></span>
                   </label>
                   
                   <div className="join w-full">
@@ -1117,26 +1058,33 @@ function CreateProjectContent() {
                   )}
                 </div>
 
-                {/* Équipe */}
+                {/* Note sur l'équipe */}
                 <div className="form-control w-full mb-4">
-                  <label className="label" htmlFor="equipe">
-                    <span className="label-text font-medium">Équipe <span className="text-error">*</span></span>
-                  </label>
-                  <input
-                    type="text"
-                    id="equipe"
-                    name="equipe"
-                    value={formData.equipe}
-                    onChange={handleChange}
-                    placeholder="Ex: Équipe GenomiC"
-                    className={`input input-bordered w-full ${formErrors.equipe ? 'input-error' : ''}`}
-                    required
-                  />
-                  {formErrors.equipe && (
-                    <label className="label">
-                      <span className="label-text-alt text-error">{formErrors.equipe}</span>
-                    </label>
-                  )}
+                  <div className="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div>
+                      <p className="font-medium">Équipe du projet</p>
+                      <p className="text-sm">L'équipe sera automatiquement associée à celle du contact principal.</p>
+                      {formData.contact_principal && contacts.length > 0 && (
+                        <div className="mt-1">
+                          {(() => {
+                            const selectedContact = contacts.find(c => c.id.toString() === formData.contact_principal.toString());
+                            if (selectedContact) {
+                              const contactEquipe = getFieldValue(selectedContact, 'equipe', 'team', 'groupe', 'group');
+                              if (contactEquipe && contactEquipe.trim() !== '') {
+                                return <span className="badge badge-primary">{contactEquipe}</span>;
+                              } else {
+                                return <span className="text-xs text-warning">Ce contact n'a pas d'équipe définie</span>;
+                              }
+                            }
+                            return null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1151,7 +1099,7 @@ function CreateProjectContent() {
                 {/* Type de projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="type_projet">
-                    <span className="label-text font-medium">Type de projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Type de projet <span className="text-error">*</span></span>
                   </label>
                   <SelectWithAddOption
                     id="type_projet"
@@ -1185,7 +1133,7 @@ function CreateProjectContent() {
                 {/* Statut du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="statut">
-                    <span className="label-text font-medium">Statut du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium  pb-1">Statut du projet <span className="text-error">*</span></span>
                   </label>
                   <select
                     id="statut"
@@ -1375,17 +1323,19 @@ function CreateProjectContent() {
                 {/* Description */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="description">
-                    <span className="label-text font-medium">Description du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Description du projet <span className="text-error">*</span></span>
                   </label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
-                    className={`textarea textarea-bordered h-32 ${formErrors.description ? 'textarea-error' : ''}`}
-                    required
-                  />
+                  <div className="w-full">
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
+                      className={`textarea textarea-bordered h-32 w-full ${formErrors.description ? 'textarea-error' : ''}`}
+                      required
+                    />
+                  </div>
                   {formErrors.description && (
                     <label className="label">
                       <span className="label-text-alt text-error">{formErrors.description}</span>
@@ -1592,14 +1542,46 @@ function CreateProjectContent() {
                   <label className="label" htmlFor="new_contact_equipe">
                     <span className="label-text font-medium">Équipe</span>
                   </label>
-                  <input
-                    type="text"
-                    id="new_contact_equipe"
-                    value={newContactData.equipe}
-                    onChange={(e) => setNewContactData(prev => ({ ...prev, equipe: e.target.value }))}
-                    placeholder="Ex: Équipe GenomiC"
-                    className="input input-bordered w-full"
-                  />
+                  <div className="join w-full">
+                    <input
+                      type="text"
+                      id="new_contact_equipe"
+                      value={newContactData.equipe}
+                      onChange={(e) => setNewContactData(prev => ({ ...prev, equipe: e.target.value }))}
+                      placeholder="Ex: Équipe GenomiC"
+                      className="input input-bordered join-item flex-1"
+                      list="equipes-list"
+                    />
+                    <datalist id="equipes-list">
+                      {uniqueEquipes.map((equipe, index) => (
+                        <option key={index} value={equipe} />
+                      ))}
+                    </datalist>
+                    {newContactData.equipe && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost join-item"
+                        onClick={() => setNewContactData(prev => ({ ...prev, equipe: '' }))}
+                        title="Effacer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {uniqueEquipes.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {uniqueEquipes.map((equipe, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className="badge badge-outline hover:bg-base-300 cursor-pointer"
+                          onClick={() => setNewContactData(prev => ({ ...prev, equipe }))}
+                        >
+                          {equipe}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -1609,12 +1591,7 @@ function CreateProjectContent() {
                   className="btn btn-ghost"
                   onClick={() => {
                     setShowAddContactModal(false);
-                    setNewContactData({
-                      prenom: '',
-                      nom: '',
-                      email: '',
-                      equipe: ''
-                    });
+                    setNewContactData(EMPTY_CONTACT);
                   }}
                 >
                   Annuler
