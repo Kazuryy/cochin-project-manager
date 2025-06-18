@@ -101,13 +101,18 @@ function Navbar() {
             {user?.is_staff && (
               <>
                 <li>
-                  <Link to="/admin/settings">
-                    Settings
+                  <Link to="/admin">
+                    Admin
                   </Link>
                 </li>
                 <li>
-                  <Link to="/admin">
-                    Database
+                  <Link to="/admin/backup">
+                    Backup
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/admin/logs">
+                    Logs
                   </Link>
                 </li>
               </>
