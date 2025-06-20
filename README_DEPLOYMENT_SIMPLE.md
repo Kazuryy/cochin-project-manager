@@ -81,8 +81,9 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/votre-webhook
 ### 4️⃣ Déployer
 
 1. **Cliquer "Deploy the stack"**
-2. **Attendre 2-3 minutes** (téléchargement des images)
+2. **Attendre 3-4 minutes** (téléchargement + initialisation)
 3. **Vérifier** que les 2 conteneurs sont "Running"
+4. **C'est tout !** L'app est prête avec toutes les tables 🎉
 
 ## 🎯 Déploiement sur Synology
 
@@ -98,6 +99,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/votre-webhook
 2. **Nom du projet** : `cochin-project-manager`
 3. **Coller le même contenu** que pour Portainer
 4. **Cliquer "Suivant"** puis **"Terminer"**
+5. **Attendre 3-4 minutes** → Application prête ! 🎉
 
 ### 3️⃣ Configuration Synology
 
@@ -115,76 +117,30 @@ Après le déploiement :
 - **⚙️ Admin** : `http://ip-du-serveur:80/admin`
 - **🔑 Login** : `admin` / `changeme`
 
-## 🔧 Configuration Post-Déploiement
+## ✨ Configuration Automatique
 
-### Créer les Tables de Base
+**Bonne nouvelle !** L'application se configure **automatiquement** au premier démarrage :
 
-1. **Aller dans Portainer** → Stack → Containers
-2. **Cliquer sur `cochin_backend`** → Console
-3. **Exécuter** :
+- ✅ **Tables business** créées automatiquement (6 tables)
+- ✅ **Utilisateur admin** créé : `admin` / `changeme`
+- ✅ **Configuration sauvegarde** initialisée
+- ✅ **Base de données** prête à l'emploi
 
-```bash
-python manage.py shell
-```
+**Aucune action manuelle requise !** 🎉
 
-4. **Dans le shell Python** :
+### Tables Créées Automatiquement
 
-```python
-# Copier-coller ce script
-from database.models import DynamicTable, DynamicField
+1. **Contacts** - Gestion des contacts clients
+2. **Choix** - Options et valeurs de référence
+3. **TableNames** - Types de projets
+4. **Projet** - Projets principaux avec statuts
+5. **Devis** - Gestion des devis
+6. **DevisParProjet** - Liaison projets/devis
 
-# Créer les tables business
-tables_config = [
-    {
-        'name': 'Contacts',
-        'fields': [
-            {'name': 'nom', 'type': 'text', 'required': True},
-            {'name': 'email', 'type': 'email', 'required': False},
-            {'name': 'telephone', 'type': 'text', 'required': False},
-            {'name': 'entreprise', 'type': 'text', 'required': False}
-        ]
-    },
-    {
-        'name': 'Projets',
-        'fields': [
-            {'name': 'nom_projet', 'type': 'text', 'required': True},
-            {'name': 'description', 'type': 'textarea', 'required': False},
-            {'name': 'budget', 'type': 'number', 'required': False},
-            {'name': 'date_debut', 'type': 'date', 'required': False},
-            {'name': 'date_fin', 'type': 'date', 'required': False},
-            {'name': 'statut', 'type': 'text', 'required': False},
-            {'name': 'client', 'type': 'text', 'required': False}
-        ]
-    },
-    {
-        'name': 'Devis',
-        'fields': [
-            {'name': 'numero_devis', 'type': 'text', 'required': True},
-            {'name': 'montant_ht', 'type': 'number', 'required': False},
-            {'name': 'montant_ttc', 'type': 'number', 'required': False},
-            {'name': 'date_creation', 'type': 'date', 'required': False},
-            {'name': 'validite', 'type': 'date', 'required': False},
-            {'name': 'statut', 'type': 'text', 'required': False}
-        ]
-    }
-]
+### Temps d'Initialisation
 
-for table_config in tables_config:
-    table, created = DynamicTable.objects.get_or_create(name=table_config['name'])
-    if created:
-        print(f"✅ Table '{table.name}' créée")
-        for field_config in table_config['fields']:
-            field = DynamicField.objects.create(
-                table=table,
-                name=field_config['name'],
-                field_type=field_config['type'],
-                required=field_config['required']
-            )
-            print(f"  - Champ '{field.name}' ajouté")
-
-print("🎉 Tables business créées avec succès !")
-exit()
-```
+- **Premier démarrage** : ~90 secondes (création BDD + tables)
+- **Démarrages suivants** : ~30 secondes
 
 ## 🔄 Mise à Jour
 
