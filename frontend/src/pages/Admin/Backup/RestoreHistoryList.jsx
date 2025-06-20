@@ -15,7 +15,8 @@ import {
   FiTrash2
 } from 'react-icons/fi';
 import backupService from '../../../services/backupService';
-import { useToast, ToastContainer } from '../../../components/common/Toast';
+import { useToast } from '../../../hooks/useToast';
+import { ToastContainer } from '../../../components/common/Toast';
 import SecureUploadModal from '../../../components/backup/SecureUploadModal';
 
 const DetailsModal = React.memo(({ restore, onClose, getTypeLabel, getStatusBadge }) => {

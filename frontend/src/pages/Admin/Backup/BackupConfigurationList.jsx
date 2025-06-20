@@ -17,7 +17,8 @@ import PropTypes from 'prop-types';
 // Import du service de sauvegarde
 import backupService from '../../../services/backupService';
 import BackupConfigurationForm from './BackupConfigurationForm';
-import { useToast, ToastContainer } from '../../../components/common/Toast';
+import { useToast } from '../../../hooks/useToast';
+import { ToastContainer } from '../../../components/common/Toast';
 import useOperations from '../../../hooks/useOperations';
 import { useAuth } from '../../../hooks/useAuth';
 

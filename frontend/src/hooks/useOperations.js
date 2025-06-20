@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { useToast } from '../components/common/Toast';
+import { useToast } from './useToast';
 
 /**
  * Hook personnalisé pour gérer les opérations asynchrones avec état de chargement et gestion des erreurs

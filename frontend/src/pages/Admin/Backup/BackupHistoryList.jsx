@@ -17,7 +17,8 @@ import {
   FiChevronRight,
 } from 'react-icons/fi';
 import backupService from '../../../services/backupService';
-import { useToast, ToastContainer } from '../../../components/common/Toast';
+import { useToast } from '../../../hooks/useToast';
+import { ToastContainer } from '../../../components/common/Toast';
 import BackupStatsWidget from './BackupStatsWidget';
 
 // Hook personnalisé pour la gestion des filtres
