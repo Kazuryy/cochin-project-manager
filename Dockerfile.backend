@@ -1,0 +1,39 @@
+FROM python:3.11-slim
+
+# Variables d'environnement
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DJANGO_ENV=production
+
+# Dépendances système
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Répertoire de travail
+WORKDIR /app
+
+# Installation des dépendances Python
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install gunicorn
+
+# Copie du code
+COPY backend/ .
+
+# Script d'initialisation
+COPY init-data/ ./init-data/
+
+# Création des dossiers nécessaires
+RUN mkdir -p logs backups staticfiles media db
+
+# Script de démarrage
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# Permissions pour SQLite
+RUN chmod 755 /app/db
+
+# Commande par défaut
+ENTRYPOINT ["./entrypoint.sh"] 
