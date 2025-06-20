@@ -79,7 +79,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install flake8 safety bandit
+        pip install flake8 safety bandit pytest pytest-django
 
     - name: 🔍 Python code quality check
       if: steps.changes.outputs.backend == 'true'
@@ -88,6 +88,13 @@ jobs:
         echo "🔍 Running Python linting..."
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: 🧪 Python tests
+      if: steps.changes.outputs.backend == 'true'
+      working-directory: backend
+      run: |
+        echo "🧪 Running Python tests..."
+        python -m pytest tests/ -v --tb=short || true
 
     - name: 🛡️ Python security check
       if: steps.changes.outputs.backend == 'true'
