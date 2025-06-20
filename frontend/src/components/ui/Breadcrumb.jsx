@@ -235,7 +235,7 @@ function Breadcrumb() {
     }
 
     return items;
-  }, [location.pathname, params.tableId, params.recordId, tableInfo, recordInfo, getBaseBreadcrumbItems, getFieldsBreadcrumb, getRecordsBreadcrumb, getEditTableBreadcrumb]);
+  }, [location.pathname, params.tableId, tableInfo, getBaseBreadcrumbItems, getFieldsBreadcrumb, getRecordsBreadcrumb, getEditTableBreadcrumb]);
 
   // Ne pas afficher si on n'est pas dans la bonne section
   if (!shouldShowBreadcrumb()) {

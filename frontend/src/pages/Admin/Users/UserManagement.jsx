@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { userService, userUtils } from '../../../services/userService.js';
 import { useToast } from '../../../hooks/useToast.js';
@@ -42,20 +42,10 @@ const UserManagement = () => {
   const { addToast } = useToast();
 
   // Charger les données initiales
-  useEffect(() => {
-    loadUsers();
-    loadGroups();
-  }, []);
-
-  // Recharger quand les filtres ou la pagination changent
-  useEffect(() => {
-    loadUsers();
-  }, [filters, pagination.page]);
-
   /**
    * Charge la liste des utilisateurs
    */
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
@@ -78,7 +68,17 @@ const UserManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, pagination.page, addToast]);
+
+  useEffect(() => {
+    loadUsers();
+    loadGroups();
+  }, [loadUsers]);
+
+  // Recharger quand les filtres ou la pagination changent
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   /**
    * Charge la liste des groupes

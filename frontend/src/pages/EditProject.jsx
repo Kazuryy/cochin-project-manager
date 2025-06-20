@@ -49,10 +49,10 @@ function EditProjectContent() {
   });
 
   // Fonction pour afficher les toasts
-  const showToast = (message, type = 'info') => {
+  const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
   // Fonction utilitaire pour extraire les valeurs des champs dynamiques
   const getFieldValue = useCallback((record, ...possibleFields) => {
@@ -422,7 +422,7 @@ function EditProjectContent() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, projectTableId, getFieldValue]);
+  }, [projectId, projectTableId, getFieldValue, showToast]);
 
   // Optimisation des effets
   useEffect(() => {
@@ -523,7 +523,7 @@ function EditProjectContent() {
     };
     
     convertValues();
-  }, [projectTypes, contacts, formState.data.nom_projet, formState.data.type_projet, formState.data.contact_principal, getFieldValue]);
+  }, [projectTypes, contacts, formState.data, getFieldValue]);
 
   // Optimisation de la validation des données
   const validateField = useCallback((name, value) => {
@@ -645,7 +645,7 @@ function EditProjectContent() {
     } finally {
       setFormState(prev => ({ ...prev, isSubmitting: false }));
     }
-  }, [formState.data, projectId, validateField, navigate]);
+  }, [formState.data, projectId, validateField, navigate, showToast]);
 
   // Fonction pour ajouter un nouveau type de projet
   const addNewProjectType = async (typeName, columns) => {
@@ -735,7 +735,7 @@ function EditProjectContent() {
   };
 
   // Fonction pour ajouter une nouvelle valeur dans la table Choix
-  const addNewChoiceValue = async (fieldName, newValue) => {
+  const addNewChoiceValue = useCallback(async (fieldName, newValue) => {
     console.log(`🎯 Ajout d'une nouvelle valeur pour ${fieldName}:`, newValue);
     
     let targetColumn = ''; // Déclaration en dehors du try
@@ -889,7 +889,7 @@ function EditProjectContent() {
       });
       showToast(`Erreur lors de l'ajout de la valeur: ${err.response?.data?.error || err.message}`, 'error');
     }
-  };
+  }, [tables, projectTypes, formState.data.type_projet, projectTableId, getFieldValue, loadFieldOptions, setConditionalFields, setFormState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAddContactModal = () => {
     setShowAddContactModal(true);
@@ -1007,7 +1007,7 @@ function EditProjectContent() {
         </div>
       </>
     );
-  }, [conditionalFields, formState.data.conditionalFields, formState.errors]);
+  }, [conditionalFields, formState.data.conditionalFields, formState.errors, handleChange, addNewChoiceValue]);
 
   if (loading || isLoading) {
     return (

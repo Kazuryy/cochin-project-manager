@@ -448,7 +448,7 @@ function RecordForm({ tableId, recordId }) {
       
       loadRecord();
     }
-  }, [recordId, table?.id]); // Utiliser table.id au lieu de table pour éviter les rechargements inutiles
+  }, [recordId, table]); // Ajouter table comme dépendance complète
   
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
