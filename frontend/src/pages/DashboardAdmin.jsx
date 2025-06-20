@@ -11,7 +11,7 @@ import ManageFieldsPage from './Admin/Database/ManageFieldsPage';
 import RecordsPage from './Admin/Database/RecordsPage';
 import CreateRecordPage from './Admin/Database/CreateRecordPage';
 import EditRecordPage from './Admin/Database/EditRecordPage';
-import LogsPage from './Admin/Logs/LogsPage';
+import { LogsPage } from './Admin/Logs';
 import DataExplorer from './Admin/DataExplorer/DataExplorer';
 import BackupManagement from './Admin/Backup/BackupManagement';
 import { UserManagement } from './Admin/Users';
