@@ -35,9 +35,7 @@ const UserForm = ({ user = null, onSave, onCancel }) => {
     touched,
     handleChange,
     handleSubmit,
-    setFieldError,
-    clearFieldError,
-    validateField
+    setFieldError
   } = useForm(initialValues, validate);
 
   // Validation côté frontend qui match le backend

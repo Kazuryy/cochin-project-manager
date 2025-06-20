@@ -109,7 +109,7 @@ jobs:
     - name: 📦 Install Node.js dependencies
       if: steps.changes.outputs.frontend == 'true'
       working-directory: frontend
-      run: npm ci
+      run: npm install --no-package-lock
 
     - name: 🔍 Frontend code quality check
       if: steps.changes.outputs.frontend == 'true'
@@ -130,6 +130,7 @@ jobs:
       working-directory: frontend
       run: |
         echo "🏗️ Testing frontend build..."
+        npm install --no-package-lock
         npm run build
 
   # =====================================================

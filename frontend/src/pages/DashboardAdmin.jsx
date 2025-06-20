@@ -1,5 +1,5 @@
 // frontend/src/pages/DashboardAdmin.jsx
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Link, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import { FiDatabase, FiSettings, FiTable, FiHardDrive, FiFileText } from 'react-icons/fi';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
