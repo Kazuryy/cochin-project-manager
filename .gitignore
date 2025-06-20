@@ -46,7 +46,7 @@ secrets.json
 credentials.json
 
 # Logs et données
-logs/
+backend/logs/
 *.log
 *.out
 *.err
