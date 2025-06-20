@@ -16,6 +16,12 @@ on:
           - major
           - prerelease
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  issues: write
+
 jobs:
   auto-release:
     name: 🚀 Create Auto Release

@@ -22,6 +22,13 @@ on:
           - staging
           - production
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  issues: write
+  security-events: write
+
 env:
   REGISTRY: docker.io
   BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend

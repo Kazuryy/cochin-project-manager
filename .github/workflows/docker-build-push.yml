@@ -13,6 +13,10 @@ on:
         required: false
         default: 'main'
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   REGISTRY: docker.io
   BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
