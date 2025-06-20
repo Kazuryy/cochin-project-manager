@@ -71,7 +71,13 @@ docker-compose*
 
 # Scripts de déploiement  
 deploy*.sh
-*.sh
+build*.sh
+check*.sh
+auto*.sh
+security*.sh
+
+# Autoriser entrypoint.sh pour Docker
+!entrypoint.sh
 
 # Autres
 coverage.xml
