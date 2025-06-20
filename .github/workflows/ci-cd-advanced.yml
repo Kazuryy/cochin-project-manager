@@ -48,8 +48,8 @@ jobs:
     name: 🧪 Tests & Quality Checks
     runs-on: ubuntu-latest
     outputs:
-      backend-changed: ${{ steps.changes.outputs.backend }}
-      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      backend-changed: ${{ steps.changes.outputs.backend || startsWith(github.ref, 'refs/tags/') }}
+      frontend-changed: ${{ steps.changes.outputs.frontend || startsWith(github.ref, 'refs/tags/') }}
     
     steps:
     - name: 📥 Checkout code
@@ -73,14 +73,14 @@ jobs:
             - 'package-lock.json'
 
     - name: 🐍 Setup Python
-      if: steps.changes.outputs.backend == 'true'
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
         cache: 'pip'
 
     - name: 📦 Install Python dependencies
-      if: steps.changes.outputs.backend == 'true'
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: backend
       run: |
         python -m pip install --upgrade pip
@@ -88,7 +88,7 @@ jobs:
         pip install flake8 safety bandit pytest pytest-django
 
     - name: 🔍 Python code quality check
-      if: steps.changes.outputs.backend == 'true'
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: backend
       run: |
         echo "🔍 Running Python linting..."
@@ -96,14 +96,14 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: 🧪 Python tests
-      if: steps.changes.outputs.backend == 'true'
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: backend
       run: |
         echo "🧪 Running Python tests..."
         python -m pytest tests/ -v --tb=short || true
 
     - name: 🛡️ Python security check
-      if: steps.changes.outputs.backend == 'true'
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: backend
       run: |
         echo "🛡️ Checking Python dependencies for security issues..."
@@ -112,7 +112,7 @@ jobs:
         bandit -r . -f json -o security-report.json || true
 
     - name: 🟢 Setup Node.js
-      if: steps.changes.outputs.frontend == 'true'
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
       uses: actions/setup-node@v4
       with:
         node-version: '18'
@@ -120,26 +120,26 @@ jobs:
         cache-dependency-path: 'frontend/package-lock.json'
 
     - name: 📦 Install Node.js dependencies
-      if: steps.changes.outputs.frontend == 'true'
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: frontend
       run: npm install --no-package-lock
 
     - name: 🔍 Frontend code quality check
-      if: steps.changes.outputs.frontend == 'true'
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: frontend
       run: |
         echo "🔍 Running ESLint..."
         npm run lint -- --max-warnings 10
 
     - name: 🧪 Frontend tests
-      if: steps.changes.outputs.frontend == 'true'
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: frontend
       run: |
         echo "🧪 Running frontend tests..."
         # npm run test || true  # Uncomment when tests are available
 
     - name: 🏗️ Frontend build test
-      if: steps.changes.outputs.frontend == 'true'
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
       working-directory: frontend
       run: |
         echo "🏗️ Testing frontend build..."
@@ -153,7 +153,7 @@ jobs:
     name: 🐳 Build Backend Image
     runs-on: ubuntu-latest
     needs: tests
-    if: needs.tests.outputs.backend-changed == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: always() && needs.tests.result == 'success' && (needs.tests.outputs.backend-changed == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tags: ${{ steps.meta.outputs.tags }}
@@ -190,12 +190,15 @@ jobs:
           ${{ env.DOCKER_BACKEND_IMAGE }}
           ${{ env.GHCR_BACKEND_IMAGE }}
         tags: |
-          type=ref,event=branch
-          type=ref,event=pr
+          # Pour les tags de version (v1.0.1) -> latest + version spécifique
           type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,prefix=sha-
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          # Pour la branche main -> dev seulement
+          type=raw,value=dev,enable={{is_default_branch}}
+          # Pour les PRs -> tag PR
+          type=ref,event=pr
+          # Pour debug -> SHA
+          type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
         labels: |
           org.opencontainers.image.title=Cochin Backend
           org.opencontainers.image.description=Backend API for Cochin Project Manager
@@ -220,7 +223,7 @@ jobs:
     name: 🎨 Build Frontend Image  
     runs-on: ubuntu-latest
     needs: tests
-    if: needs.tests.outputs.frontend-changed == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: always() && needs.tests.result == 'success' && (needs.tests.outputs.frontend-changed == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tags: ${{ steps.meta.outputs.tags }}
@@ -257,12 +260,15 @@ jobs:
           ${{ env.DOCKER_FRONTEND_IMAGE }}
           ${{ env.GHCR_FRONTEND_IMAGE }}
         tags: |
-          type=ref,event=branch
-          type=ref,event=pr
+          # Pour les tags de version (v1.0.1) -> latest + version spécifique
           type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,prefix=sha-
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          # Pour la branche main -> dev seulement
+          type=raw,value=dev,enable={{is_default_branch}}
+          # Pour les PRs -> tag PR
+          type=ref,event=pr
+          # Pour debug -> SHA
+          type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
         labels: |
           org.opencontainers.image.title=Cochin Frontend
           org.opencontainers.image.description=Frontend UI for Cochin Project Manager
