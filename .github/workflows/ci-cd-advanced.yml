@@ -116,7 +116,7 @@ jobs:
       working-directory: frontend
       run: |
         echo "🔍 Running ESLint..."
-        npm run lint || true
+        npm run lint -- --max-warnings 10
 
     - name: 🧪 Frontend tests
       if: steps.changes.outputs.frontend == 'true'
