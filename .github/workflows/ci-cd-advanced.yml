@@ -48,8 +48,8 @@ jobs:
     name: 🧪 Tests & Quality Checks
     runs-on: ubuntu-latest
     outputs:
-      backend-changed: ${{ steps.changes.outputs.backend || startsWith(github.ref, 'refs/tags/') }}
-      frontend-changed: ${{ steps.changes.outputs.frontend || startsWith(github.ref, 'refs/tags/') }}
+      backend-changed: ${{ steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' }}
+      frontend-changed: ${{ steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' }}
     
     steps:
     - name: 📥 Checkout code
@@ -73,14 +73,14 @@ jobs:
             - 'package-lock.json'
 
     - name: 🐍 Setup Python
-      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
         cache: 'pip'
 
     - name: 📦 Install Python dependencies
-      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: backend
       run: |
         python -m pip install --upgrade pip
@@ -88,7 +88,7 @@ jobs:
         pip install flake8 safety bandit pytest pytest-django
 
     - name: 🔍 Python code quality check
-      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: backend
       run: |
         echo "🔍 Running Python linting..."
@@ -96,14 +96,14 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: 🧪 Python tests
-      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: backend
       run: |
         echo "🧪 Running Python tests..."
         python -m pytest tests/ -v --tb=short || true
 
     - name: 🛡️ Python security check
-      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: backend
       run: |
         echo "🛡️ Checking Python dependencies for security issues..."
@@ -112,7 +112,7 @@ jobs:
         bandit -r . -f json -o security-report.json || true
 
     - name: 🟢 Setup Node.js
-      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       uses: actions/setup-node@v4
       with:
         node-version: '18'
@@ -120,26 +120,26 @@ jobs:
         cache-dependency-path: 'frontend/package-lock.json'
 
     - name: 📦 Install Node.js dependencies
-      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: frontend
       run: npm install --no-package-lock
 
     - name: 🔍 Frontend code quality check
-      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: frontend
       run: |
         echo "🔍 Running ESLint..."
         npm run lint -- --max-warnings 10
 
     - name: 🧪 Frontend tests
-      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: frontend
       run: |
         echo "🧪 Running frontend tests..."
         # npm run test || true  # Uncomment when tests are available
 
     - name: 🏗️ Frontend build test
-      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/')
+      if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       working-directory: frontend
       run: |
         echo "🏗️ Testing frontend build..."
