@@ -246,8 +246,11 @@ export function AuthProvider({ children }) {
   // Vérification du statut d'authentification au chargement
   useEffect(() => {
     let isMounted = true;
+    let hasChecked = false; // Éviter les vérifications multiples en développement
     
     const checkAuthStatus = async () => {
+      if (hasChecked) return; // Protection contre les appels multiples
+      hasChecked = true;
       try {
         if (!isMounted) return;
         
@@ -268,6 +271,10 @@ export function AuthProvider({ children }) {
           setIsAuthenticated(true);
           initializeSession(); // Initialiser l'activité
         } else {
+          // 401 est normal quand l'utilisateur n'est pas connecté, ne pas logger comme erreur
+          if (response.status !== 401) {
+            console.warn('Auth check unexpected status:', response.status);
+          }
           setUser(null);
           setIsAuthenticated(false);
         }

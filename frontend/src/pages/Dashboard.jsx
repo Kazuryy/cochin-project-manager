@@ -555,7 +555,15 @@ function DashboardContent() {
   // Fonction pour calculer la progression d'un projet basée sur ses devis (inspirée de DevisManager)
   const calculateProjectProgress = useCallback(async (projectId) => {
     try {
-      const devisList = await devisService.getDevisByProject(projectId);
+      // Ajouter un timeout pour éviter que les appels traînent trop longtemps
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+      
+      const devisList = await Promise.race([
+        devisService.getDevisByProject(projectId),
+        timeoutPromise
+      ]);
       
       if (!devisList || devisList.length === 0) {
         return { 
@@ -815,38 +823,51 @@ function DashboardContent() {
       // Attendre que toutes les autres étapes critiques soient terminées avant de charger les progressions
       const criticalStepsComplete = !loadingStates.tables && !loadingStates.projects && !loadingStates.contacts && !loadingStates.tableNames && !loadingStates.detailsData;
       
-      if (!projects.length || !criticalStepsComplete) return;
+      if (!criticalStepsComplete) return;
 
-      const progressPromises = projects.map(async (project) => {
-        try {
-          const progress = await calculateProjectProgress(project.id);
-          return { projectId: project.id, progress };
-        } catch (err) {
-          console.error(`Erreur lors du calcul de progression pour le projet ${project.id}:`, err);
-          return { 
-            projectId: project.id, 
-            progress: { 
-              status: 'Erreur', 
-              progress: 0, 
-              color: 'bg-red-400',
-              activeDevis: 0,
-              totalDevis: 0,
-              nearestDeadline: null,
-              nearestDeadlineDevis: null,
-              activeDevisNumbers: []
-            }
-          };
-        }
-      });
-
-      const progressResults = await Promise.all(progressPromises);
-      const progressMap = {};
-      progressResults.forEach(({ projectId, progress }) => {
-        progressMap[projectId] = progress;
-      });
-      
-      setProjectProgress(progressMap);
+      // Marquer directement comme terminé pour ne pas bloquer le Dashboard
       markStepComplete('projectProgress');
+
+      // Si pas de projets, pas besoin de calculer les progressions
+      if (!projects.length) return;
+
+      // Charger les progressions en arrière-plan sans bloquer l'affichage
+      setTimeout(async () => {
+        try {
+          const progressPromises = projects.map(async (project) => {
+            try {
+              const progress = await calculateProjectProgress(project.id);
+              return { projectId: project.id, progress };
+            } catch (err) {
+              console.warn(`Progression non disponible pour le projet ${project.id}:`, err);
+              return { 
+                projectId: project.id, 
+                progress: { 
+                  status: 'Non disponible', 
+                  progress: 0, 
+                  color: 'bg-gray-400',
+                  activeDevis: 0,
+                  totalDevis: 0,
+                  nearestDeadline: null,
+                  nearestDeadlineDevis: null,
+                  activeDevisNumbers: []
+                }
+              };
+            }
+          });
+
+          const progressResults = await Promise.all(progressPromises);
+          const progressMap = {};
+          progressResults.forEach(({ projectId, progress }) => {
+            progressMap[projectId] = progress;
+          });
+          
+          setProjectProgress(progressMap);
+        } catch (err) {
+          console.warn('Erreur lors du chargement des progressions:', err);
+          // Les progressions restent vides, ce n'est pas critique
+        }
+      }, 100); // Délai court pour permettre l'affichage du Dashboard
     };
 
     loadProjectProgressions();
