@@ -1,0 +1,104 @@
+name: 🐳 Build and Push Docker Images (Legacy)
+
+on:
+  push:
+    branches: [ legacy ]  # Changé pour éviter les conflits avec le nouveau workflow
+    tags: [ 'legacy-v*' ]
+  pull_request:
+    branches: [ legacy ]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch for build'
+        required: false
+        default: 'main'
+
+env:
+  REGISTRY: docker.io
+  BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
+  FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend
+
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.BACKEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata (tags, labels) for frontend  
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.backend
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.frontend
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Generate deployment summary
+      if: github.event_name != 'pull_request'
+      run: |
+        echo "## 🚀 Deployment Summary (Legacy Workflow)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "⚠️ **Note**: Ce workflow legacy est conservé pour compatibilité." >> $GITHUB_STEP_SUMMARY
+        echo "**Utilisez le nouveau workflow ci-cd-advanced.yml pour les fonctionnalités avancées.**" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Images Published:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend**: \`${{ env.BACKEND_IMAGE }}:${{ steps.meta-backend.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend**: \`${{ env.FRONTEND_IMAGE }}:${{ steps.meta-frontend.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Quick Deploy Command:" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "export BACKEND_TAG=${{ steps.meta-backend.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "export FRONTEND_TAG=${{ steps.meta-frontend.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./deploy-prod.sh" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY 

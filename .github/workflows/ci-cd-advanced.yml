@@ -1,0 +1,445 @@
+name: 🚀 CI/CD Advanced Pipeline
+
+on:
+  push:
+    branches: [ main, production, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, production ]
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild without cache'
+        required: false
+        default: false
+        type: boolean
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: docker.io
+  BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
+  FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend
+
+jobs:
+  # =====================================================
+  # Job 1: Tests et validations
+  # =====================================================
+  tests:
+    name: 🧪 Tests & Quality Checks
+    runs-on: ubuntu-latest
+    outputs:
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 🔍 Detect changes
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          backend:
+            - 'backend/**'
+            - 'Dockerfile.backend'
+            - 'requirements.txt'
+          frontend:
+            - 'frontend/**'
+            - 'Dockerfile.frontend'
+            - 'package.json'
+            - 'package-lock.json'
+
+    - name: 🐍 Setup Python
+      if: steps.changes.outputs.backend == 'true'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: 📦 Install Python dependencies
+      if: steps.changes.outputs.backend == 'true'
+      working-directory: backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 safety bandit
+
+    - name: 🔍 Python code quality check
+      if: steps.changes.outputs.backend == 'true'
+      working-directory: backend
+      run: |
+        echo "🔍 Running Python linting..."
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: 🛡️ Python security check
+      if: steps.changes.outputs.backend == 'true'
+      working-directory: backend
+      run: |
+        echo "🛡️ Checking Python dependencies for security issues..."
+        safety check
+        echo "🔒 Running security analysis on code..."
+        bandit -r . -f json -o security-report.json || true
+
+    - name: 🟢 Setup Node.js
+      if: steps.changes.outputs.frontend == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: 📦 Install Node.js dependencies
+      if: steps.changes.outputs.frontend == 'true'
+      working-directory: frontend
+      run: npm ci
+
+    - name: 🔍 Frontend code quality check
+      if: steps.changes.outputs.frontend == 'true'
+      working-directory: frontend
+      run: |
+        echo "🔍 Running ESLint..."
+        npm run lint || true
+
+    - name: 🧪 Frontend tests
+      if: steps.changes.outputs.frontend == 'true'
+      working-directory: frontend
+      run: |
+        echo "🧪 Running frontend tests..."
+        # npm run test || true  # Uncomment when tests are available
+
+    - name: 🏗️ Frontend build test
+      if: steps.changes.outputs.frontend == 'true'
+      working-directory: frontend
+      run: |
+        echo "🏗️ Testing frontend build..."
+        npm run build
+
+  # =====================================================
+  # Job 2: Build et push des images Docker (en parallèle)
+  # =====================================================
+  build-backend:
+    name: 🐳 Build Backend Image
+    runs-on: ubuntu-latest
+    needs: tests
+    if: needs.tests.outputs.backend-changed == 'true' || github.event_name == 'workflow_dispatch'
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+      image-version: ${{ steps.meta.outputs.version }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 Log in to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 🏷️ Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.BACKEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix=sha-
+        labels: |
+          org.opencontainers.image.title=Cochin Backend
+          org.opencontainers.image.description=Backend API for Cochin Project Manager
+          org.opencontainers.image.vendor=Cochin Team
+
+    - name: 🏗️ Build and push
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.backend
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=backend
+        cache-to: type=gha,mode=max,scope=backend
+        no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
+
+  build-frontend:
+    name: 🎨 Build Frontend Image  
+    runs-on: ubuntu-latest
+    needs: tests
+    if: needs.tests.outputs.frontend-changed == 'true' || github.event_name == 'workflow_dispatch'
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+      image-version: ${{ steps.meta.outputs.version }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 Log in to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 🏷️ Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.FRONTEND_IMAGE }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix=sha-
+        labels: |
+          org.opencontainers.image.title=Cochin Frontend
+          org.opencontainers.image.description=Frontend UI for Cochin Project Manager
+          org.opencontainers.image.vendor=Cochin Team
+
+    - name: 🏗️ Build and push
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.frontend
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=frontend
+        cache-to: type=gha,mode=max,scope=frontend
+        no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
+
+  # =====================================================
+  # Job 3: Scan de sécurité des images
+  # =====================================================
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    
+    steps:
+    - name: 🔍 Run Trivy vulnerability scanner (Backend)
+      if: needs.build-backend.result == 'success'
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.BACKEND_IMAGE }}:latest
+        format: 'sarif'
+        output: 'backend-trivy-results.sarif'
+
+    - name: 🔍 Run Trivy vulnerability scanner (Frontend)
+      if: needs.build-frontend.result == 'success'
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.FRONTEND_IMAGE }}:latest
+        format: 'sarif'
+        output: 'frontend-trivy-results.sarif'
+
+    - name: 📤 Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: '.'
+
+  # =====================================================
+  # Job 4: Créer une release GitHub (pour les tags)
+  # =====================================================
+  create-release:
+    name: 🏷️ Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, security-scan]
+    if: startsWith(github.ref, 'refs/tags/v') && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🏷️ Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        body: |
+          ## 🚀 Release ${{ github.ref_name }}
+          
+          ### 📦 Images Docker publiées:
+          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
+          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
+          
+          ### 🚀 Commande de déploiement rapide:
+          ```bash
+          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} BACKEND_TAG=${{ github.ref_name }} FRONTEND_TAG=${{ github.ref_name }} ./deploy-prod.sh
+          ```
+          
+          ### 🔄 Commande de mise à jour:
+          ```bash
+          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./check-updates.sh
+          ```
+        draft: false
+        prerelease: contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha')
+
+  # =====================================================
+  # Job 5: Notifications et résumé final
+  # =====================================================
+  notify-and-summary:
+    name: 📢 Notifications & Summary
+    runs-on: ubuntu-latest
+    needs: [tests, build-backend, build-frontend, security-scan]
+    if: always() && github.event_name != 'pull_request'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 📊 Generate deployment summary
+      run: |
+        echo "## 🚀 Pipeline CI/CD - Résumé d'exécution" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Statut des jobs:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tests**: ${{ needs.tests.result == 'success' && '✅ Réussi' || '❌ Échec' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Backend**: ${{ needs.build-backend.result == 'success' && '✅ Réussi' || needs.build-backend.result == 'skipped' && '⏭️ Ignoré' || '❌ Échec' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Frontend**: ${{ needs.build-frontend.result == 'success' && '✅ Réussi' || needs.build-frontend.result == 'skipped' && '⏭️ Ignoré' || '❌ Échec' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Scan Sécurité**: ${{ needs.security-scan.result == 'success' && '✅ Réussi' || needs.security-scan.result == 'skipped' && '⏭️ Ignoré' || '❌ Échec' }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.build-backend.result }}" == "success" || "${{ needs.build-frontend.result }}" == "success" ]]; then
+          echo "### 📦 Images publiées:" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-backend.result }}" == "success" ]] && echo "- **Backend**: \`${{ env.BACKEND_IMAGE }}:${{ needs.build-backend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-frontend.result }}" == "success" ]] && echo "- **Frontend**: \`${{ env.FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Commandes de déploiement:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Déploiement rapide" >> $GITHUB_STEP_SUMMARY
+          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./deploy-prod.sh" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Vérification des mises à jour" >> $GITHUB_STEP_SUMMARY
+          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./check-updates.sh" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: 🔔 Send Discord notification (Success)
+      if: needs.tests.result == 'success' && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "✅ CI/CD Pipeline - Succès",
+                "description": "Le pipeline CI/CD s est exécuté avec succès !",
+                "color": 3066993,
+                "fields": [
+                  {
+                    "name": "📦 Repository",
+                    "value": "${{ github.repository }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Branche",
+                    "value": "${{ github.ref_name }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "👤 Auteur",
+                    "value": "${{ github.actor }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "📝 Commit",
+                    "value": "[${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})",
+                    "inline": false
+                  },
+                  {
+                    "name": "🚀 Images construites",
+                    "value": "${{ needs.build-backend.result == 'success' && '🐳 Backend' || '' }} ${{ needs.build-frontend.result == 'success' && '🎨 Frontend' || '' }}",
+                    "inline": false
+                  }
+                ],
+                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'",
+                "footer": {
+                  "text": "Cochin Project Manager CI/CD"
+                }
+              }]
+            }' \
+            "$DISCORD_WEBHOOK_URL"
+        fi
+
+    - name: 🔔 Send Discord notification (Failure)
+      if: failure() || needs.tests.result == 'failure' || needs.build-backend.result == 'failure' || needs.build-frontend.result == 'failure'
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "❌ CI/CD Pipeline - Échec",
+                "description": "Le pipeline CI/CD a échoué !",
+                "color": 15158332,
+                "fields": [
+                  {
+                    "name": "📦 Repository",
+                    "value": "${{ github.repository }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Branche",
+                    "value": "${{ github.ref_name }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "👤 Auteur",
+                    "value": "${{ github.actor }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "📝 Commit",
+                    "value": "[${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})",
+                    "inline": false
+                  },
+                  {
+                    "name": "🔗 Voir les logs",
+                    "value": "[Logs de l action](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})",
+                    "inline": false
+                  }
+                ],
+                "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'",
+                "footer": {
+                  "text": "Cochin Project Manager CI/CD"
+                }
+              }]
+            }' \
+            "$DISCORD_WEBHOOK_URL"
+        fi 
