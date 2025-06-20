@@ -118,13 +118,13 @@ class Command(BaseCommand):
                 backup_name=backup_name
             )
             
-                self.stdout.write(
-                    self.style.SUCCESS(
+            self.stdout.write(
+                self.style.SUCCESS(
                     f"✅ Sauvegarde '{config.name}' terminée avec succès "
                     f"(ID: {backup_history.id}, Status: {backup_history.status})"
-                    )
                 )
-                return True
+            )
+            return True
                 
         except Exception as e:
             self.stdout.write(
