@@ -1,15 +1,24 @@
 FROM node:23-slim AS builder
 
 WORKDIR /app
+
+# Copier seulement package.json pour installer les dépendances
 COPY frontend/package.json ./
-# Installation avec npm install pour éviter le bug npm ci avec les dépendances optionnelles de Rollup
+
+# Installation initiale des dépendances
 RUN npm install --production=false
 
+# Copier tout le code source
 COPY frontend/ .
+
 # Configuration pour domaine local
 ENV VITE_API_URL=http://project-manager.local
-# Fix pour le bug Rollup : supprimer le package-lock.json et réinstaller
-RUN rm -f package-lock.json && npm install && npm run build
+
+# Fix Rollup: supprimer package-lock.json et réinstaller pour corriger les dépendances optionnelles
+# Puis build avec gestion d'erreur
+RUN rm -f package-lock.json && \
+    npm install && \
+    npm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
