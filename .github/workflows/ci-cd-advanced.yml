@@ -30,9 +30,15 @@ permissions:
   security-events: write
 
 env:
-  REGISTRY: docker.io
-  BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
-  FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend
+  # Docker Hub
+  DOCKER_REGISTRY: docker.io
+  DOCKER_BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
+  DOCKER_FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend
+  
+  # GitHub Container Registry
+  GHCR_REGISTRY: ghcr.io
+  GHCR_BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
+  GHCR_FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
 
 jobs:
   # =====================================================
@@ -164,15 +170,25 @@ jobs:
       if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
-        registry: ${{ env.REGISTRY }}
+        registry: ${{ env.DOCKER_REGISTRY }}
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 📦 Log in to GitHub Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: 🏷️ Extract metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.BACKEND_IMAGE }}
+        images: |
+          ${{ env.DOCKER_BACKEND_IMAGE }}
+          ${{ env.GHCR_BACKEND_IMAGE }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -184,8 +200,10 @@ jobs:
           org.opencontainers.image.title=Cochin Backend
           org.opencontainers.image.description=Backend API for Cochin Project Manager
           org.opencontainers.image.vendor=Cochin Team
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.url=https://github.com/${{ github.repository }}
 
-    - name: 🏗️ Build and push
+    - name: 🏗️ Build and push to both registries
       id: build
       uses: docker/build-push-action@v5
       with:
@@ -219,15 +237,25 @@ jobs:
       if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
-        registry: ${{ env.REGISTRY }}
+        registry: ${{ env.DOCKER_REGISTRY }}
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 📦 Log in to GitHub Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: 🏷️ Extract metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.FRONTEND_IMAGE }}
+        images: |
+          ${{ env.DOCKER_FRONTEND_IMAGE }}
+          ${{ env.GHCR_FRONTEND_IMAGE }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -239,8 +267,10 @@ jobs:
           org.opencontainers.image.title=Cochin Frontend
           org.opencontainers.image.description=Frontend UI for Cochin Project Manager
           org.opencontainers.image.vendor=Cochin Team
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.url=https://github.com/${{ github.repository }}
 
-    - name: 🏗️ Build and push
+    - name: 🏗️ Build and push to both registries
       id: build
       uses: docker/build-push-action@v5
       with:
@@ -270,7 +300,7 @@ jobs:
       if: needs.build-backend.result == 'success'
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.BACKEND_IMAGE }}:latest
+        image-ref: ${{ env.DOCKER_BACKEND_IMAGE }}:latest
         format: 'sarif'
         output: 'backend-trivy-results.sarif'
 
@@ -278,7 +308,7 @@ jobs:
       if: needs.build-frontend.result == 'success'
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.FRONTEND_IMAGE }}:latest
+        image-ref: ${{ env.DOCKER_FRONTEND_IMAGE }}:latest
         format: 'sarif'
         output: 'frontend-trivy-results.sarif'
 
@@ -312,8 +342,14 @@ jobs:
           ## 🚀 Release ${{ github.ref_name }}
           
           ### 📦 Images Docker publiées:
-          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
-          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
+          
+          #### Docker Hub:
+          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.DOCKER_BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
+          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.DOCKER_FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
+          
+          #### GitHub Container Registry:
+          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.GHCR_BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
+          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.GHCR_FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
           
           ### 🚀 Commande de déploiement rapide:
           ```bash
@@ -353,8 +389,14 @@ jobs:
         
         if [[ "${{ needs.build-backend.result }}" == "success" || "${{ needs.build-frontend.result }}" == "success" ]]; then
           echo "### 📦 Images publiées:" >> $GITHUB_STEP_SUMMARY
-          [[ "${{ needs.build-backend.result }}" == "success" ]] && echo "- **Backend**: \`${{ env.BACKEND_IMAGE }}:${{ needs.build-backend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
-          [[ "${{ needs.build-frontend.result }}" == "success" ]] && echo "- **Frontend**: \`${{ env.FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Docker Hub:" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-backend.result }}" == "success" ]] && echo "- **Backend**: \`${{ env.DOCKER_BACKEND_IMAGE }}:${{ needs.build-backend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-frontend.result }}" == "success" ]] && echo "- **Frontend**: \`${{ env.DOCKER_FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### GitHub Container Registry:" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-backend.result }}" == "success" ]] && echo "- **Backend**: \`${{ env.GHCR_BACKEND_IMAGE }}:${{ needs.build-backend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ needs.build-frontend.result }}" == "success" ]] && echo "- **Frontend**: \`${{ env.GHCR_FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.image-version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Commandes de déploiement:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
