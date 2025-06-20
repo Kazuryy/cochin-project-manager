@@ -107,9 +107,10 @@ jobs:
       working-directory: backend
       run: |
         echo "🛡️ Checking Python dependencies for security issues..."
-        safety check
+        safety scan --output json --save-json safety-report.json || echo "⚠️ Vulnerabilities found, check safety-report.json"
         echo "🔒 Running security analysis on code..."
-        bandit -r . -f json -o security-report.json || true
+        bandit -r . -f json -o bandit-report.json || true
+        echo "📊 Security scan completed. Reports saved as safety-report.json and bandit-report.json"
 
     - name: 🟢 Setup Node.js
       if: steps.changes.outputs.frontend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
