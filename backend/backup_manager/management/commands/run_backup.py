@@ -107,31 +107,24 @@ class Command(BaseCommand):
         try:
             self.stdout.write(f"🚀 Début de la sauvegarde '{config.name}'...")
             
-            backup_data = {
-                'configuration_id': config.id,
-                'backup_name': f"{config.name}_auto_{timezone.now().strftime('%Y%m%d_%H%M%S')}",
-                'is_automatic': True
-            }
+            # Utiliser directement le service au lieu de l'API pour éviter les problèmes de permissions
+            backup_service = BackupService()
+            backup_name = f"{config.name}_auto_{timezone.now().strftime('%d%m%y_%H%M')}"
             
-            response = self._call_backup_api(backup_data, user)
+            # Lancer la sauvegarde via le service
+            backup_history = backup_service.create_backup(
+                config=config,
+                user=user,
+                backup_name=backup_name
+            )
             
-            if response.status_code == 200:
-                response_data = json.loads(response.content)
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"✅ Sauvegarde '{config.name}' lancée avec succès "
-                        f"(ID: {response_data.get('backup_id')})"
+                    f"✅ Sauvegarde '{config.name}' terminée avec succès "
+                    f"(ID: {backup_history.id}, Status: {backup_history.status})"
                     )
                 )
                 return True
-            else:
-                response_data = json.loads(response.content)
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"❌ Sauvegarde '{config.name}' échouée: {response_data.get('error', 'Erreur inconnue')}"
-                    )
-                )
-                return False
                 
         except Exception as e:
             self.stdout.write(
@@ -139,19 +132,7 @@ class Command(BaseCommand):
             )
             return False
     
-    def _call_backup_api(self, backup_data, user):
-        """Appelle l'API de sauvegarde interne"""
-        from django.test import RequestFactory
-        from backup_manager.views import create_backup_view
-        
-        factory = RequestFactory()
-        request = factory.post(
-            '/api/backup/create/',
-            data=json.dumps(backup_data),
-            content_type='application/json'
-        )
-        request.user = user
-        return create_backup_view(request)
+
     
     def _display_summary(self, total_configs, successful_backups, failed_backups):
         """Affiche le résumé final"""

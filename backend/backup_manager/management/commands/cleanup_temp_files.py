@@ -1,266 +1,308 @@
 """
-Commande Django pour nettoyer les fichiers temporaires de sauvegarde/restauration
+Commande Django pour nettoyer les fichiers temporaires de sauvegarde
+Version améliorée avec nettoyage automatique intelligent
 """
 
-from django.core.management.base import BaseCommand, CommandError
-from backup_manager.services.cleanup_service import CleanupService
+import os
+import shutil
+import logging
+from pathlib import Path
+from datetime import datetime, timedelta
+from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.utils import timezone
 
+logger = logging.getLogger('backup_manager')
 
 class Command(BaseCommand):
-    help = 'Nettoie les fichiers temporaires de sauvegarde/restauration'
+    help = 'Nettoie les fichiers temporaires de sauvegarde avec intelligence'
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--max-age-hours',
-            type=int,
-            default=24,
-            help='Âge maximum en heures des fichiers à conserver (défaut: 24)'
+            '--force',
+            action='store_true',
+            help='Force le nettoyage sans demander de confirmation'
         )
         parser.add_argument(
-            '--aggressive',
+            '--auto',
             action='store_true',
-            help='Nettoyage agressif (2h pour uploads, 1h pour fichiers déchiffrés)'
+            help='Mode automatique - nettoie les fichiers de plus de 24h sans confirmation'
+        )
+        parser.add_argument(
+            '--age-hours',
+            type=int,
+            default=24,
+            help='Âge minimum en heures pour supprimer automatiquement (défaut: 24h)'
         )
         parser.add_argument(
             '--dry-run',
             action='store_true',
-            help='Affiche ce qui serait supprimé sans le faire'
+            help='Simulation sans suppression réelle'
         )
         parser.add_argument(
-            '--stats-only',
+            '--verbose',
             action='store_true',
-            help='Affiche seulement les statistiques d\'espace disque'
-        )
-        parser.add_argument(
-            '--force',
-            action='store_true',
-            help='Force le nettoyage sans demander confirmation'
+            help='Mode verbeux avec détails'
         )
 
     def handle(self, *args, **options):
-        max_age_hours = options['max_age_hours']
-        aggressive = options['aggressive']
-        dry_run = options['dry_run']
-        stats_only = options['stats_only']
-        force = options['force']
+        self.force = options['force']
+        self.auto = options['auto']
+        self.age_hours = options['age_hours']
+        self.dry_run = options['dry_run']
+        self.verbose = options['verbose']
         
-        cleanup_service = CleanupService()
-        
-        # Ajuster les paramètres pour le mode agressif
-        if aggressive:
-            max_age_hours = min(max_age_hours, 2)
-            self.stdout.write(
-                self.style.WARNING(f"🔥 Mode agressif activé - nettoyage des fichiers > {max_age_hours}h")
-            )
-        
-        # Traitement selon le mode
-        if stats_only:
-            self._handle_stats_only(cleanup_service)
-        elif dry_run:
-            self._handle_dry_run(cleanup_service, max_age_hours)
+        # Obtenir le répertoire de base des sauvegardes
+        if hasattr(settings, 'BACKUP_ROOT'):
+            self.backup_root = Path(settings.BACKUP_ROOT)
         else:
-            self._handle_cleanup(cleanup_service, max_age_hours, force)
-    
-    def _handle_stats_only(self, cleanup_service):
-        """Gère le mode stats-only"""
-        self.show_cleanup_stats(cleanup_service)
-    
-    def _handle_dry_run(self, cleanup_service, max_age_hours):
-        """Gère le mode dry-run"""
-        # Afficher l'état avant nettoyage
-        self.stdout.write(self.style.SUCCESS("📊 État avant nettoyage:"))
-        stats_before = cleanup_service.get_cleanup_stats()
-        self.display_stats(stats_before)
+            self.backup_root = Path(settings.BASE_DIR) / 'backups'
         
-        self.stdout.write(
-            self.style.WARNING(f"\n🔍 DRY RUN - Simulation du nettoyage (âge max: {max_age_hours}h)")
-        )
-        
-        # Effectuer la simulation
-        dry_results = cleanup_service.dry_run_cleanup(max_age_hours)
-        self._display_dry_run_results(cleanup_service, dry_results)
-    
-    def _handle_cleanup(self, cleanup_service, max_age_hours, force):
-        """Gère le nettoyage réel"""
-        # Afficher l'état avant nettoyage
-        self.stdout.write(self.style.SUCCESS("📊 État avant nettoyage:"))
-        stats_before = cleanup_service.get_cleanup_stats()
-        self.display_stats(stats_before)
-        
-        # Vérifier confirmation si nécessaire
-        if not self._confirm_cleanup(cleanup_service, stats_before, force):
+        if not self.backup_root.exists():
+            self.stdout.write(self.style.WARNING(f'📁 Répertoire de sauvegarde non trouvé: {self.backup_root}'))
             return
         
-        # Effectuer le nettoyage
-        self._execute_cleanup(cleanup_service, max_age_hours)
-    
-    def _display_dry_run_results(self, cleanup_service, dry_results):
-        """Affiche les résultats du dry-run"""
-        # Afficher ce qui serait supprimé
-        self.stdout.write("\n📋 Fichiers qui seraient supprimés:")
+        self.stdout.write(self.style.SUCCESS(f'🔍 Analyse du répertoire: {self.backup_root}'))
         
-        for operation, data in dry_results.items():
-            if operation == 'totals':
+        # Analyser l'état actuel
+        stats = self.analyze_directories()
+        
+        # Afficher l'état avant nettoyage
+        self.display_current_state(stats)
+        
+        # Nettoyage intelligent
+        if self.auto:
+            self.auto_cleanup(stats)
+        else:
+            self.interactive_cleanup(stats)
+    
+    def analyze_directories(self):
+        """Analyse les répertoires et retourne les statistiques"""
+        stats = {}
+        cutoff_time = datetime.now() - timedelta(hours=self.age_hours)
+        
+        directories = {
+            'restore_temp': self.backup_root / 'restore_temp',
+            'temp': self.backup_root / 'temp', 
+            'uploads': self.backup_root / 'uploads'
+        }
+        
+        for name, path in directories.items():
+            if not path.exists():
+                stats[name] = {'size': 0, 'files': 0, 'old_files': 0, 'old_size': 0, 'items': []}
                 continue
                 
-            icon = {
-                'restore_temp': '🔄',
-                'temp_files': '📁', 
-                'upload_files': '📤',
-                'orphaned_files': '🗑️',
-                'decrypted_files': '🔓'
-            }.get(operation, '📂')
+            total_size = 0
+            total_files = 0
+            old_size = 0
+            old_files = 0
+            items = []
             
-            files_count = data.get('files_to_delete', 0)
-            size_to_free = data.get('size_to_free', 0)
+            for item in path.iterdir():
+                try:
+                    if item.is_file():
+                        size = item.stat().st_size
+                        mtime = datetime.fromtimestamp(item.stat().st_mtime)
+                        total_size += size
+                        total_files += 1
+                        
+                        if mtime < cutoff_time:
+                            old_size += size
+                            old_files += 1
+                            
+                        items.append({
+                            'path': item,
+                            'size': size,
+                            'mtime': mtime,
+                            'is_old': mtime < cutoff_time,
+                            'type': 'file'
+                        })
+                    elif item.is_dir():
+                        size = self._get_dir_size(item)
+                        mtime = datetime.fromtimestamp(item.stat().st_mtime)
+                        total_size += size
+                        total_files += 1
+                        
+                        if mtime < cutoff_time:
+                            old_size += size
+                            old_files += 1
+                            
+                        items.append({
+                            'path': item,
+                            'size': size,
+                            'mtime': mtime,
+                            'is_old': mtime < cutoff_time,
+                            'type': 'directory'
+                        })
+                except (OSError, PermissionError) as e:
+                    if self.verbose:
+                        self.stdout.write(self.style.WARNING(f'⚠️ Erreur lecture {item}: {e}'))
             
-            if files_count > 0:
-                self.stdout.write(
-                    f"   {icon} {operation:<15}: "
-                    f"{files_count} fichiers, "
-                    f"{cleanup_service.format_size(size_to_free)} à libérer"
-                )
-                
-                if 'directories_to_remove' in data and data['directories_to_remove'] > 0:
-                    self.stdout.write(f"      └─ {data['directories_to_remove']} répertoires")
+            stats[name] = {
+                'size': total_size,
+                'files': total_files,
+                'old_size': old_size,
+                'old_files': old_files,
+                'items': items,
+                'path': path
+            }
         
-        # Résumé de la simulation
-        totals = dry_results['totals']
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"\n🎯 Simulation terminée:\n"
-                f"   • {totals['files_to_delete']} fichiers seraient supprimés\n"
-                f"   • {totals['size_to_free_formatted']} seraient libérés"
-            )
-        )
+        return stats
     
-    def _confirm_cleanup(self, cleanup_service, stats_before, force):
-        """Vérifie la confirmation pour le nettoyage"""
-        # Calculer l'espace total à libérer
-        total_temp_size = sum(
-            stats_before[key]['size'] 
-            for key in ['restore_temp', 'temp', 'uploads'] 
-            if key in stats_before
-        )
-        
-        if not force and total_temp_size > 0:
-            formatted_size = cleanup_service.format_size(total_temp_size)
-            confirm = input(
-                f"\n❓ Nettoyer ~{formatted_size} de fichiers temporaires ? [y/N] "
-            )
-            if confirm.lower() != 'y':
-                self.stdout.write("❌ Nettoyage annulé.")
-                return False
-        
-        return True
-    
-    def _execute_cleanup(self, cleanup_service, max_age_hours):
-        """Exécute le nettoyage et affiche les résultats"""
-        self.stdout.write(
-            self.style.SUCCESS(f"\n🧹 Lancement du nettoyage (âge max: {max_age_hours}h)")
-        )
-        
+    def _get_dir_size(self, path):
+        """Calcule la taille d'un répertoire récursivement"""
+        total = 0
         try:
-            results = cleanup_service.cleanup_all_temporary_files(max_age_hours)
-            
-            # Afficher les résultats détaillés
-            self.display_cleanup_results(results)
-            
-            # Afficher l'état après nettoyage
-            self.stdout.write(self.style.SUCCESS("\n📊 État après nettoyage:"))
-            stats_after = cleanup_service.get_cleanup_stats()
-            self.display_stats(stats_after)
-            
-            # Résumé final
-            totals = results['totals']
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"\n🎯 Nettoyage terminé en {totals['duration_seconds']}s:\n"
-                    f"   • {totals['files_deleted']} fichiers supprimés\n"
-                    f"   • {cleanup_service.format_size(totals['size_freed'])} libérés"
-                )
-            )
-            
-        except Exception as e:
-            raise CommandError(f"Erreur lors du nettoyage: {e}")
+            for entry in path.rglob('*'):
+                if entry.is_file():
+                    total += entry.stat().st_size
+        except (OSError, PermissionError):
+            pass
+        return total
     
-    def show_cleanup_stats(self, cleanup_service):
-        """Affiche les statistiques d'espace disque"""
-        self.stdout.write(self.style.SUCCESS("📊 Statistiques d'espace disque:"))
+    def display_current_state(self, stats):
+        """Affiche l'état actuel des fichiers temporaires"""
+        self.stdout.write(self.style.SUCCESS('\n📊 État des fichiers temporaires:'))
         
-        stats = cleanup_service.get_cleanup_stats()
-        self.display_stats(stats)
+        total_size = sum(stat['size'] for stat in stats.values())
+        total_files = sum(stat['files'] for stat in stats.values())
+        total_old_size = sum(stat['old_size'] for stat in stats.values())
+        total_old_files = sum(stat['old_files'] for stat in stats.values())
         
-        # Calculer les totaux
-        total_size = sum(stats[key]['size'] for key in stats)
-        total_files = sum(stats[key]['file_count'] for key in stats)
+        for name, stat in stats.items():
+            size_str = self.format_size(stat['size'])
+            old_size_str = self.format_size(stat['old_size'])
+            
+            icon = {'restore_temp': '🔄', 'temp': '📁', 'uploads': '📤'}.get(name, '📁')
+            
+            self.stdout.write(f'   {icon} {name:12} : {size_str:10} ({stat["files"]} éléments)')
+            
+            if stat['old_files'] > 0:
+                self.stdout.write(f'      ⏰ Anciens (>{self.age_hours}h): {old_size_str:10} ({stat["old_files"]} éléments)')
         
-        self.stdout.write("\n📋 Résumé:")
-        self.stdout.write(f"   • Taille totale: {cleanup_service.format_size(total_size)}")
-        self.stdout.write(f"   • Fichiers totaux: {total_files}")
+        self.stdout.write(f'\n📏 Total: {self.format_size(total_size)} ({total_files} éléments)')
         
-        # Recommandations
-        temp_size = sum(
-            stats[key]['size'] 
-            for key in ['restore_temp', 'temp', 'uploads'] 
-            if key in stats
-        )
-        
-        if temp_size > 100 * 1024 * 1024:  # Plus de 100MB de fichiers temporaires
-            self.stdout.write(
-                self.style.WARNING(
-                    f"\n⚠️  Recommandation: {cleanup_service.format_size(temp_size)} "
-                    f"de fichiers temporaires détectés. Envisagez un nettoyage."
-                )
-            )
+        if total_old_files > 0:
+            self.stdout.write(f'⏰ Nettoyables: {self.format_size(total_old_size)} ({total_old_files} éléments)')
     
-    def display_stats(self, stats):
-        """Affiche les statistiques de manière formatée"""
-        for directory, data in stats.items():
-            icon = {
-                'storage': '💾',
-                'restore_temp': '🔄', 
-                'temp': '📁',
-                'uploads': '📤'
-            }.get(directory, '📂')
-            
-            self.stdout.write(
-                f"   {icon} {directory:<15}: "
-                f"{data['size_formatted']:<10} "
-                f"({data['file_count']} fichiers)"
-            )
-    
-    def display_cleanup_results(self, results):
-        """Affiche les résultats détaillés du nettoyage"""
-        self.stdout.write("\n📋 Résultats détaillés:")
+    def auto_cleanup(self, stats):
+        """Nettoyage automatique des fichiers anciens"""
+        total_old_files = sum(stat['old_files'] for stat in stats.values())
+        total_old_size = sum(stat['old_size'] for stat in stats.values())
         
-        for operation, data in results.items():
-            if operation == 'totals':
-                continue
-                
-            icon = {
-                'restore_temp': '🔄',
-                'temp_files': '📁', 
-                'upload_files': '📤',
-                'orphaned_files': '🗑️',
-                'decrypted_files': '🔓'
-            }.get(operation, '📂')
+        if total_old_files == 0:
+            self.stdout.write(self.style.SUCCESS('✅ Aucun fichier ancien à nettoyer'))
+            return
+        
+        self.stdout.write(self.style.WARNING(
+            f'\n🤖 Nettoyage automatique: {total_old_files} éléments anciens ({self.format_size(total_old_size)})'
+        ))
+        
+        if not self.dry_run:
+            cleaned_files, cleaned_size = self._clean_old_files(stats)
+            self.stdout.write(self.style.SUCCESS(
+                f'✅ Nettoyé: {cleaned_files} éléments, {self.format_size(cleaned_size)} récupérés'
+            ))
+        else:
+            self.stdout.write(self.style.WARNING('🧪 Mode simulation - aucune suppression effectuée'))
+    
+    def interactive_cleanup(self, stats):
+        """Nettoyage interactif avec confirmation"""
+        total_old_files = sum(stat['old_files'] for stat in stats.values())
+        total_old_size = sum(stat['old_size'] for stat in stats.values())
+        
+        if total_old_files == 0:
+            self.stdout.write(self.style.SUCCESS('✅ Aucun fichier ancien à nettoyer'))
+            return
+        
+        # Afficher le détail si verbeux
+        if self.verbose:
+            self.display_detailed_items(stats)
+        
+        size_str = self.format_size(total_old_size)
+        
+        if not self.force:
+            prompt = f'\n❓ Nettoyer {size_str} de fichiers temporaires anciens? [y/N] '
+            response = input(prompt).lower().strip()
             
-            files_count = data.get('files_deleted', 0)
-            size_freed = data.get('size_freed', 0)
-            
-            if files_count > 0:
-                from backup_manager.services.cleanup_service import CleanupService
-                cleanup_service = CleanupService()
+            if response not in ['y', 'yes', 'oui', 'o']:
+                self.stdout.write(self.style.WARNING('❌ Nettoyage annulé.'))
+                return
+        
+        if not self.dry_run:
+            cleaned_files, cleaned_size = self._clean_old_files(stats)
+            self.stdout.write(self.style.SUCCESS(
+                f'✅ Nettoyé: {cleaned_files} éléments, {self.format_size(cleaned_size)} récupérés'
+            ))
+        else:
+            self.stdout.write(self.style.WARNING('🧪 Mode simulation - aucune suppression effectuée'))
+    
+    def display_detailed_items(self, stats):
+        """Affiche le détail des éléments à supprimer"""
+        self.stdout.write(self.style.WARNING('\n📋 Détail des éléments anciens:'))
+        
+        for name, stat in stats.items():
+            old_items = [item for item in stat['items'] if item['is_old']]
+            if old_items:
+                self.stdout.write(f'\n  {name}:')
+                for item in old_items[:5]:  # Limiter l'affichage
+                    age_str = self._format_age(item['mtime'])
+                    size_str = self.format_size(item['size'])
+                    type_icon = '📁' if item['type'] == 'directory' else '📄'
+                    self.stdout.write(f'    {type_icon} {item["path"].name[:40]:40} {size_str:8} ({age_str})')
                 
-                self.stdout.write(
-                    f"   {icon} {operation:<15}: "
-                    f"{files_count} fichiers, "
-                    f"{cleanup_service.format_size(size_freed)} libérés"
-                )
-                
-                # Afficher les répertoires supprimés si applicable
-                if 'directories_removed' in data and data['directories_removed'] > 0:
-                    self.stdout.write(
-                        f"      └─ {data['directories_removed']} répertoires supprimés"
-                    ) 
+                if len(old_items) > 5:
+                    self.stdout.write(f'    ... et {len(old_items) - 5} autres')
+    
+    def _clean_old_files(self, stats):
+        """Supprime effectivement les fichiers anciens"""
+        cleaned_files = 0
+        cleaned_size = 0
+        
+        for name, stat in stats.items():
+            for item in stat['items']:
+                if item['is_old']:
+                    try:
+                        if item['type'] == 'directory':
+                            shutil.rmtree(item['path'])
+                        else:
+                            item['path'].unlink()
+                        
+                        cleaned_files += 1
+                        cleaned_size += item['size']
+                        
+                        if self.verbose:
+                            self.stdout.write(f'  🗑️ Supprimé: {item["path"].name}')
+                            
+                    except (OSError, PermissionError) as e:
+                        self.stdout.write(self.style.ERROR(f'❌ Erreur suppression {item["path"]}: {e}'))
+        
+        return cleaned_files, cleaned_size
+    
+    def _format_age(self, mtime):
+        """Formate l'âge d'un fichier"""
+        age = datetime.now() - mtime
+        if age.days > 0:
+            return f'{age.days}j'
+        elif age.seconds > 3600:
+            return f'{age.seconds // 3600}h'
+        else:
+            return f'{age.seconds // 60}m'
+    
+    def format_size(self, bytes_size):
+        """Formate une taille en bytes en format lisible"""
+        if bytes_size == 0:
+            return "0 B"
+        
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        unit_index = 0
+        size = float(bytes_size)
+        
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        if unit_index == 0:
+            return f"{int(size)} {units[unit_index]}"
+        else:
+            return f"{size:.1f} {units[unit_index]}" 
