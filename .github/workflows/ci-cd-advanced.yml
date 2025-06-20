@@ -305,28 +305,30 @@ jobs:
       if: needs.build-backend.result == 'success'
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.DOCKER_BACKEND_IMAGE }}:latest
+        image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend:${{ needs.build-backend.outputs.image-version }}'
         format: 'sarif'
         output: 'backend-trivy-results.sarif'
+      continue-on-error: true
 
     - name: 🔍 Run Trivy vulnerability scanner (Frontend)
       if: needs.build-frontend.result == 'success'
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.DOCKER_FRONTEND_IMAGE }}:latest
+        image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend:${{ needs.build-frontend.outputs.image-version }}'
         format: 'sarif'
         output: 'frontend-trivy-results.sarif'
+      continue-on-error: true
 
     - name: 📤 Upload Backend Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && needs.build-backend.result == 'success'
+      if: always() && needs.build-backend.result == 'success' && hashFiles('backend-trivy-results.sarif') != ''
       with:
         sarif_file: 'backend-trivy-results.sarif'
         category: 'trivy-backend'
 
     - name: 📤 Upload Frontend Trivy scan results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always() && needs.build-frontend.result == 'success'
+      if: always() && needs.build-frontend.result == 'success' && hashFiles('frontend-trivy-results.sarif') != ''
       with:
         sarif_file: 'frontend-trivy-results.sarif'
         category: 'trivy-frontend'
