@@ -1,0 +1,79 @@
+# Développement et métadonnées
+.git/
+.gitignore
+.gitattributes
+*.md
+README*
+CHANGELOG*
+LICENSE*
+.github/
+.vscode/
+.idea/
+
+# Dépendances et environnements virtuels  
+node_modules/
+venv/
+env/
+ENV/
+.env*
+
+# Python cache et bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Fichiers temporaires et cache
+*.tmp
+*.temp
+.DS_Store*
+._*
+Thumbs.db
+*.log
+*.out
+*.err
+
+# Fichiers sensibles
+*.csv
+*.sql
+*.backup
+*.bak
+*.key
+*.pem
+*.p12
+*.pfx
+config.json
+secrets.json
+credentials.json
+db.sqlite3*
+*.test
+
+# Backups et tests
+backups/
+test_*
+backend/tests/
+logs/
+
+# Build et distribution
+dist/
+build/
+*.egg-info/
+.coverage
+.pytest_cache/
+.tox/
+
+# Docker lui-même
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Scripts de déploiement  
+deploy*.sh
+*.sh
+
+# Autres
+coverage.xml
+.nyc_output
+junit.xml 

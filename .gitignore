@@ -6,30 +6,86 @@ __pycache__/
 .Python
 venv/
 ENV/
+env/
 .env
 .env.local
+*.pyc
+*.pyo
+*.pyd
 
 # Django
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+db.sqlite3.backup*
 media/
 staticfiles/
 
 # Node
-backups/
 node_modules/
 dist/
+build/
 npm-debug.log
 yarn-error.log
 package-lock.json
 
-# IDE
+# Sécurité - Fichiers sensibles
+*.csv
+*.sql
+*.backup
+*.bak
+*.tmp
+*.temp
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+config.json
+secrets.json
+credentials.json
+
+# Logs et données
+logs/
+*.log
+*.out
+*.err
+*.access
+*.error
+debug.log
+error.log
+
+# Backups et tests
+backups/
+backend/tests/test_*.py
+test_*.sql
+test_*.zip
+test_backup.*
+*.test
+
+# Système
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+*.orig
+
+# IDE et éditeurs
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
 
-# Autres
-.DS_Store
+# OS
+.directory
+desktop.ini
