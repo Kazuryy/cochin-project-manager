@@ -4,11 +4,11 @@ import { useState, useCallback } from 'react';
  * Hook personnalisé pour gérer l'état et les validations des formulaires
  * 
  * @param {Object} initialValues - Valeurs initiales du formulaire
- * @param {Function} onSubmit - Fonction à exécuter lors de la soumission
  * @param {Function} validate - Fonction de validation (optionnelle)
+ * @param {Function} onSubmit - Fonction à exécuter lors de la soumission (optionnelle)
  * @returns {Object} - Méthodes et propriétés pour gérer le formulaire
  */
-function useForm(initialValues = {}, onSubmit, validate) {
+function useFormHook(initialValues = {}, validate, onSubmit) {
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -62,15 +62,43 @@ function useForm(initialValues = {}, onSubmit, validate) {
   }, [validate, values]);
 
   /**
+   * Valide un champ spécifique
+   * @param {string} name - Nom du champ à valider
+   * @returns {boolean} - Indique si le champ est valide
+   */
+  const validateField = useCallback((name) => {
+    if (typeof validate === 'function') {
+      const validationErrors = validate(values);
+      if (validationErrors[name]) {
+        setErrors((prev) => ({
+          ...prev,
+          [name]: validationErrors[name]
+        }));
+        return false;
+      } else {
+        setErrors((prev) => {
+          const newErrors = { ...prev };
+          delete newErrors[name];
+          return newErrors;
+        });
+        return true;
+      }
+    }
+    return true;
+  }, [validate, values]);
+
+  /**
    * Gère la soumission du formulaire
    * @param {Event} e - Événement de soumission
    */
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
     
     const isValid = validateForm();
     
-    if (isValid) {
+    if (isValid && onSubmit) {
       setIsSubmitting(true);
       try {
         await onSubmit(values);
@@ -85,6 +113,8 @@ function useForm(initialValues = {}, onSubmit, validate) {
         setIsSubmitting(false);
       }
     }
+
+    return isValid;
   }, [onSubmit, validateForm, values]);
 
   /**
@@ -120,6 +150,27 @@ function useForm(initialValues = {}, onSubmit, validate) {
     }));
   }, []);
 
+  /**
+   * Alias pour setError pour compatibilité
+   * @param {string} name - Nom du champ
+   * @param {string} errorMessage - Message d'erreur
+   */
+  const setFieldError = useCallback((name, errorMessage) => {
+    setError(name, errorMessage);
+  }, [setError]);
+
+  /**
+   * Efface l'erreur d'un champ spécifique
+   * @param {string} name - Nom du champ
+   */
+  const clearFieldError = useCallback((name) => {
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[name];
+      return newErrors;
+    });
+  }, []);
+
   return {
     values,
     errors,
@@ -130,7 +181,13 @@ function useForm(initialValues = {}, onSubmit, validate) {
     resetForm,
     setValue,
     setError,
+    setFieldError,
+    clearFieldError,
+    validateField,
+    validateForm
   };
 }
 
-export default useForm;
+// Export par défaut et named export pour compatibilité
+export default useFormHook;
+export { useFormHook as useForm };

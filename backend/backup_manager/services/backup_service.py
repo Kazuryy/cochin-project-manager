@@ -42,10 +42,25 @@ class BackupService(BaseService):
         Returns:
             Instance BackupHistory créée
         """
+        # Validation des paramètres
+        if not config:
+            self.log_error("[BACKUP] Erreur: config est None ou invalide")
+            raise ValueError("Configuration de sauvegarde invalide ou manquante")
+            
+        if not user:
+            self.log_error("[BACKUP] Erreur: user est None ou invalide")
+            raise ValueError("Utilisateur invalide ou manquant")
+            
         # Création de l'enregistrement d'historique
-        if not backup_name:
-            backup_name = f"{config.name}_{timezone.now().strftime('%Y%m%d_%H%M%S')}"
+        self.log_info(f"[BACKUP] Démarrage create_backup avec config={config.id}, user={user}, backup_name={backup_name}")
         
+        if not backup_name:
+            # Format court: ConfigName_JJMMAA_HHMM
+            date_part = timezone.now().strftime('%d%m%y_%H%M')
+            backup_name = f"{config.name}_{date_part}"
+            self.log_info(f"[BACKUP] Nom généré: {backup_name}")
+        
+        self.log_info(f"[BACKUP] Création de l'enregistrement d'historique")
         backup_history = BackupHistory.objects.create(
             configuration=config,
             backup_name=backup_name,
@@ -54,11 +69,13 @@ class BackupService(BaseService):
             started_at=timezone.now(),
             created_by=user
         )
+        self.log_info(f"[BACKUP] Enregistrement d'historique créé: id={backup_history.id}")
         
         self.start_operation(f"Sauvegarde {backup_name}")
         
         try:
             # Création du répertoire de travail
+            self.log_info(f"[BACKUP] Création du répertoire de travail")
             backup_dir = self._create_backup_directory(backup_name)
             self.log_info(f"📁 Répertoire de sauvegarde: {backup_dir}")
             
@@ -72,47 +89,74 @@ class BackupService(BaseService):
             
             # Phase 1: Export des métadonnées (Django JSON)
             if config.backup_type in ['full', 'metadata']:
+                self.log_info(f"[BACKUP] Démarrage export métadonnées")
                 metadata_stats = self._backup_metadata(backup_dir)
                 stats.update(metadata_stats)
             
             # Phase 2: Export des données (SQL natif)
             if config.backup_type in ['full', 'data']:
+                self.log_info(f"[BACKUP] Démarrage export données")
                 data_stats = self._backup_database_data(backup_dir)
                 stats['tables_count'] += data_stats.get('tables_count', 0)
                 stats['records_count'] += data_stats.get('records_count', 0)
             
             # Phase 3: Sauvegarde des fichiers système
             if config.include_files and config.backup_type in ['full']:
+                self.log_info(f"[BACKUP] Démarrage backup fichiers")
                 files_stats = self._backup_files(backup_dir)
                 stats['files_count'] = files_stats.get('files_count', 0)
             
             # Phase 4: Création de l'archive finale
+            self.log_info(f"[BACKUP] Création de l'archive finale")
             archive_path = self._create_final_archive(backup_dir, backup_name, config.compression_enabled)
+            self.log_info(f"[BACKUP] Archive créée: {archive_path}")
             
             # Phase 5: Chiffrement (maintenant OBLIGATOIRE pour toutes les sauvegardes)
+            self.log_info(f"[BACKUP] Démarrage chiffrement")
             final_path = self._encrypt_backup(archive_path, user)
+            self.log_info(f"[BACKUP] Chiffrement terminé: {final_path}")
             archive_path.unlink()  # Suppression de l'archive non chiffrée
             
             # Calcul des métadonnées finales
             final_size = final_path.stat().st_size
+            self.log_info(f"[BACKUP] Calcul checksum")
             checksum = self.calculate_checksum(final_path)
             
             # Stockage selon la stratégie configurée
+            self.log_info(f"[BACKUP] Stockage du fichier")
             stored_path = self.storage_service.store_backup(final_path, config)
+            self.log_info(f"[BACKUP] Fichier stocké à: {stored_path}")
+            
+            # Vérifier que le chemin de stockage est valide
+            if not stored_path or not stored_path.exists() or not stored_path.is_file():
+                self.log_error(f"[BACKUP] ❌ Chemin de stockage invalide ou fichier non trouvé: {stored_path}")
+                raise Exception(f"Échec du stockage: chemin invalide {stored_path}")
+            
+            # Convertir le chemin en string pour stockage dans la base
+            stored_path_str = str(stored_path.absolute())
+            self.log_info(f"[BACKUP] Chemin final à enregistrer: {stored_path_str}")
+            
+            # Validation finale des métadonnées obligatoires
+            if not stored_path_str or final_size <= 0 or not checksum:
+                self.log_error(f"[BACKUP] ❌ Métadonnées incomplètes - chemin: {stored_path_str}, taille: {final_size}, checksum: {checksum}")
+                raise Exception(f"Métadonnées de sauvegarde incomplètes: chemin={bool(stored_path_str)}, taille={final_size}, checksum={bool(checksum)}")
             
             # Suppression du répertoire temporaire
+            self.log_info(f"[BACKUP] Nettoyage du répertoire temporaire")
             self._cleanup_temp_directory(backup_dir)
             
             # Nettoyage automatique des fichiers temporaires anciens
+            self.log_info(f"[BACKUP] Nettoyage auto des fichiers temporaires")
             self._auto_cleanup_temp_files()
             
             duration = self.end_operation(f"Sauvegarde {backup_name}")
             
             # Mise à jour finale du statut
+            self.log_info(f"[BACKUP] Mise à jour finale de l'historique")
             backup_history.status = 'completed'
             backup_history.completed_at = timezone.now()
             backup_history.duration_seconds = duration
-            backup_history.file_path = str(stored_path)
+            backup_history.file_path = stored_path_str
             backup_history.file_size = final_size
             backup_history.checksum = checksum
             backup_history.tables_count = stats['tables_count']
@@ -122,6 +166,7 @@ class BackupService(BaseService):
             backup_history.save()
             
             # Nettoyage
+            self.log_info(f"[BACKUP] Nettoyage final")
             self._cleanup_backup_directory(backup_dir)
             if final_path != stored_path and final_path.exists():
                 final_path.unlink()  # Suppression du fichier local si stocké ailleurs
@@ -131,12 +176,18 @@ class BackupService(BaseService):
             return backup_history
             
         except Exception as e:
+            self.log_error(f"[BACKUP] Exception dans create_backup: {str(e)}, type={type(e)}")
+            
             # Mise à jour de l'historique en cas d'erreur
-            backup_history.status = 'failed'
-            backup_history.completed_at = timezone.now()
-            backup_history.error_message = str(e)
-            backup_history.log_data = self.get_logs_summary()
-            backup_history.save()
+            try:
+                backup_history.status = 'failed'
+                backup_history.completed_at = timezone.now()
+                backup_history.error_message = str(e)
+                backup_history.log_data = self.get_logs_summary()
+                backup_history.save()
+                self.log_info(f"[BACKUP] Historique mis à jour avec le statut d'échec")
+            except Exception as save_error:
+                self.log_error(f"[BACKUP] Erreur lors de la mise à jour de l'historique après échec: {str(save_error)}")
             
             self.log_error("❌ Échec de la sauvegarde", e)
             raise
@@ -208,6 +259,12 @@ class BackupService(BaseService):
             
             # Étape 2: Nettoyer le dump pour la restauration
             self._clean_sqlite_dump(temp_dump_file, sql_dump_file)
+            
+            # Étape 3: Corriger le statut de la sauvegarde en cours dans le dump
+            # CRITIQUE: Le dump SQL contient la sauvegarde actuelle avec statut 'running'
+            # mais le fichier final doit refléter l'état 'completed' pour éviter les problèmes
+            # lors des restaurations futures
+            self._fix_current_backup_status_in_dump(sql_dump_file)
             
             # Supprimer le fichier temporaire
             temp_dump_file.unlink()
@@ -290,6 +347,81 @@ class BackupService(BaseService):
         
         return False
     
+    def _fix_current_backup_status_in_dump(self, sql_file: Path) -> None:
+        """
+        Corrige le statut de la sauvegarde en cours dans le dump SQL.
+        
+        PROBLÈME RÉSOLU: Quand une sauvegarde est créée, le dump SQL contient
+        l'entrée backup_manager_backuphistory avec status='running'. Lors de la
+        restauration, cela remet la sauvegarde en 'running' au lieu de 'completed'.
+        
+        Cette méthode trouve et corrige automatiquement ce problème à la source.
+        Supporté pour SQLite, PostgreSQL et MySQL.
+        """
+        self.log_info("🔧 Correction du statut de sauvegarde dans le dump SQL...")
+        
+        try:
+            # Lire le contenu du fichier SQL
+            with open(sql_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            import re
+            from django.utils import timezone
+            
+            corrections_made = 0
+            current_time = timezone.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            
+            # Patterns pour différents formats SQL (SQLite, PostgreSQL, MySQL)
+            patterns = [
+                # SQLite: INSERT INTO backup_manager_backuphistory VALUES(...)
+                r"INSERT INTO ['\"]?backup_manager_backuphistory['\"]? VALUES\s*\(([^)]+)\);",
+                # PostgreSQL: INSERT INTO "backup_manager_backuphistory" (...) VALUES (...);
+                r"INSERT INTO ['\"]?backup_manager_backuphistory['\"]?\s*\([^)]+\)\s+VALUES\s*\(([^)]+)\);",
+                # MySQL: INSERT INTO `backup_manager_backuphistory` VALUES (...);
+                r"INSERT INTO [`'\"]?backup_manager_backuphistory[`'\"]? VALUES\s*\(([^)]+)\);"
+            ]
+            
+            for pattern in patterns:
+                # Chercher et corriger chaque occurrence
+                def replace_running_status(match):
+                    nonlocal corrections_made
+                    values = match.group(1) if match.lastindex >= 1 else match.group(0)
+                    
+                    # Si on trouve 'running' dans les valeurs
+                    if "'running'" in values:
+                        # Remplacer 'running' par 'completed'
+                        corrected_values = values.replace("'running'", "'completed'")
+                        
+                        # Corriger aussi les NULL pour completed_at si nécessaire
+                        # Attention: ne remplacer que le bon NULL (typiquement après le statut)
+                        if ',NULL,' in corrected_values:
+                            corrected_values = corrected_values.replace(',NULL,', f",'{current_time}',", 1)
+                        
+                        corrections_made += 1
+                        self.log_info(f"🔧 Sauvegarde corrigée: 'running' -> 'completed'")
+                        
+                        # Retourner la ligne complète corrigée
+                        return match.group(0).replace(values, corrected_values)
+                    
+                    return match.group(0)
+                
+                # Appliquer les corrections avec le pattern actuel
+                content = re.sub(pattern, replace_running_status, content, flags=re.IGNORECASE)
+            
+            # Réécrire le fichier avec les corrections
+            if corrections_made > 0:
+                with open(sql_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.log_info(f"✅ {corrections_made} correction(s) de statut appliquée(s) au dump SQL")
+                print(f"🔧 CORRECTION DUMP SQL: {corrections_made} sauvegarde(s) 'running' -> 'completed'")
+            else:
+                self.log_info("ℹ️ Aucune correction de statut nécessaire dans le dump SQL")
+                
+        except Exception as e:
+            self.log_warning(f"⚠️ Erreur lors de la correction du dump SQL: {e}")
+            # On continue même en cas d'erreur, ce n'est pas critique pour la fonctionnalité
+    
     def _backup_sqlite_fallback(self, backup_dir: Path, db_settings: Dict[str, Any]) -> Dict[str, Any]:
         """Méthode de fallback: copie directe du fichier SQLite"""
         self.log_warning("🔄 Utilisation de la méthode de fallback (copie directe)")
@@ -364,6 +496,9 @@ class BackupService(BaseService):
             if result.returncode != 0:
                 raise subprocess.CalledProcessError(result.returncode, cmd, result.stderr)
             
+            # Correction du statut de sauvegarde dans le dump PostgreSQL
+            self._fix_current_backup_status_in_dump(dump_file)
+            
             file_size = dump_file.stat().st_size
             self.log_info(f"✅ Base PostgreSQL exportée: {self.format_size(file_size)}")
             
@@ -399,6 +534,9 @@ class BackupService(BaseService):
             
             if result.returncode != 0:
                 raise subprocess.CalledProcessError(result.returncode, cmd, result.stderr)
+            
+            # Correction du statut de sauvegarde dans le dump MySQL
+            self._fix_current_backup_status_in_dump(dump_file)
             
             file_size = dump_file.stat().st_size
             self.log_info(f"✅ Base MySQL exportée: {self.format_size(file_size)}")

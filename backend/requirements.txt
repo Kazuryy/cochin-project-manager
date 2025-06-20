@@ -11,3 +11,4 @@ python-dotenv==1.1.0
 sqlparse==0.5.3
 cryptography==43.0.3
 django-cors-headers==4.6.0
+django-crontab==0.7.1

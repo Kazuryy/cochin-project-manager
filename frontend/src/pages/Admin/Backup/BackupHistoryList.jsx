@@ -337,29 +337,16 @@ const BackupHistoryList = () => {
   const downloadBackup = useCallback(async (backup) => {
     try {
       setActionLoading(backup.id);
-      const response = await backupService.downloadBackup(backup.id);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
       
-      const link = document.createElement('a');
-      link.href = url;
+      // Le service downloadBackup gère déjà tout le processus de téléchargement
+      const result = await backupService.downloadBackup(backup.id);
       
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `${backup.backup_name}.zip`;
-      if (contentDisposition) {
-        const matches = /filename="(.+)"/.exec(contentDisposition);
-        if (matches && matches[1]) {
-          filename = matches[1];
-        }
+      if (result.success) {
+        success(`Téléchargement de "${backup.backup_name}" démarré (déchiffrement automatique)`);
+      } else {
+        throw new Error(result.message || 'Erreur lors du téléchargement');
       }
       
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      success(`Téléchargement de "${backup.backup_name}" démarré (déchiffrement automatique)`);
     } catch (err) {
       console.error('Erreur lors du téléchargement:', err);
       error('Erreur lors du téléchargement: ' + (err.message || 'Erreur inconnue'));
@@ -386,15 +373,84 @@ const BackupHistoryList = () => {
   const restoreBackup = useCallback(async (backup) => {
     try {
       setActionLoading(backup.id);
-      await backupService.restoreBackup(backup.id);
+      
+      // Récupérer le token CSRF des cookies
+      const getCsrfToken = () => {
+        return document.cookie
+          .split('; ')
+          .find(row => row.startsWith('csrftoken='))
+          ?.split('=')[1] || '';
+      };
+      
+      const csrfToken = getCsrfToken();
+      if (!csrfToken) {
+        console.warn('Aucun token CSRF trouvé dans les cookies');
+      }
+      
+      // Appel direct avec fetch au lieu d'utiliser api.post
+      const response = await fetch('/api/backup/restore/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          backup_id: backup.id
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Erreur lors de la restauration (${response.status}):`, errorData);
+        throw new Error(errorData.message || errorData.error || `Erreur ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      console.log('Réponse de restauration:', responseData);
+      
       success(`Restauration de "${backup.backup_name}" lancée`);
+      
+      // Configurer un rafraîchissement automatique pour s'assurer que les statuts sont à jour
+      const checkInterval = setInterval(async () => {
+        console.log("🔄 Rafraîchissement automatique après restauration");
+        await loadBackups(currentPage);
+        
+        // Vérifier si la restauration est terminée via l'API
+        try {
+          const restoreId = responseData?.data?.restore?.id;
+          if (restoreId) {
+            const statusResponse = await backupService.getOperationStatus(restoreId, 'restore');
+            const restoreStatus = statusResponse?.restore_status?.status;
+            console.log(`🔍 Statut de la restauration ${restoreId}: ${restoreStatus}`);
+            
+            // Arrêter le rafraîchissement une fois la restauration terminée
+            if (restoreStatus === 'completed' || restoreStatus === 'failed') {
+              console.log("⏹️ Arrêt du rafraîchissement automatique - restauration terminée");
+              clearInterval(checkInterval);
+            }
+          }
+        } catch (statusErr) {
+          console.error("Erreur lors de la vérification du statut:", statusErr);
+        }
+      }, 5000); // Rafraîchir toutes les 5 secondes (moins agressif)
+      
+      // Arrêter le rafraîchissement après 2 minutes dans tous les cas
+      setTimeout(() => {
+        if (checkInterval) {
+          console.log("⏹️ Arrêt du rafraîchissement automatique après timeout");
+          clearInterval(checkInterval);
+          loadBackups(currentPage); // Rafraîchir une dernière fois
+        }
+      }, 120000); // 2 minutes au lieu de 1
+      
     } catch (err) {
       console.error('Erreur lors de la restauration:', err);
-      error('Erreur lors de la restauration');
+      error('Erreur lors de la restauration: ' + (err.message || 'Erreur inconnue'));
     } finally {
       setActionLoading(null);
     }
-  }, [setActionLoading, success, error]);
+  }, [setActionLoading, success, error, loadBackups, currentPage]);
 
   if (loading && backups.length === 0) {
     return (

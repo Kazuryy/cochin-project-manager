@@ -54,9 +54,9 @@ function FormField({
       {(error || helperText) && (
         <label className="label">
           {error ? (
-            <span className="label-text-alt text-error">{error}</span>
+            <span className="label-text-alt text-error break-words">{error}</span>
           ) : (
-            <span className="label-text-alt">{helperText}</span>
+            <span className="label-text-alt text-gray-500 break-words text-xs leading-relaxed">{helperText}</span>
           )}
         </label>
       )}

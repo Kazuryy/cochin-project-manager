@@ -11,6 +11,7 @@ import PropTypes from 'prop-types';
  * @param {boolean} closeOnClickOutside - Si le modal se ferme en cliquant à l'extérieur
  * @param {boolean} showCloseButton - Si le bouton de fermeture est affiché
  * @param {boolean} preventClosing - Empêche la fermeture du modal (pour les actions obligatoires)
+ * @param {boolean} preserveScrollPosition - Préserver la position de scroll (défaut: true)
  */
 function Modal({
   isOpen,
@@ -22,8 +23,10 @@ function Modal({
   preventClosing = false,
   size = 'md',
   className = '',
+  preserveScrollPosition = true,
 }) {
   const modalRef = useRef(null);
+  const savedScrollPosition = useRef(0);
   
   // Debug: Tracer les changements d'état du modal
   useEffect(() => {
@@ -50,6 +53,21 @@ function Modal({
     '7xl': 'max-w-7xl',
     full: 'max-w-full',
   };
+
+  // 🆕 Wrapper pour onClose qui restaure la position de scroll
+  const handleClose = useCallback(() => {
+    if (preserveScrollPosition && savedScrollPosition.current > 0) {
+      // Restaurer la position de scroll après fermeture du modal
+      setTimeout(() => {
+        window.scrollTo({
+          top: savedScrollPosition.current,
+          behavior: 'instant' // Pas d'animation pour que ce soit instantané
+        });
+        console.log('🔄 Position de scroll restaurée:', savedScrollPosition.current);
+      }, 0);
+    }
+    onClose();
+  }, [onClose, preserveScrollPosition]);
   
   // Gérer la fermeture du modal lors du clic à l'extérieur
   const handleClickOutside = useCallback((event) => {
@@ -67,11 +85,11 @@ function Modal({
       !modalRef.current.contains(event.target)
     ) {
       console.log('❌ Modal fermé par clic à l\'extérieur');
-      onClose();
+      handleClose();
     } else {
       console.log('✅ Clic à l\'extérieur ignoré');
     }
-  }, [closeOnClickOutside, preventClosing, onClose]);
+  }, [closeOnClickOutside, preventClosing, handleClose]);
   
   // Gérer la fermeture du modal avec la touche Escape
   const handleEscapeKey = useCallback((event) => {
@@ -82,17 +100,24 @@ function Modal({
     
     if (!preventClosing && event.key === 'Escape') {
       console.log('❌ Modal fermé par touche Escape');
-      onClose();
+      handleClose();
     } else {
       console.log('✅ Touche Escape ignorée');
     }
-  }, [preventClosing, onClose]);
+  }, [preventClosing, handleClose]);
   
-  // Ajouter/supprimer les écouteurs d'événements
+  // Ajouter/supprimer les écouteurs d'événements et gérer le scroll
   useEffect(() => {
     if (isOpen) {
+      // 🆕 Sauvegarder la position de scroll actuelle
+      if (preserveScrollPosition) {
+        savedScrollPosition.current = window.pageYOffset;
+        console.log('💾 Position de scroll sauvegardée:', savedScrollPosition.current);
+      }
+
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleEscapeKey);
+      
       // Sauvegarder le style overflow actuel
       const currentOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -111,7 +136,7 @@ function Modal({
       // S'assurer que overflow est restauré même si le composant est démonté
       document.body.style.overflow = '';
     };
-  }, [isOpen, handleClickOutside, handleEscapeKey]);
+  }, [isOpen, handleClickOutside, handleEscapeKey, preserveScrollPosition]);
   
   // Ne rien rendre si le modal est fermé
   if (!isOpen) return null;
@@ -140,7 +165,7 @@ function Modal({
               
               {showCloseButton && !preventClosing && (
                 <button 
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="absolute top-4 right-4 btn btn-sm btn-circle btn-ghost"
                   aria-label="Fermer"
                 >
@@ -169,6 +194,7 @@ Modal.propTypes = {
   preventClosing: PropTypes.bool,
   size: PropTypes.oneOf(['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', 'full']),
   className: PropTypes.string,
+  preserveScrollPosition: PropTypes.bool,
 };
 
 export default Modal;

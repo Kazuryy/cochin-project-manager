@@ -396,7 +396,22 @@ export function AuthProvider({ children }) {
     logout,
     getCsrfToken,
     initializeSession,
-  }), [user, isAuthenticated, isLoading, authError, login, logout, getCsrfToken, initializeSession]);
+    handleAuthError: (error) => {
+      // Vérifier si c'est une erreur d'authentification
+      if (error?.status === 401 || 
+          (error?.response?.status === 401) ||
+          error?.message?.includes('Session expirée')) {
+        console.warn('🔓 Erreur d\'authentification détectée:', error.message);
+        
+        // Si l'utilisateur est authentifié, forcer une vérification
+        if (isAuthenticated) {
+          checkAuthenticationStatus();
+        }
+        return true;
+      }
+      return false;
+    }
+  }), [user, isAuthenticated, isLoading, authError, login, logout, getCsrfToken, initializeSession, checkAuthenticationStatus]);
   
   // Configurer le service API avec le contexte d'authentification
   useEffect(() => {

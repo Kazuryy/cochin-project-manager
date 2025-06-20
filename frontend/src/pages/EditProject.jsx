@@ -19,7 +19,6 @@ function EditProjectContent() {
       numero_projet: '',
       contact_principal: '',
       type_projet: '',
-      equipe: '',
       description: '',
       statut: 'Non commencé',
       conditionalFields: {}
@@ -39,8 +38,6 @@ function EditProjectContent() {
 
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
-  const [detailsTable, setDetailsTable] = useState(null);
-  const [projectDetailsData, setProjectDetailsData] = useState(null);
 
   // États pour la modal d'ajout de contact
   const [showAddContactModal, setShowAddContactModal] = useState(false);
@@ -253,7 +250,6 @@ function EditProjectContent() {
       }
 
       console.log('✅ Table Details trouvée:', foundDetailsTable.name);
-      setDetailsTable(foundDetailsTable);
 
       // Charger les enregistrements de la table Details
       const detailsRecords = await fetchRecords(foundDetailsTable.id);
@@ -299,7 +295,6 @@ function EditProjectContent() {
 
       if (projectRecord) {
         console.log('✅ Enregistrement Details trouvé:', projectRecord);
-        setProjectDetailsData(projectRecord);
 
         // Charger les champs conditionnels pour ce type
         await loadConditionalFields(foundDetailsTable, projectRecord);
@@ -492,28 +487,29 @@ function EditProjectContent() {
       
       // Convertir le contact principal si les contacts sont chargés
       if (contacts.length > 0 && formState.data.contact_principal) {
-        // Vérifier si c'est un nom complet qui doit être converti en ID ou format attendu
-        const currentContact = formState.data.contact_principal;
-        
-        // Chercher le contact correspondant dans la liste
-        const matchingContact = contacts.find(contact => {
-          const contactName = getFieldValue(contact, 'nom', 'name', 'prenom', 'label') || `Contact #${contact.id}`;
-          const contactPrenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname');
-          const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+        // Vérifier si le contact est déjà un ID numérique
+        if (isNaN(formState.data.contact_principal)) {
+          // Si ce n'est pas un ID numérique, c'est probablement un nom complet qui doit être converti
+          const currentContact = formState.data.contact_principal;
           
-          return fullName === currentContact || contactName === currentContact || contact.id.toString() === currentContact;
-        });
-        
-        if (matchingContact) {
-          // Utiliser le format nom complet pour cohérence avec CreateProject
-          const contactName = getFieldValue(matchingContact, 'nom', 'name', 'prenom', 'label');
-          const contactPrenom = getFieldValue(matchingContact, 'prenom', 'first_name', 'firstname');
-          const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+          // Chercher le contact correspondant dans la liste
+          const matchingContact = contacts.find(contact => {
+            const contactName = getFieldValue(contact, 'nom', 'name', 'prenom', 'label') || `Contact #${contact.id}`;
+            const contactPrenom = getFieldValue(contact, 'prenom', 'first_name', 'firstname');
+            const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
+            
+            return fullName === currentContact || contactName === currentContact;
+          });
           
-          if (fullName !== currentContact) {
-            updatedFormData.contact_principal = fullName;
-            hasChanges = true;
-            console.log('🔄 Contact principal converti:', currentContact, '→', fullName);
+          if (matchingContact) {
+            // Utiliser l'ID du contact pour cohérence avec CreateProject
+            const contactId = String(matchingContact.id);
+            
+            if (contactId !== currentContact) {
+              updatedFormData.contact_principal = contactId;
+              hasChanges = true;
+              console.log('🔄 Contact principal converti:', currentContact, '→', contactId);
+            }
           }
         }
       }
@@ -540,8 +536,6 @@ function EditProjectContent() {
         return !value ? 'Le contact principal est requis' : '';
       case 'type_projet':
         return !value ? 'Le type de projet est requis' : '';
-      case 'equipe':
-        return !value?.trim() ? 'L\'équipe est requise' : '';
       case 'description':
         return !value?.trim() ? 'La description est requise' : '';
       default:
@@ -619,7 +613,6 @@ function EditProjectContent() {
         numero_projet: formState.data.numero_projet,
         contact_principal: formState.data.contact_principal,
         type_projet: formState.data.type_projet,
-        equipe: formState.data.equipe,
         description: formState.data.description,
         statut: formState.data.statut
       };
@@ -715,13 +708,12 @@ function EditProjectContent() {
         const updatedContacts = await fetchRecords(contactTableId);
         setContacts(updatedContacts || []);
 
-        // Sélectionner automatiquement le nouveau contact
-        const newContactValue = `${newContactData.prenom} ${newContactData.nom}`.trim();
+        // Sélectionner automatiquement le nouveau contact (stocker l'ID)
         setFormState(prev => ({
           ...prev,
           data: {
             ...prev.data,
-            contact_principal: newContactValue
+            contact_principal: result.id
           }
         }));
 
@@ -734,7 +726,7 @@ function EditProjectContent() {
           equipe: ''
         });
 
-        showToast(`Contact "${newContactValue}" ajouté avec succès`, 'success');
+        showToast(`Contact "${newContactData.prenom} ${newContactData.nom}" ajouté avec succès`, 'success');
       }
     } catch (err) {
       console.error('Erreur lors de l\'ajout du contact:', err);
@@ -923,7 +915,7 @@ function EditProjectContent() {
             return (
               <div key={field.name} className="form-control w-full mb-4">
                 <label className="label" htmlFor={fieldId}>
-                  <span className="label-text font-medium">
+                  <span className="label-text font-medium pb-1">
                     {field.label} 
                     {field.required && <span className="text-error">*</span>}
                   </span>
@@ -1087,7 +1079,7 @@ function EditProjectContent() {
                 {/* Nom du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="nom_projet">
-                    <span className="label-text font-medium">Nom du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Nom du projet <span className="text-error">*</span></span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/60">
@@ -1102,7 +1094,7 @@ function EditProjectContent() {
                       value={formState.data.nom_projet}
                       onChange={handleChange}
                       placeholder="Saisir le nom du projet"
-                      className={`input input-bordered w-full pl-10 ${formState.errors.nom_projet ? 'input-error' : ''}`}
+                      className={`input input-bordered w-full ${formState.errors.nom_projet ? 'input-error' : ''}`}
                       required
                     />
                   </div>
@@ -1116,7 +1108,7 @@ function EditProjectContent() {
                 {/* Numéro du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="numero_projet">
-                    <span className="label-text font-medium">Numéro du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Numéro du projet <span className="text-error">*</span></span>
                   </label>
                   <input
                     type="text"
@@ -1147,7 +1139,7 @@ function EditProjectContent() {
                 {/* Contact principal */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="contact_principal">
-                    <span className="label-text font-medium">Contact principal <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Contact principal <span className="text-error">*</span></span>
                   </label>
                   
                   <div className="join w-full">
@@ -1167,7 +1159,7 @@ function EditProjectContent() {
                         const fullName = contactPrenom ? `${contactPrenom} ${contactName}` : contactName;
                         
                         return (
-                          <option key={contact.id} value={fullName}>
+                          <option key={contact.id} value={contact.id}>
                             {fullName}
                           </option>
                         );
@@ -1198,26 +1190,33 @@ function EditProjectContent() {
                   )}
                 </div>
 
-                {/* Équipe */}
+                {/* Note sur l'équipe */}
                 <div className="form-control w-full mb-4">
-                  <label className="label" htmlFor="equipe">
-                    <span className="label-text font-medium">Équipe <span className="text-error">*</span></span>
-                  </label>
-                  <input
-                    type="text"
-                    id="equipe"
-                    name="equipe"
-                    value={formState.data.equipe}
-                    onChange={handleChange}
-                    placeholder="Ex: Équipe GenomiC"
-                    className={`input input-bordered w-full ${formState.errors.equipe ? 'input-error' : ''}`}
-                    required
-                  />
-                  {formState.errors.equipe && (
-                    <label className="label">
-                      <span className="label-text-alt text-error">{formState.errors.equipe}</span>
-                    </label>
-                  )}
+                  <div className="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div>
+                      <p className="font-medium">Équipe du projet</p>
+                      <p className="text-sm">L'équipe sera automatiquement associée à celle du contact principal.</p>
+                      {formState.data.contact_principal && contacts.length > 0 && (
+                        <div className="mt-1">
+                          {(() => {
+                            const selectedContact = contacts.find(c => c.id.toString() === formState.data.contact_principal.toString());
+                            if (selectedContact) {
+                              const contactEquipe = getFieldValue(selectedContact, 'equipe', 'team', 'groupe', 'group');
+                              if (contactEquipe && contactEquipe.trim() !== '') {
+                                return <span className="badge badge-primary">{contactEquipe}</span>;
+                              } else {
+                                return <span className="text-xs text-warning">Ce contact n'a pas d'équipe définie</span>;
+                              }
+                            }
+                            return null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1231,17 +1230,19 @@ function EditProjectContent() {
 
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="description">
-                    <span className="label-text font-medium">Description du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Description du projet <span className="text-error">*</span></span>
                   </label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    value={formState.data.description}
-                    onChange={handleChange}
-                    placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
-                    className={`textarea textarea-bordered h-32 ${formState.errors.description ? 'textarea-error' : ''}`}
-                    required
-                  ></textarea>
+                  <div className="w-full">
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formState.data.description}
+                      onChange={handleChange}
+                      placeholder="Ex : Étude sur la mutation X dans la cohorte Y, objectifs, contexte, enjeux..."
+                      className={`textarea textarea-bordered h-32 w-full ${formState.errors.description ? 'textarea-error' : ''}`}
+                      required
+                    ></textarea>
+                  </div>
                   {formState.errors.description && (
                     <label className="label">
                       <span className="label-text-alt text-error">{formState.errors.description}</span>
@@ -1261,7 +1262,7 @@ function EditProjectContent() {
                 {/* Type de projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="type_projet">
-                    <span className="label-text font-medium">Type de projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Type de projet <span className="text-error">*</span></span>
                   </label>
                   <SelectWithAddOption
                     id="type_projet"
@@ -1295,7 +1296,7 @@ function EditProjectContent() {
                 {/* Statut du projet */}
                 <div className="form-control w-full mb-4">
                   <label className="label" htmlFor="statut">
-                    <span className="label-text font-medium">Statut du projet <span className="text-error">*</span></span>
+                    <span className="label-text font-medium pb-1">Statut du projet <span className="text-error">*</span></span>
                   </label>
                   <select
                     id="statut"

@@ -23,10 +23,31 @@ export const useToast = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
 
+  // Fonctions raccourcies pour faciliter l'utilisation
+  const success = useCallback((message, duration = 4000) => {
+    return addToast(message, 'success', duration);
+  }, [addToast]);
+
+  const error = useCallback((message, duration = 5000) => {
+    return addToast(message, 'error', duration);
+  }, [addToast]);
+
+  const warning = useCallback((message, duration = 4000) => {
+    return addToast(message, 'warning', duration);
+  }, [addToast]);
+
+  const info = useCallback((message, duration = 3000) => {
+    return addToast(message, 'info', duration);
+  }, [addToast]);
+
   return {
     toasts,
     addToast,
-    removeToast
+    removeToast,
+    success,
+    error,
+    warning,
+    info
   };
 };
 
@@ -77,21 +98,21 @@ const Toast = ({ message, type = 'info', duration = 3000, onClose, autoClose = t
 
   // Mémorisation de la classe CSS pour optimiser les re-renders
   const alertClass = useMemo(() => {
-    const baseClasses = 'alert fixed top-4 right-4 z-50 w-auto max-w-md shadow-lg transition-all duration-300';
+    const baseClasses = 'alert fixed top-4 right-4 z-50 w-auto max-w-2xl shadow-2xl transition-all duration-300';
     let typeClass = '';
     
     switch (type) {
       case 'success':
-        typeClass = 'alert-success';
+        typeClass = 'alert-success text-lg font-bold border-4 border-green-400 shadow-green-500/50';
         break;
       case 'error':
-        typeClass = 'alert-error';
+        typeClass = 'alert-error text-lg font-bold border-4 border-red-400 shadow-red-500/50';
         break;
       case 'warning':
-        typeClass = 'alert-warning';
+        typeClass = 'alert-warning text-lg font-bold border-4 border-yellow-400 shadow-yellow-500/50';
         break;
       default:
-        typeClass = 'alert-info';
+        typeClass = 'alert-info text-base font-medium';
     }
 
     // Animation optimisée : utilisation d'états séparés pour un meilleur contrôle
@@ -112,7 +133,11 @@ const Toast = ({ message, type = 'info', duration = 3000, onClose, autoClose = t
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           {icon}
-          <span>{message}</span>
+          <div className="flex-1">
+            <div className="whitespace-pre-line leading-relaxed">
+              {message}
+            </div>
+          </div>
         </div>
         <button
           onClick={handleClose}

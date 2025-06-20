@@ -6,6 +6,44 @@
 const API_BASE_URL = ''; // Utiliser le proxy Vite configuré
 
 /**
+ * Vérifie si une réponse contient une erreur d'authentification
+ * 
+ * @param {Response} response - Réponse HTTP à vérifier
+ * @returns {Promise<boolean>} true si c'est une erreur d'authentification
+ */
+const checkAuthenticationError = async (response) => {
+  try {
+    // Essayer de lire le corps de la réponse
+    const data = await response.json().catch(() => ({}));
+    console.log("Vérification d'authentification:", response.status, data);
+    
+    // Ne pas considérer automatiquement toutes les erreurs 403 comme des erreurs d'authentification
+    // Certaines peuvent être des erreurs de permission normales
+    if (response.status === 403 && !data?.error?.includes('session')) {
+      return false;
+    }
+    
+    // Vérifier les indicateurs spécifiques d'erreur d'authentification
+    const isAuthError = 
+      (response.status === 401) || // 401 est toujours une erreur d'authentification
+      data?.error === 'authentication_required' ||
+      data?.error === 'invalid_session' ||
+      data?.error === 'not_authenticated' ||
+      (data?.detail && typeof data.detail === 'string' && (
+        data.detail.toLowerCase().includes('authentication') ||
+        data.detail.toLowerCase().includes('login required') ||
+        data.detail.toLowerCase().includes('token expired')
+      ));
+    
+    return isAuthError;
+  } catch (e) {
+    // En cas d'erreur, supposer que ce n'est pas une erreur d'authentification
+    console.error('Erreur lors de la vérification d\'authentification:', e);
+    return false;
+  }
+};
+
+/**
  * Récupère le token CSRF des cookies
  */
 const getCsrfToken = () => {
@@ -206,21 +244,31 @@ const getCsrfToken = () => {
       });
       
       await handleError(response);
-      return response.json();
+      return await response.json();
     },
     
     /**
      * Effectue une requête POST avec CSRF token
+     * 
+     * @param {string} url - URL de la requête
+     * @param {Object|FormData} data - Données à envoyer
+     * @param {Object} options - Options de la requête
+     * @returns {Promise<Object>} Réponse de l'API
+     * @throws {Error} Erreur en cas d'échec de la requête
      */
     post: async (url, data, options = {}) => {
       const csrfToken = getCsrfToken();
+      const fullUrl = `${API_BASE_URL}${url}`;
+      
+      console.log(`🔵 [API_POST] Début de la requête POST vers ${fullUrl}`);
+      console.log('🔵 [API_POST] Token CSRF:', csrfToken ? 'Disponible' : 'Non disponible');
       
       // Détecter si les données sont FormData pour l'upload de fichiers
       const isFormData = data instanceof FormData;
       
       const fetchOptions = {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'include', // Toujours inclure les cookies pour l'authentification
         ...options,
       };
       
@@ -231,6 +279,7 @@ const getCsrfToken = () => {
           ...(options.headers || {}),
         };
         fetchOptions.body = data;
+        console.log('🔵 [API_POST] Envoi de FormData (fichiers)');
       } else {
         // Pour JSON : comportement normal
         fetchOptions.headers = {
@@ -239,12 +288,104 @@ const getCsrfToken = () => {
           ...(options.headers || {}),
         };
         fetchOptions.body = JSON.stringify(data);
+        console.log('🔵 [API_POST] Données JSON à envoyer:', data);
       }
       
-      const response = await fetch(`${API_BASE_URL}${url}`, fetchOptions);
+      console.log('🔵 [API_POST] Options de la requête:', {
+        method: fetchOptions.method,
+        credentials: fetchOptions.credentials,
+        headers: fetchOptions.headers
+      });
       
-      await handleError(response);
-      return response.json();
+      try {
+        console.log(`🔵 [API_POST] Envoi de la requête à ${fullUrl}...`);
+        const startTime = Date.now();
+        
+        const response = await fetch(fullUrl, fetchOptions);
+        const duration = Date.now() - startTime;
+        
+        console.log(`🔵 [API_POST] Réponse reçue en ${duration}ms, statut:`, response.status, response.statusText);
+        
+        // Vérifier si la session est active seulement pour les erreurs 401
+        if (response.status === 401) {
+          console.warn(`🔴 [API_POST] Problème d'authentification détecté: ${response.status}`);
+          
+          // Récupérer le contexte d'authentification s'il existe
+          try {
+            const authContext = getAuthContext ? getAuthContext() : null;
+            if (authContext?.handleAuthError) {
+              // Laisser le contexte d'authentification gérer l'erreur
+              const error = new Error('Session expirée ou non authentifiée');
+              error.status = response.status;
+              authContext.handleAuthError(error);
+            } else {
+              // Fallback si pas de contexte d'authentification
+              handleSessionExpiration();
+            }
+          } catch (err) {
+            console.error('🔴 [API_POST] Erreur lors de la gestion de l\'authentification:', err);
+            handleSessionExpiration();
+          }
+          
+          throw new Error('Session expirée ou non authentifiée');
+        } else if (response.status === 403) {
+          // Pour les 403, vérifier si c'est une erreur d'authentification ou juste une permission refusée
+          console.warn(`🔴 [API_POST] Erreur 403 détectée`);
+          
+          // Essayer d'extraire les détails de l'erreur
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`🔴 [API_POST] Détails de l'erreur 403:`, errorData);
+          
+          const authError = await checkAuthenticationError(response.clone());
+          if (authError) {
+            console.warn('🔴 [API_POST] Problème de session détecté dans une erreur 403');
+            handleSessionExpiration();
+            throw new Error('Session expirée ou non authentifiée');
+          }
+          
+          // Sinon c'est une erreur de permission normale
+          const error = new Error(errorData.message || 'Droits insuffisants pour effectuer cette action');
+          error.status = response.status;
+          error.response = { status: response.status, data: errorData };
+          throw error;
+        }
+        
+        // Vérifier si la requête a réussi
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`🔴 [API_POST] Erreur API (${response.status}):`, errorData);
+          
+          // Créer une erreur avec les détails de la réponse
+          const errorMessage = errorData.message || errorData.error || errorData.detail || `Erreur HTTP ${response.status}`;
+          const error = new Error(errorMessage);
+          error.status = response.status;
+          error.response = { status: response.status, data: errorData };
+          throw error;
+        }
+        
+        // Traiter la réponse
+        console.log(`🔵 [API_POST] Analyse de la réponse JSON...`);
+        const responseData = await response.json();
+        console.log(`🟢 [API_POST] Réponse traitée avec succès:`, responseData);
+        
+        return responseData;
+      } catch (error) {
+        // Ne pas propager les erreurs de session qui ont déjà été traitées
+        if (error.message === 'Session expirée ou non authentifiée') {
+          console.error('🔴 [API_POST] Erreur de session:', error.message);
+          throw error;
+        }
+        
+        // Gestion spécifique des erreurs réseau
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+          console.error('🔴 [API_POST] Erreur réseau: Impossible de contacter le serveur');
+          throw new Error('Impossible de contacter le serveur. Vérifiez votre connexion internet.');
+        }
+        
+        // Propager l'erreur
+        console.error('🔴 [API_POST] Erreur lors de la requête:', error);
+        throw error;
+      }
     },
     
     /**
@@ -296,26 +437,58 @@ const getCsrfToken = () => {
      */
     delete: async (url, options = {}) => {
       const csrfToken = getCsrfToken();
+      const fullUrl = `${API_BASE_URL}${url}`;
       
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-          ...(options.headers || {}),
-        },
-        credentials: 'include',
-        ...options,
-      });
+      console.log(`🗑️ API DELETE - URL complète: ${fullUrl}`);
+      console.log('🗑️ API DELETE - Token CSRF:', csrfToken ? 'Disponible' : 'Non disponible');
+      console.log('🗑️ API DELETE - Options de la requête:', options);
       
-      await handleError(response);
-      
-      // DELETE peut retourner un corps vide
-      if (response.status === 204) {
-        return null;
+      try {
+        const response = await fetch(fullUrl, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+            ...(options.headers || {}),
+          },
+          credentials: 'include',
+          ...options,
+        });
+        
+        console.log(`🗑️ API DELETE - Statut de la réponse:`, response.status, response.statusText);
+        
+        // Gestion des erreurs HTTP
+        if (!response.ok) {
+          console.error(`🗑️ API DELETE - Erreur HTTP: ${response.status}`);
+          
+          // Essayer d'extraire les détails de l'erreur
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`🗑️ API DELETE - Détails de l'erreur:`, errorData);
+          
+          const error = new Error(errorData.message || errorData.detail || `Erreur HTTP ${response.status}`);
+          error.status = response.status;
+          error.response = { status: response.status, data: errorData };
+          throw error;
+        }
+        
+        // DELETE peut retourner un corps vide
+        if (response.status === 204) {
+          console.log(`🗑️ API DELETE - Succès sans contenu (204)`);
+          return { success: true };
+        }
+        
+        // Essayer de parser la réponse JSON si elle existe
+        const result = await response.json().catch(() => {
+          console.log(`🗑️ API DELETE - Pas de contenu JSON dans la réponse`);
+          return { success: true };
+        });
+        
+        console.log(`🗑️ API DELETE - Succès avec résultat:`, result);
+        return result;
+      } catch (error) {
+        console.error(`🗑️ API DELETE - Erreur:`, error);
+        throw error;
       }
-      
-      return response.json().catch(() => null);
     },
   };
   

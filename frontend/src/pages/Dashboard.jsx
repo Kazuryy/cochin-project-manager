@@ -76,7 +76,7 @@ function DashboardContent() {
     { id: 'project_type', label: 'Type', description: 'Type/catégorie du projet' },
     { id: 'project_subtype', label: 'Sous-type', description: 'Sous-type du projet' },
     { id: 'contact_principal', label: 'Contact principal', description: 'Responsable du projet' },
-    { id: 'contact_email', label: 'Email contact', description: 'Email du contact' },
+    { id: 'email', label: 'Email contact', description: 'Email du contact' },
     { id: 'equipe', label: 'Équipe', description: 'Équipe assignée' },
     { id: 'date_creation', label: 'Date création', description: 'Date de création du projet' },
     { id: 'statut', label: 'Statut', description: 'Statut actuel du projet' },
@@ -451,7 +451,7 @@ function DashboardContent() {
     loadPresetsFromStorage
   } = useAdvancedFilters(
     legacyFilteredProjects, 
-    ['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'statut', 'progress'],
+    ['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'email', 'statut', 'progress'],
     getFieldValue  // Passer notre fonction personnalisée
   );
 
@@ -473,41 +473,65 @@ function DashboardContent() {
         const progressA = projectProgress[a.id];
         const progressB = projectProgress[b.id];
         
-        // Si un projet n'a pas de données de progression, le mettre à la fin
-        if (!progressA && !progressB) return 0;
-        if (!progressA) return 1;
-        if (!progressB) return -1;
+        // Vérifier si les projets ont des devis actifs
+        const hasActiveDevisA = progressA && progressA.activeDevis > 0;
+        const hasActiveDevisB = progressB && progressB.activeDevis > 0;
+
+        // 1. PRIORITÉ 1 : Les devis finis (progress = 100) avec devis actifs en premier
+        const isFinishedA = hasActiveDevisA && progressA.progress === 100;
+        const isFinishedB = hasActiveDevisB && progressB.progress === 100;
         
-        // Prioriser les projets avec des devis actifs
-        const hasActiveA = progressA.activeDevis > 0;
-        const hasActiveB = progressB.activeDevis > 0;
+        if (isFinishedA && !isFinishedB) return -1;
+        if (!isFinishedA && isFinishedB) return 1;
+
+        // 2. PRIORITÉ 2 : Les devis en cours (progress entre 50 et 99) avec devis actifs ensuite
+        const isInProgressA = hasActiveDevisA && progressA.progress >= 50 && progressA.progress < 100;
+        const isInProgressB = hasActiveDevisB && progressB.progress >= 50 && progressB.progress < 100;
         
-        // Si seul A a des devis actifs, il passe en premier
-        if (hasActiveA && !hasActiveB) return -1;
-        if (!hasActiveA && hasActiveB) return 1;
+        if (isInProgressA && !isInProgressB) return -1;
+        if (!isInProgressA && isInProgressB) return 1;
+
+        // 3. PRIORITÉ 3 : Trier par statut dans l'ordre souhaité
+        const statutA = getFieldValue(a, 'statut') || '';
+        const statutB = getFieldValue(b, 'statut') || '';
         
-        // Si aucun n'a de devis actifs, trier par nom
-        if (!hasActiveA && !hasActiveB) {
-          const nameA = getFieldValue(a, 'nom_projet') || '';
-          const nameB = getFieldValue(b, 'nom_projet') || '';
-          return nameA.localeCompare(nameB);
+        // Ordre de priorité des statuts : en cours, en attente, pas commencé, suspendu, terminé
+        const statutOrder = {
+          'en cours': 1,
+          'en attente': 2,
+          'pas commencé': 3,
+          'non commencé': 3,
+          'suspendu': 4,
+          'terminé': 5,
+          'termine': 5
+        };
+        
+        const priorityA = statutOrder[statutA.toLowerCase()] || 99;
+        const priorityB = statutOrder[statutB.toLowerCase()] || 99;
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
         }
         
-        // Si les deux ont des devis actifs, trier par proximité d'échéance
-        const deadlineA = progressA.nearestDeadline;
-        const deadlineB = progressB.nearestDeadline;
-        
-        // Si seul A a une échéance, il passe en premier
-        if (deadlineA && !deadlineB) return -1;
-        if (!deadlineA && deadlineB) return 1;
-        
-        // Si aucun n'a d'échéance, trier par progression (plus faible en premier pour urgence)
-        if (!deadlineA && !deadlineB) {
-          return progressA.progress - progressB.progress;
+        // Si même statut, trier par proximité d'échéance (seulement si les projets ont des devis)
+        if (hasActiveDevisA && hasActiveDevisB) {
+          const deadlineA = progressA.nearestDeadline;
+          const deadlineB = progressB.nearestDeadline;
+          
+          // Si seul A a une échéance, il passe en premier
+          if (deadlineA && !deadlineB) return -1;
+          if (!deadlineA && deadlineB) return 1;
+          
+          // Si les deux ont des échéances, trier par proximité (le plus proche en premier)
+          if (deadlineA && deadlineB) {
+            return deadlineA - deadlineB;
+          }
         }
         
-        // Si les deux ont des échéances, trier par proximité (le plus proche en premier)
-        return deadlineA - deadlineB;
+        // Enfin, trier par nom pour éviter les incohérences
+        const nameA = getFieldValue(a, 'nom_projet') || '';
+        const nameB = getFieldValue(b, 'nom_projet') || '';
+        return nameA.localeCompare(nameB);
       });
     }
     
@@ -517,9 +541,16 @@ function DashboardContent() {
   // Assurer que les colonnes visibles sont initialisées par défaut
   useEffect(() => {
     if (visibleColumns.length === 0) {
-      setVisibleColumns(['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'statut', 'progress']);
+      setVisibleColumns(['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'email', 'statut', 'progress']);
     }
   }, [visibleColumns.length, setVisibleColumns]);
+
+  // Forcer l'ajout de l'email aux colonnes visibles si elle n'y est pas
+  useEffect(() => {
+    if (visibleColumns.length > 0 && !visibleColumns.includes('email')) {
+      setVisibleColumns(prev => [...prev, 'email']);
+    }
+  }, [visibleColumns, setVisibleColumns]);
 
   // Fonction pour calculer la progression d'un projet basée sur ses devis (inspirée de DevisManager)
   const calculateProjectProgress = useCallback(async (projectId) => {
@@ -865,7 +896,7 @@ function DashboardContent() {
     clearSorting();
     
     // Réinitialiser les colonnes visibles à leur état par défaut
-    setVisibleColumns(['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'statut', 'progress']);
+          setVisibleColumns(['project_name', 'project_description', 'project_number', 'project_type', 'project_subtype', 'contact_principal', 'email', 'statut', 'progress']);
     
   }, [clearFilters, clearSorting, setVisibleColumns, trackActivity]);
 
@@ -1591,7 +1622,7 @@ function DashboardContent() {
                                   <FiUser className="text-sm" />
                                   <span className="font-medium">{contactInfo.nom}</span>
                                 </div>
-                                  {contactInfo.email && visibleColumns.includes('contact_email') && (
+                                  {contactInfo.email && visibleColumns.includes('email') && (
                                   <div className="text-sm opacity-70">{contactInfo.email}</div>
                                 )}
                               </div>

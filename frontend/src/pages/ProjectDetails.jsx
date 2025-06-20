@@ -92,10 +92,8 @@ function ProjectDetailsContent() {
     try {
       // Extraire le type de projet
       const projectType = getFieldValue(project, 'type_projet', 'type', 'projet_type');
-      console.log('🎯 Type de projet détecté:', projectType);
 
       if (!projectType) {
-        console.log('⚠️ Aucun type de projet défini');
         return;
       }
 
@@ -107,22 +105,16 @@ function ProjectDetailsContent() {
       );
 
       if (!foundDetailsTable) {
-        console.log(`⚠️ Table ${detailsTableName} non trouvée`);
         return;
       }
 
-      console.log('✅ Table Details trouvée:', foundDetailsTable.name);
       setDetailsTable(foundDetailsTable);
 
       // Charger tous les enregistrements de la table Details
       const detailsRecords = await fetchRecords(foundDetailsTable.id);
-      console.log('📊 Enregistrements Details:', detailsRecords);
 
       // Trouver l'enregistrement qui correspond à notre projet
       const projectRecord = detailsRecords.find(record => {
-        console.log(`🔍 Vérification enregistrement Details:`, record);
-        console.log(`🎯 ProjectId recherché: ${projectId} (type: ${typeof projectId})`);
-        console.log(`🎯 Nom du projet: "${getFieldValue(project, 'nom_projet', 'nom', 'name')}"`);
         
         // Vérifier les propriétés directes avec comparaison de type flexible
         const directMatches = [
@@ -140,11 +132,8 @@ function ProjectDetailsContent() {
             const valueAsString = String(match.value);
             const projectIdAsString = String(projectId);
             
-            console.log(`🔍 Test ${match.key}: ${match.value} (${typeof match.value}) vs ${projectId} (${typeof projectId})`);
-            console.log(`🔍 Comparaison string: "${valueAsString}" === "${projectIdAsString}" → ${valueAsString === projectIdAsString}`);
             
             if (valueAsString === projectIdAsString) {
-              console.log(`✅ Correspondance trouvée via ${match.key}!`);
               return true;
             }
             
@@ -155,14 +144,11 @@ function ProjectDetailsContent() {
               
               // D'abord essayer comparaison exacte avec le nom
               if (projectName && match.value === projectName) {
-                console.log(`✅ Correspondance trouvée via nom de projet exact dans ${match.key}!`);
                 return true;
               }
               
               // Puis essayer avec la description (cas actuel)
               if (projectDescription && match.value === projectDescription) {
-                console.log(`✅ Correspondance trouvée via description de projet exacte dans ${match.key}!`);
-                console.log(`   Description: "${projectDescription}"`);
                 return true;
               }
               
@@ -174,9 +160,6 @@ function ProjectDetailsContent() {
                 // Si l'un contient l'autre (au moins 10 caractères pour la description)
                 if (descLower.length >= 10 && matchValueLower.length >= 10) {
                   if (descLower.includes(matchValueLower) || matchValueLower.includes(descLower)) {
-                    console.log(`✅ Correspondance partielle trouvée via description de projet dans ${match.key}!`);
-                    console.log(`   Description actuelle: "${projectDescription}"`);
-                    console.log(`   Description stockée: "${match.value}"`);
                     return true;
                   }
                 }
@@ -190,9 +173,6 @@ function ProjectDetailsContent() {
                 // Si l'un contient l'autre (au moins 3 caractères pour éviter les faux positifs)
                 if (projectNameLower.length >= 3 && matchValueLower.length >= 3) {
                   if (projectNameLower.includes(matchValueLower) || matchValueLower.includes(projectNameLower)) {
-                    console.log(`✅ Correspondance partielle trouvée via nom de projet dans ${match.key}!`);
-                    console.log(`   Nom actuel: "${projectName}"`);
-                    console.log(`   Valeur stockée: "${match.value}"`);
                     return true;
                   }
                 }
@@ -203,7 +183,6 @@ function ProjectDetailsContent() {
         
         // Chercher dans les propriétés values si elles existent encore
         if (record.values && Array.isArray(record.values)) {
-          console.log(`🔍 Vérification dans values:`, record.values);
           
           const found = record.values.some(value => {
             const hasProjectSlug = value.field_slug && 
@@ -213,11 +192,8 @@ function ProjectDetailsContent() {
               const valueAsString = String(value.value);
               const projectIdAsString = String(projectId);
               
-              console.log(`🔍 Test values.${value.field_slug}: ${value.value} (${typeof value.value}) vs ${projectId} (${typeof projectId})`);
-              console.log(`🔍 Comparaison string: "${valueAsString}" === "${projectIdAsString}" → ${valueAsString === projectIdAsString}`);
               
               if (valueAsString === projectIdAsString) {
-                console.log(`✅ Correspondance trouvée via values.${value.field_slug}!`);
                 return true;
               }
               
@@ -227,14 +203,11 @@ function ProjectDetailsContent() {
               
               // D'abord essayer comparaison exacte avec le nom
               if (projectName && value.value === projectName) {
-                console.log(`✅ Correspondance trouvée via nom de projet exact dans values.${value.field_slug}!`);
                 return true;
               }
               
               // Puis essayer avec la description (cas actuel)
               if (projectDescription && value.value === projectDescription) {
-                console.log(`✅ Correspondance trouvée via description de projet exacte dans values.${value.field_slug}!`);
-                console.log(`   Description: "${projectDescription}"`);
                 return true;
               }
               
@@ -246,9 +219,6 @@ function ProjectDetailsContent() {
                 // Si l'un contient l'autre (au moins 10 caractères pour la description)
                 if (descLower.length >= 10 && valueValueLower.length >= 10) {
                   if (descLower.includes(valueValueLower) || valueValueLower.includes(descLower)) {
-                    console.log(`✅ Correspondance partielle trouvée via description de projet dans values.${value.field_slug}!`);
-                    console.log(`   Description actuelle: "${projectDescription}"`);
-                    console.log(`   Description stockée: "${value.value}"`);
                     return true;
                   }
                 }
@@ -262,9 +232,6 @@ function ProjectDetailsContent() {
                 // Si l'un contient l'autre (au moins 3 caractères pour éviter les faux positifs)
                 if (projectNameLower.length >= 3 && valueValueLower.length >= 3) {
                   if (projectNameLower.includes(valueValueLower) || valueValueLower.includes(projectNameLower)) {
-                    console.log(`✅ Correspondance partielle trouvée via nom de projet dans values.${value.field_slug}!`);
-                    console.log(`   Nom actuel: "${projectName}"`);
-                    console.log(`   Valeur stockée: "${value.value}"`);
                     return true;
                   }
                 }
@@ -277,15 +244,11 @@ function ProjectDetailsContent() {
           if (found) return true;
         }
         
-        console.log(`❌ Aucune correspondance trouvée pour cet enregistrement`);
         return false;
       });
 
       if (projectRecord) {
-        console.log('✅ Enregistrement Details trouvé:', projectRecord);
         setProjectDetailsData(projectRecord);
-      } else {
-        console.log('⚠️ Aucun enregistrement Details trouvé pour ce projet');
       }
 
     } catch (err) {
@@ -485,7 +448,6 @@ function ProjectDetailsContent() {
                                         field.related_table.slug === 'projets';
                 
                 if (isProjectTable) {
-                  console.log(`🚫 Champ FK exclu de l'affichage (pointe vers Projet): ${field.name} (${field.slug})`);
                   return false;
                 }
               }
@@ -493,7 +455,6 @@ function ProjectDetailsContent() {
               // Exclure aussi par le nom/slug si c'est un champ de projet
               if (field.slug.includes('projet') || field.slug.includes('project') || 
                   field.name.toLowerCase().includes('projet') || field.name.toLowerCase().includes('project')) {
-                console.log(`🚫 Champ projet exclu de l'affichage par nom/slug: ${field.name} (${field.slug})`);
                 return false;
               }
               

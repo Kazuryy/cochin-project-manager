@@ -12,12 +12,16 @@ import TestCreateType from './pages/TestCreateType';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import PasswordChangeCheck from './components/auth/PasswordChangeCheck';
 import { AuthProvider } from './hooks/AuthProvider';
+import { useSmartScrollManagement } from './hooks/useScrollReset';
 import './App.css';
 import DashboardAdmin from './pages/DashboardAdmin';
 import Footer from './components/global/Footer';
 
 // Contenu principal de l'application
 function MainContent() {
+  // Gestion intelligente du scroll lors de la navigation
+  useSmartScrollManagement();
+
   return (
     <div className="flex flex-col min-h-screen bg-base-100">
       <Navbar />

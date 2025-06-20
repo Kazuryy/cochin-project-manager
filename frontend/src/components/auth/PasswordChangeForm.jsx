@@ -140,7 +140,7 @@ function PasswordChangeForm({ onSuccess }) {
           value={values.newPassword}
           onChange={handleChange}
           error={errors.newPassword}
-          helperText="Le mot de passe doit contenir au moins 12 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial."
+          helperText="12+ caractères, majuscule, minuscule, chiffre, symbole"
         />
 
         <FormField

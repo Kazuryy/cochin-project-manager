@@ -284,6 +284,37 @@ function RecordForm({ tableId, recordId }) {
     return '';
   }, []);
 
+  // Fonctions utilitaires extraites (définies avant leur utilisation)
+  const getTargetColumn = useCallback((field) => {
+    const fieldNameLower = field.name.toLowerCase();
+    
+    if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
+      const tableName = table?.name || '';
+      const typeFromTable = tableName.replace('Details', '').toLowerCase();
+      return typeFromTable ? `sous_type_${typeFromTable}` : '';
+    }
+    
+    return fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }, [table]);
+
+  const extractValue = useCallback((record, targetColumn, field) => {
+    if (targetColumn) {
+      const value = getFieldValue(record, targetColumn, field);
+      if (value) return value;
+    }
+    
+    const genericValue = getFieldValue(record, 'nom_projet', 'nom', 'name', 'label', 'title', 'value');
+    if (genericValue) return genericValue;
+    
+    return getFieldValue(record, field.name, field.name.toLowerCase());
+  }, [getFieldValue]);
+
+  // Fonction pour trier les choix par ordre alphabétique
+  const sortChoices = useCallback((choices) => {
+    if (!Array.isArray(choices)) return [];
+    return choices.sort((a, b) => a.display.localeCompare(b.display));
+  }, []);
+
   // Optimisation du chargement des FK
   const loadFkChoicesForField = useCallback(async (field) => {
     setFkState(prev => ({ ...prev, [field.id]: { loading: true } }));
@@ -338,37 +369,6 @@ function RecordForm({ tableId, recordId }) {
     }
   }, [getTargetColumn, extractValue, sortChoices]);
 
-  // Fonctions utilitaires extraites
-  const getTargetColumn = useCallback((field) => {
-    const fieldNameLower = field.name.toLowerCase();
-    
-    if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
-      const tableName = table?.name || '';
-      const typeFromTable = tableName.replace('Details', '').toLowerCase();
-      return typeFromTable ? `sous_type_${typeFromTable}` : '';
-    }
-    
-    return fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  }, [table]);
-
-  const extractValue = useCallback((record, targetColumn, field) => {
-    if (targetColumn) {
-      const value = getFieldValue(record, targetColumn, field);
-      if (value) return value;
-    }
-    
-    const genericValue = getFieldValue(record, 'nom_projet', 'nom', 'name', 'label', 'title', 'value');
-    if (genericValue) return genericValue;
-    
-    return getFieldValue(record, field.name, field.name.toLowerCase());
-  }, [getFieldValue]);
-
-  // Fonction pour trier les choix par ordre alphabétique
-  const sortChoices = useCallback((choices) => {
-    if (!Array.isArray(choices)) return [];
-    return choices.sort((a, b) => a.display.localeCompare(b.display));
-  }, []);
-
   // Charger les données de la table et ses champs
   useEffect(() => {
     const loadTable = async () => {
@@ -377,16 +377,19 @@ function RecordForm({ tableId, recordId }) {
         setTable(tableData);
         setFields(tableData.fields || []);
         
-        const initialFormData = {};
-        tableData.fields?.forEach(field => {
-          initialFormData[field.slug] = field.default_value || '';
-        });
-        setFormData(initialFormData);
+        // N'initialiser le formulaire avec les valeurs par défaut que si on n'est PAS en mode édition
+        if (!recordId) {
+          const initialFormData = {};
+          tableData.fields?.forEach(field => {
+            initialFormData[field.slug] = field.default_value || '';
+          });
+          setFormData(initialFormData);
+        }
       }
     };
     
     loadTable();
-  }, [tableId, fetchTableWithFields]);
+  }, [tableId, fetchTableWithFields, recordId]);
 
   // Charger les choix FK pour tous les champs FK
   useEffect(() => {
@@ -406,7 +409,7 @@ function RecordForm({ tableId, recordId }) {
   
   // Si on est en mode édition, charger les données de l'enregistrement
   useEffect(() => {
-    if (recordId && table) {
+    if (recordId && table && table.fields && table.fields.length > 0) {
       const loadRecord = async () => {
         try {
           console.log(`🔄 Chargement de l'enregistrement ${recordId}...`);
@@ -418,7 +421,7 @@ function RecordForm({ tableId, recordId }) {
           // Traiter les valeurs pour les FK
           const processedFormData = {};
           
-          table.fields?.forEach(field => {
+          table.fields.forEach(field => {
             console.log(`🔍 Traitement du champ: ${field.name} (${field.slug}) - Type: ${field.field_type}`);
             
             if (field.field_type === 'foreign_key') {
@@ -445,7 +448,7 @@ function RecordForm({ tableId, recordId }) {
       
       loadRecord();
     }
-  }, [recordId, table]);
+  }, [recordId, table?.id]); // Utiliser table.id au lieu de table pour éviter les rechargements inutiles
   
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -472,6 +475,12 @@ function RecordForm({ tableId, recordId }) {
     }
   };
   
+  // Fonction utilitaire pour valider les dates
+  const isValidDate = useCallback((dateString) => {
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date);
+  }, []);
+
   // Validation des données
   const validateForm = useCallback(() => {
     const errors = {};
@@ -513,12 +522,6 @@ function RecordForm({ tableId, recordId }) {
     
     return errors;
   }, [fields, formData, fkState, isValidDate]);
-
-  // Fonction utilitaire pour valider les dates
-  const isValidDate = useCallback((dateString) => {
-    const date = new Date(dateString);
-    return date instanceof Date && !isNaN(date);
-  }, []);
 
   // Gestion des erreurs API
   const handleApiError = useCallback((error, context) => {
@@ -647,7 +650,11 @@ function RecordForm({ tableId, recordId }) {
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
-          {fields.map(field => renderField(field))}
+          {fields.map(field => (
+            <div key={field.id}>
+              {renderField(field)}
+            </div>
+          ))}
           
           <div className="flex justify-end space-x-2 pt-4">
             <Button

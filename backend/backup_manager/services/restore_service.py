@@ -108,6 +108,11 @@ class RestoreService(BaseService):
         work_dir, extract_dir = self._prepare_restore_files(backup, user, restore_history.restore_name)
         
         try:
+            # S'assurer que le statut est bien 'running'
+            restore_history.status = 'running'
+            restore_history.save(update_fields=['status'])
+            self.log_info(f"🚀 Statut de restauration mis à jour: running (ID: {restore_history.id})")
+            
             # Exécution des phases de restauration
             stats = self._execute_restore_phases(extract_dir, restore_options, restore_history)
             
@@ -117,7 +122,9 @@ class RestoreService(BaseService):
             # Nettoyage
             self._cleanup_after_restore(work_dir)
             
-        except Exception:
+        except Exception as e:
+            self.log_error(f"❌ Erreur pendant la restauration: {str(e)}", e)
+            self._handle_restore_failure(restore_history, e)
             self._cleanup_after_restore(work_dir)
             raise
     
@@ -128,12 +135,20 @@ class RestoreService(BaseService):
         if not backup_file:
             raise FileNotFoundError(f"Fichier de sauvegarde introuvable: {backup.file_path}")
         
+        # Vérifier que le fichier est bien un fichier et pas un répertoire
+        if not backup_file.is_file():
+            raise FileRestoreError(f"Le chemin de sauvegarde n'est pas un fichier valide: {backup_file} (type: {type(backup_file).__name__})")
+        
         # Création du répertoire de travail
         work_dir = self._create_restore_directory(restore_name)
         self.log_info(f"📁 Répertoire de restauration: {work_dir}")
         
         # Déchiffrement automatique si nécessaire
         source_file = self._handle_decryption_if_needed(backup_file, work_dir, user)
+        
+        # Vérifier à nouveau que le fichier source est valide après déchiffrement éventuel
+        if not source_file.is_file():
+            raise FileRestoreError(f"Le fichier source n'est pas valide après déchiffrement: {source_file}")
         
         # Extraction de l'archive
         extract_dir = self._extract_backup_archive(source_file, work_dir)
@@ -152,6 +167,49 @@ class RestoreService(BaseService):
         
         return decrypted_file
     
+    def _extract_backup_archive(self, archive_path: Path, work_dir: Path) -> Path:
+        """Extrait l'archive de sauvegarde"""
+        self.log_info("📦 Extraction de l'archive")
+        
+        extract_dir = work_dir / "extracted"
+        extract_dir.mkdir(exist_ok=True)
+        
+        try:
+            with zipfile.ZipFile(archive_path, 'r') as archive:
+                # Vérifier le contenu de l'archive avant extraction
+                file_list = archive.namelist()
+                self.log_info(f"📋 Archive contient {len(file_list)} fichiers/dossiers")
+                
+                # Extraire de manière sécurisée en vérifiant les chemins
+                for file_path in file_list:
+                    # Vérifier si le chemin est sécurisé (pas de chemin absolu ou de remontée de répertoire)
+                    if file_path.startswith('/') or '..' in file_path:
+                        self.log_warning(f"⚠️ Chemin non sécurisé ignoré: {file_path}")
+                        continue
+                    
+                    # Extraire le fichier avec son chemin relatif
+                    target_path = extract_dir / file_path
+                    
+                    # Créer le répertoire parent si nécessaire
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Si c'est un répertoire, juste créer le dossier
+                    if file_path.endswith('/'):
+                        target_path.mkdir(parents=True, exist_ok=True)
+                        continue
+                    
+                    # Extraire le fichier
+                    with archive.open(file_path) as source, open(target_path, 'wb') as target:
+                        shutil.copyfileobj(source, target)
+            
+            self.log_info(f"✅ Archive extraite: {extract_dir}")
+            return extract_dir
+            
+        except zipfile.BadZipFile as e:
+            raise FileRestoreError(f"Archive corrompue: {e}")
+        except Exception as e:
+            raise FileRestoreError(f"Erreur lors de l'extraction: {e}")
+    
     def _execute_restore_phases(self, extract_dir: Path, restore_options: Dict[str, Any], restore_history: RestoreHistory) -> Dict[str, Any]:
         """Exécute les différentes phases de restauration"""
         restore_type = restore_options.get('restore_type', 'full')
@@ -160,6 +218,16 @@ class RestoreService(BaseService):
             'records_restored': 0,
             'files_restored': 0
         }
+        
+        # Sauvegarder l'état original de la sauvegarde source pour vérification ultérieure
+        backup_source = restore_history.backup_source
+        original_status = backup_source.status
+        original_file_path = backup_source.file_path
+        original_file_size = backup_source.file_size
+        original_checksum = backup_source.checksum
+        original_completed_at = backup_source.completed_at
+        original_duration_seconds = backup_source.duration_seconds
+        self.log_info(f"📊 État initial de la sauvegarde source (ID: {backup_source.id}): {original_status}")
         
         # Phase 1: Restauration des métadonnées
         if restore_type in ['full', 'metadata'] and (extract_dir / self.METADATA_FILENAME).exists():
@@ -180,6 +248,53 @@ class RestoreService(BaseService):
             files_stats = self._restore_files(extract_dir, restore_options)
             stats['files_restored'] = files_stats.get('files_restored', 0)
         
+        # PROTECTION RENFORCÉE: Vérifier et protéger la sauvegarde source
+        # Cette vérification est critique pour les uploads car le SQL peut contenir
+        # l'ancienne version avec statut 'running' au lieu de 'completed'
+        try:
+            # Recharger la sauvegarde source depuis la base de données
+            refreshed_backup = BackupHistory.objects.get(id=backup_source.id)
+            metadata_changed = (
+                refreshed_backup.status != original_status or
+                refreshed_backup.file_path != original_file_path or
+                refreshed_backup.file_size != original_file_size or
+                refreshed_backup.checksum != original_checksum or
+                refreshed_backup.completed_at != original_completed_at
+            )
+            
+            # PROTECTION SPÉCIALE POUR LES UPLOADS
+            is_upload = restore_options.get('upload_source', False)
+            if is_upload and refreshed_backup.status == 'running' and original_status == 'completed':
+                self.log_warning(f"🛡️ UPLOAD DÉTECTÉ - Protection sauvegarde source ID {backup_source.id}")
+                self.log_warning(f"🛡️ Statut restauré forcément: 'running' -> 'completed'")
+                print(f"🛡️ PROTECTION UPLOAD - Sauvegarde source {backup_source.id} forcée à 'completed'")
+                metadata_changed = True
+            
+            if metadata_changed:
+                if is_upload:
+                    self.log_warning(f"🛡️ UPLOAD - La sauvegarde source (ID: {backup_source.id}) protégée contre la modification")
+                else:
+                    self.log_warning(f"⚠️ La sauvegarde source (ID: {backup_source.id}) a été modifiée pendant la restauration")
+                
+                # Restaurer TOUTES les métadonnées originales
+                refreshed_backup.status = original_status
+                refreshed_backup.file_path = original_file_path
+                refreshed_backup.file_size = original_file_size
+                refreshed_backup.checksum = original_checksum
+                refreshed_backup.completed_at = original_completed_at
+                refreshed_backup.duration_seconds = original_duration_seconds
+                refreshed_backup.save(update_fields=[
+                    'status', 'file_path', 'file_size', 'checksum', 
+                    'completed_at', 'duration_seconds'
+                ])
+                
+                if is_upload:
+                    self.log_info(f"🛡️ Sauvegarde source protégée avec succès pour upload")
+                else:
+                    self.log_info(f"✅ Métadonnées de la sauvegarde source restaurées complètement")
+        except Exception as e:
+            self.log_warning(f"⚠️ Impossible de vérifier/restaurer l'état de la sauvegarde source: {e}")
+        
         return stats
     
     def _handle_database_replacement(self, restore_history: RestoreHistory, restore_options: Dict[str, Any]) -> RestoreHistory:
@@ -190,7 +305,7 @@ class RestoreService(BaseService):
         old_restore_history = restore_history
         original_backup = restore_history.backup_source
         
-        # Créer un nouveau BackupHistory dans la nouvelle base
+        # Créer un nouveau BackupHistory dans la nouvelle base sans modifier l'original
         new_backup = self._create_compatible_backup_history(original_backup, restore_history.created_by)
         
         # Créer un nouveau RestoreHistory avec le nouveau BackupHistory
@@ -198,27 +313,35 @@ class RestoreService(BaseService):
             old_restore_history, new_backup, restore_options
         )
         
-        # Nettoyer l'ancien restore_history
-        self._cleanup_old_restore_history(old_restore_history)
+        # Nettoyer l'ancien restore_history sans toucher à la sauvegarde d'origine
+        try:
+            # Au lieu de supprimer l'historique, on le marque comme terminé
+            old_restore_history.status = 'completed'
+            old_restore_history.completed_at = timezone.now()
+            old_restore_history.save(update_fields=['status', 'completed_at'])
+            self.log_info(f"✅ Ancien RestoreHistory marqué comme terminé: ID {old_restore_history.id}")
+        except Exception as e:
+            self.log_warning(f"⚠️ Impossible de mettre à jour l'ancien RestoreHistory: {e}")
         
         return new_restore_history
     
     def _create_compatible_backup_history(self, original_backup: BackupHistory, user) -> BackupHistory:
-        """Crée un BackupHistory compatible avec la nouvelle base"""
+        """Crée un BackupHistory compatible avec la nouvelle base sans modifier l'original"""
+        # Créer une copie de la sauvegarde d'origine avec un nom différent
         new_backup = BackupHistory.objects.create(
-            backup_name=f"Restauré_{original_backup.backup_name}",
-            status='completed',
+            backup_name=f"Copie_{original_backup.backup_name}_{timezone.now().strftime('%Y%m%d_%H%M%S')}",
+            status='completed',  # Toujours marquer comme terminée
             backup_type=original_backup.backup_type,
             file_path=original_backup.file_path,
             file_size=original_backup.file_size,
             checksum=original_backup.checksum,
-            started_at=original_backup.started_at,
-            completed_at=original_backup.completed_at,
-            duration_seconds=original_backup.duration_seconds,
+            started_at=timezone.now(),
+            completed_at=timezone.now(),
+            duration_seconds=0,
             created_by=user
         )
         
-        self.log_info(f"🔄 Nouveau BackupHistory créé: ID {new_backup.id}")
+        self.log_info(f"🔄 Nouveau BackupHistory créé: ID {new_backup.id} (copie de ID {original_backup.id})")
         return new_backup
     
     def _create_compatible_restore_history(self, old_restore_history: RestoreHistory, new_backup: BackupHistory, restore_options: Dict[str, Any]) -> RestoreHistory:
@@ -236,14 +359,6 @@ class RestoreService(BaseService):
         self.log_info(f"🔄 Nouveau RestoreHistory créé: ID {new_restore_history.id}")
         return new_restore_history
     
-    def _cleanup_old_restore_history(self, old_restore_history: RestoreHistory) -> None:
-        """Nettoie l'ancien restore_history"""
-        try:
-            old_restore_history.delete()
-            self.log_info("🗑️ Ancien RestoreHistory supprimé")
-        except Exception as e:
-            self.log_warning(f"⚠️ Impossible de supprimer l'ancien RestoreHistory: {e}")
-    
     def _finalize_restore(self, restore_history: RestoreHistory, stats: Dict[str, Any]) -> None:
         """Finalise la restauration en mettant à jour l'historique"""
         duration = self.end_operation(f"Restauration {restore_history.restore_name}")
@@ -255,7 +370,19 @@ class RestoreService(BaseService):
         restore_history.records_restored = stats['records_restored']
         restore_history.files_restored = stats['files_restored']
         restore_history.log_data = self.get_logs_summary()
-        restore_history.save()
+        
+        # Sauvegarder explicitement tous les champs
+        try:
+            restore_history.save()
+            self.log_info(f"✅ Restauration ID {restore_history.id} terminée avec succès - statut mis à jour: completed")
+        except Exception as e:
+            self.log_error(f"❗ Erreur lors de la mise à jour du statut de restauration: {str(e)}", e)
+            # Tentative de sauvegarde avec moins de champs
+            try:
+                restore_history.save(update_fields=['status', 'completed_at', 'duration_seconds'])
+                self.log_info(f"✅ Restauration ID {restore_history.id} terminée - mise à jour partielle réussie")
+            except Exception as e2:
+                self.log_error(f"❌ Échec critique de mise à jour du statut: {str(e2)}", e2)
         
         self.log_info(f"✅ Restauration terminée en {duration}s")
     
@@ -265,7 +392,18 @@ class RestoreService(BaseService):
         restore_history.completed_at = timezone.now()
         restore_history.error_message = str(error)
         restore_history.log_data = self.get_logs_summary()
-        restore_history.save()
+        
+        try:
+            restore_history.save()
+            self.log_info(f"❌ Restauration ID {restore_history.id} marquée comme échouée")
+        except Exception as e:
+            self.log_error(f"❗ Erreur lors de la mise à jour du statut d'échec: {str(e)}", e)
+            # Tentative de sauvegarde avec moins de champs
+            try:
+                restore_history.save(update_fields=['status', 'completed_at', 'error_message'])
+                self.log_info(f"❌ Restauration ID {restore_history.id} marquée comme échouée (mise à jour partielle)")
+            except Exception as e2:
+                self.log_error(f"❌ Échec critique de mise à jour du statut d'échec: {str(e2)}", e2)
         
         self.log_error("❌ Échec de la restauration", error)
     
@@ -279,25 +417,6 @@ class RestoreService(BaseService):
         restore_dir = self.ensure_backup_directory() / "restore_temp" / restore_name
         restore_dir.mkdir(parents=True, exist_ok=True)
         return restore_dir
-    
-    def _extract_backup_archive(self, archive_path: Path, work_dir: Path) -> Path:
-        """Extrait l'archive de sauvegarde"""
-        self.log_info("📦 Extraction de l'archive")
-        
-        extract_dir = work_dir / "extracted"
-        extract_dir.mkdir(exist_ok=True)
-        
-        try:
-            with zipfile.ZipFile(archive_path, 'r') as archive:
-                archive.extractall(extract_dir)
-            
-            self.log_info(f"✅ Archive extraite: {extract_dir}")
-            return extract_dir
-            
-        except zipfile.BadZipFile as e:
-            raise FileRestoreError(f"Archive corrompue: {e}")
-        except Exception as e:
-            raise FileRestoreError(f"Erreur lors de l'extraction: {e}")
     
     def _restore_metadata(self, extract_dir: Path, restore_options: Dict[str, Any]) -> Dict[str, Any]:
         """Restaure les métadonnées Django"""
@@ -494,6 +613,17 @@ class RestoreService(BaseService):
         
         statements = self._parse_sql_statements(sql_content)
         
+        # Filtrer les statements pour les uploads (exclure les tables système)
+        if restore_options.get('upload_source', False):
+            original_count = len(statements)
+            statements = self._filter_system_tables(statements)
+            self.log_info(f"🛡️ UPLOAD DÉTECTÉ - EXCLUSION DES TABLES SYSTÈME")
+            self.log_info(f"🛡️ Statements filtrés: {original_count} -> {len(statements)}")
+            print(f"🛡️ UPLOAD DÉTECTÉ - EXCLUSION DES TABLES SYSTÈME")  # Log visible dans la console
+            print(f"🛡️ Statements filtrés: {original_count} -> {len(statements)}")
+        else:
+            print(f"⚪ PAS D'UPLOAD DÉTECTÉ - upload_source={restore_options.get('upload_source')}")
+        
         executed_statements = 0
         failed_statements = []
         deferred_statements = []
@@ -671,6 +801,50 @@ class RestoreService(BaseService):
         
         return statements
     
+    def _filter_system_tables(self, statements: List[str]) -> List[str]:
+        """Filtre les statements pour exclure les tables système lors d'un upload"""
+        # Tables système à exclure lors d'un upload
+        system_tables = [
+            'backup_manager_backuphistory',
+            'backup_manager_restorehistory',
+            'backup_manager_backupconfiguration'
+        ]
+        
+        filtered_statements = []
+        excluded_count = 0
+        
+        for statement in statements:
+            statement_upper = statement.upper()
+            should_exclude = False
+            
+            # Vérifier si le statement concerne une table système
+            for table in system_tables:
+                if any(pattern in statement_upper for pattern in [
+                    f'INSERT INTO "{table.upper()}"',
+                    f'INSERT INTO {table.upper()}',
+                    f'UPDATE "{table.upper()}"',
+                    f'UPDATE {table.upper()}',
+                    f'DELETE FROM "{table.upper()}"',
+                    f'DELETE FROM {table.upper()}',
+                    f'DROP TABLE "{table.upper()}"',
+                    f'DROP TABLE {table.upper()}',
+                    f'CREATE TABLE "{table.upper()}"',
+                    f'CREATE TABLE {table.upper()}'
+                ]):
+                    should_exclude = True
+                    break
+            
+            if should_exclude:
+                excluded_count += 1
+                self.log_debug(f"🚫 Statement exclu (table système): {statement[:50]}...")
+            else:
+                filtered_statements.append(statement)
+        
+        if excluded_count > 0:
+            self.log_info(f"🛡️ {excluded_count} statements de tables système exclus pour préserver l'historique")
+        
+        return filtered_statements
+    
     def _fix_not_null_statement(self, statement: str, error_msg: str) -> str:
         """Tente de corriger un statement qui viole une contrainte NOT NULL"""
         # Extraire le nom de la colonne de l'erreur
@@ -691,9 +865,9 @@ class RestoreService(BaseService):
         """Restauration SQLite depuis un fichier de base de données (méthode de remplacement - moins sûre)"""
         current_db_path = Path(db_settings['NAME'])
         
-        # Sauvegarde de la DB actuelle si demandé
-        if restore_options.get('backup_current', True):
-            self._backup_current_database(current_db_path)
+        # Sauvegarde de la DB actuelle si demandé - DÉSACTIVÉ TEMPORAIREMENT
+        # if restore_options.get('backup_current', True):
+        #     self._backup_current_database(current_db_path)
         
         # Avertissement sur cette méthode
         self.log_warning("⚠️ Utilisation de la méthode de remplacement de DB (moins sûre)")
@@ -728,7 +902,9 @@ class RestoreService(BaseService):
             return {'data_restored': 0}
         
         # Drop et recréation de la DB si demandé
+        # Note: La sauvegarde automatique est désactivée temporairement
         if restore_options.get('drop_before_restore', False):
+            # Pas de sauvegarde automatique avant le drop
             self._drop_postgresql_database(db_settings)
             self._create_postgresql_database(db_settings)
         
@@ -761,12 +937,15 @@ class RestoreService(BaseService):
     def _restore_mysql(self, extract_dir: Path, db_settings: Dict[str, Any], restore_options: Dict[str, Any]) -> Dict[str, Any]:
         """Restauration spécifique pour MySQL"""
         # Paramètre restore_options disponible pour futures options
+        # Note: La sauvegarde automatique est désactivée temporairement
         _ = restore_options  # Marquer comme intentionnellement inutilisé
         
         dump_file = extract_dir / self.DATABASE_DUMP_FILENAME
         if not dump_file.exists():
             self.log_warning("⚠️ Dump MySQL introuvable")
             return {'data_restored': 0}
+        
+        # Pas de sauvegarde automatique avant la restauration
         
         cmd = [
             'mysql',
@@ -804,10 +983,15 @@ class RestoreService(BaseService):
         try:
             files_restored = 0
             
-            # Restauration des fichiers media
-            files_restored += self._restore_media_files(files_dir, restore_options)
+            # PROTECTION: Ne pas restaurer les fichiers media lors d'un upload
+            # pour éviter de supprimer les sauvegardes existantes
+            if not restore_options.get('upload_source', False):
+                # Restauration des fichiers media seulement pour les restaurations normales
+                files_restored += self._restore_media_files(files_dir, restore_options)
+            else:
+                self.log_info("🛡️ Upload détecté - restauration des fichiers media ignorée pour préserver les sauvegardes")
             
-            # Restauration des logs
+            # Restauration des logs (toujours autorisée)
             files_restored += self._restore_log_files(files_dir, restore_options)
             
             self.log_info(f"✅ {files_restored} fichiers restaurés")
@@ -824,8 +1008,9 @@ class RestoreService(BaseService):
         
         media_dest = Path(settings.MEDIA_ROOT)
         
-        if restore_options.get('backup_current_files', True):
-            self._backup_current_media_files(media_dest)
+        # Sauvegarde des fichiers media actuels - DÉSACTIVÉ TEMPORAIREMENT
+        # if restore_options.get('backup_current_files', True):
+        #     self._backup_current_media_files(media_dest)
         
         # Restauration
         if media_dest.exists():

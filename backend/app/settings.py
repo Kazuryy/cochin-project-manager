@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     'crispy_tailwind',
     'rest_framework',
     'conditional_fields',
+    'django_crontab',
     # Local apps
     'authentication',
     'app',
@@ -255,6 +256,9 @@ PASSWORD_EXPIRY_DAYS = int(os.getenv("PASSWORD_EXPIRY_DAYS", "90"))
 BACKUP_ROOT = BASE_DIR / 'backups'
 BACKUP_STORAGE_PATH = BACKUP_ROOT / 'storage'
 
+# Discord webhook URL pour les notifications
+DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '')
+
 # Backup encryption key - must be provided in production
 BACKUP_ENCRYPTION_KEY = os.getenv('BACKUP_ENCRYPTION_KEY')
 if not BACKUP_ENCRYPTION_KEY:
@@ -270,7 +274,7 @@ if not BACKUP_ENCRYPTION_KEY:
 # =============================================================================
 
 def setup_logging():
-    """Configure logging with proper error handling."""
+    """Configure logging with proper error handling and rotation."""
     logs_dir = BASE_DIR / 'logs'
     
     try:
@@ -314,37 +318,78 @@ def setup_logging():
             },
         },
         'handlers': {
+            # Handler principal avec rotation par taille
             'file': {
                 'level': 'INFO',
-                'class': 'logging.FileHandler',
+                'class': 'logging.handlers.RotatingFileHandler',
                 'filename': logs_dir / 'app.log',
                 'formatter': 'verbose',
+                'maxBytes': 10 * 1024 * 1024,  # 10 MB par fichier
+                'backupCount': 5,  # Garde 5 fichiers de sauvegarde
+                'encoding': 'utf-8',
             },
+            # Handler de sécurité avec rotation quotidienne
+            'security': {
+                'level': 'INFO',
+                'class': 'logging.handlers.TimedRotatingFileHandler',
+                'filename': logs_dir / 'security.log',
+                'formatter': 'verbose',
+                'when': 'midnight',  # Rotation à minuit
+                'interval': 1,  # Chaque jour
+                'backupCount': 30,  # Garde 30 jours
+                'encoding': 'utf-8',
+            },
+            # Console pour le développement
             'console': {
                 'level': 'DEBUG' if DEBUG else 'INFO',
                 'class': 'logging.StreamHandler',
                 'formatter': 'simple',
             },
-            'security': {
-                'level': 'INFO',
-                'class': 'logging.FileHandler',
-                'filename': logs_dir / 'security.log',
+            # Handler pour les erreurs critiques (plus petit, plus longue rétention)
+            'critical': {
+                'level': 'ERROR',
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': logs_dir / 'critical.log',
                 'formatter': 'verbose',
+                'maxBytes': 5 * 1024 * 1024,  # 5 MB par fichier
+                'backupCount': 10,  # Garde plus d'historique pour les erreurs
+                'encoding': 'utf-8',
+            },
+            # Handler pour les performances et métriques
+            'performance': {
+                'level': 'INFO',
+                'class': 'logging.handlers.TimedRotatingFileHandler',
+                'filename': logs_dir / 'performance.log',
+                'formatter': 'verbose',
+                'when': 'midnight',
+                'interval': 1,
+                'backupCount': 7,  # Seulement 7 jours pour les perfs
+                'encoding': 'utf-8',
             },
         },
         'loggers': {
             'django': {
-                'handlers': ['file', 'console'],
+                'handlers': ['file', 'console', 'critical'],
                 'level': 'INFO',
                 'propagate': True,
             },
             'django.security': {
-                'handlers': ['security'],
+                'handlers': ['security', 'critical'],
                 'level': 'INFO',
                 'propagate': False,
             },
             'authentication': {
-                'handlers': ['file', 'security'],
+                'handlers': ['file', 'security', 'critical'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'backup_manager': {
+                'handlers': ['file', 'performance'],
+                'level': 'INFO',
+                'propagate': False,
+            },
+            'database': {
+                'handlers': ['file', 'performance'],
                 'level': 'INFO',
                 'propagate': False,
             },
@@ -397,3 +442,57 @@ if IS_DEVELOPMENT and not IS_BUILD:
     print(f"📊 Debug mode: {DEBUG}")
     print(f"🌍 Allowed hosts: {ALLOWED_HOSTS}")
     print(f"🔐 Using {'auto-generated' if 'auto-generated' in globals().get('SECRET_KEY', '') else 'environment'} SECRET_KEY")
+
+# =============================================================================
+# CRONJOBS CONFIGURATION
+# =============================================================================
+
+# Configuration des tâches cron pour la maintenance automatique
+CRONJOBS = [
+    # =============================================================================
+    # NOTIFICATIONS DE DEVIS (existant)
+    # =============================================================================
+    # Vérification quotidienne des notifications de devis à 8h du matin
+    ('0 8 * * *', 'django.core.management.call_command', ['check_devis_notifications']),
+    
+    # =============================================================================
+    # SAUVEGARDES AUTOMATIQUES
+    # =============================================================================
+    # Sauvegardes quotidiennes - tous les jours à 4h du matin
+    ('0 4 * * *', 'django.core.management.call_command', ['run_backup', '--frequency=daily']),
+    
+    # Sauvegardes hebdomadaires - tous les dimanches à 5h du matin
+    ('0 5 * * 0', 'django.core.management.call_command', ['run_backup', '--frequency=weekly']),
+    
+    # Sauvegardes mensuelles - le 1er de chaque mois à 6h du matin
+    ('0 6 1 * *', 'django.core.management.call_command', ['run_backup', '--frequency=monthly']),
+    
+    # =============================================================================
+    # MAINTENANCE SYSTÈME DE BACKUP
+    # =============================================================================
+    # Nettoyage automatique des fichiers temporaires - tous les jours à 2h du matin
+    ('0 2 * * *', 'django.core.management.call_command', ['cleanup_temp_files', '--auto']),
+    
+    # Nettoyage des opérations bloquées - toutes les 6 heures
+    ('0 */6 * * *', 'django.core.management.call_command', ['cleanup_stuck_operations', '--hours=6', '--force']),
+    
+    # Resynchronisation base de données/fichiers - tous les dimanches à 3h du matin  
+    ('0 3 * * 0', 'django.core.management.call_command', ['rebuild_backup_paths', '--force']),
+    
+    # Nettoyage plus agressif des fichiers temporaires - tous les week-ends à 1h du matin
+    ('0 1 * * 6', 'django.core.management.call_command', ['cleanup_temp_files', '--age-hours=2', '--force']),
+    
+    # =============================================================================
+    # GESTION DES LOGS
+    # =============================================================================
+    # Compression des logs anciens - tous les jours à 3h du matin
+    ('0 3 * * *', 'django.core.management.call_command', ['cleanup_logs', '--compress-days=7', '--force']),
+    
+    # Nettoyage des très anciens logs - tous les dimanches à 4h du matin
+    ('0 4 * * 0', 'django.core.management.call_command', ['cleanup_logs', '--days=30', '--compress-days=7', '--force']),
+]
+
+# Configuration des tâches cron
+CRONTAB_COMMAND_PREFIX = 'cd ' + str(BASE_DIR) + ' && '
+CRONTAB_DJANGO_SETTINGS_MODULE = 'app.settings'
+CRONTAB_LOCK_JOBS = True  # Empêche les tâches concurrentes

@@ -2,7 +2,9 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 import json
+from datetime import date, datetime, timedelta
 
 User = get_user_model()
 
@@ -211,6 +213,10 @@ class DynamicRecord(models.Model):
     )
     is_active = models.BooleanField(_('actif'), default=True)
     
+    # Champs pour le suivi des notifications Discord pour les devis
+    discord_start_notified = models.BooleanField(_('notification début envoyée'), default=False)
+    discord_end_notified = models.BooleanField(_('notification fin envoyée'), default=False)
+    
     class Meta:
         verbose_name = _('enregistrement dynamique')
         verbose_name_plural = _('enregistrements dynamiques')
@@ -250,53 +256,119 @@ class DynamicRecord(models.Model):
         """Définit la valeur d'un champ spécifique"""
         try:
             field = self.table.fields.get(slug=field_slug, is_active=True)
-            value_obj, created = DynamicValue.objects.get_or_create(
+            dynamic_value, created = DynamicValue.objects.get_or_create(
                 record=self,
                 field=field,
-                defaults={'value': value}
+                defaults={'value': str(value) if value is not None else ''}
             )
             if not created:
-                value_obj.value = value
-                value_obj.save()
-            return value_obj
+                dynamic_value.value = str(value) if value is not None else ''
+                dynamic_value.save()
+            return True
         except DynamicField.DoesNotExist:
-            return None
-        
+            return False
+    
     def get_foreign_key_display(self, field_slug):
-        """
-        Retourne une version lisible d'une clé étrangère pour l'affichage
-        """
+        """Retourne l'affichage d'une clé étrangère"""
         try:
-            field = self.table.fields.get(slug=field_slug, is_active=True)
-            if field.field_type != 'foreign_key':
+            field = self.table.fields.get(slug=field_slug, is_active=True, field_type='foreign_key')
+            value = self.get_value(field_slug)
+            if not value:
                 return None
             
-            fk_id = self.get_value(field_slug)
-            if not fk_id:
-                return None
-            
+            # Trouver l'enregistrement lié
             try:
-                # Récupérer l'enregistrement lié par son ID Django
-                related_record = DynamicRecord.objects.get(
-                    table=field.related_table,
-                    id=int(fk_id),
-                    is_active=True
-                )
+                fk_record = DynamicRecord.objects.get(id=int(value), table=field.related_table)
                 
-                # Trouver le meilleur champ d'affichage
+                # Trouver un champ texte pour l'affichage
                 display_field = field._find_best_display_field()
                 if display_field:
-                    display_value = related_record.get_value(display_field.slug)
+                    display_value = fk_record.get_value(display_field.slug)
                     if display_value:
-                        return f"{display_value} (ID: {fk_id})"
+                        return f"{display_value} (ID: {fk_record.id})"
                 
-                return f"Enregistrement #{fk_id}"
-                
+                return f"Enregistrement #{fk_record.id}"
             except (DynamicRecord.DoesNotExist, ValueError):
-                return f"Référence invalide: {fk_id}"
-                
+                return f"Enregistrement introuvable (ID: {value})"
+            
         except DynamicField.DoesNotExist:
             return None
+    
+    def is_devis(self):
+        """Détermine si cet enregistrement est un devis"""
+        return self.table.slug == 'devis'
+    
+    def check_devis_notifications(self):
+        """
+        Vérifie si des notifications Discord doivent être envoyées pour ce devis
+        Retourne True si une notification a été envoyée
+        """
+        if not self.is_devis():
+            return False
+            
+        # Vérifier si le devis est actif
+        statut = self.get_value('statut')
+        if not statut or statut.lower() != 'true':
+            return False
+            
+        # Récupérer les dates
+        date_debut_str = self.get_value('date_debut')
+        date_rendu_str = self.get_value('date_rendu')
+        
+        if not date_debut_str or not date_rendu_str:
+            return False
+            
+        try:
+            # Convertir les dates (format YYYY-MM-DD)
+            date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d').date()
+            date_rendu = datetime.strptime(date_rendu_str, '%Y-%m-%d').date()
+            today = date.today()
+            
+            # Notification de début
+            if date_debut == today and not self.discord_start_notified:
+                from services.discord_notification_service import DiscordNotificationService
+                
+                # Préparer les données du devis
+                devis_data = {
+                    'numero_devis': self.get_value('numero_devis'),
+                    'montant': self.get_value('montant'),
+                    'date_debut': date_debut_str,
+                    'date_rendu': date_rendu_str,
+                    'agent_plateforme': self.get_value('agent_plateforme')
+                }
+                
+                # Envoyer la notification
+                service = DiscordNotificationService()
+                if service.send_devis_start_notification(devis_data):
+                    self.discord_start_notified = True
+                    self.save(update_fields=['discord_start_notified'])
+                    return True
+            
+            # Notification de fin
+            if date_rendu == today and not self.discord_end_notified:
+                from services.discord_notification_service import DiscordNotificationService
+                
+                # Préparer les données du devis
+                devis_data = {
+                    'numero_devis': self.get_value('numero_devis'),
+                    'montant': self.get_value('montant'),
+                    'date_debut': date_debut_str,
+                    'date_rendu': date_rendu_str,
+                    'agent_plateforme': self.get_value('agent_plateforme')
+                }
+                
+                # Envoyer la notification
+                service = DiscordNotificationService()
+                if service.send_devis_end_notification(devis_data):
+                    self.discord_end_notified = True
+                    self.save(update_fields=['discord_end_notified'])
+                    return True
+                    
+        except (ValueError, TypeError) as e:
+            # Erreur de format de date
+            print(f"Erreur lors du traitement des dates du devis {self.id}: {e}")
+            
+        return False
 
 class DynamicValue(models.Model):
     """

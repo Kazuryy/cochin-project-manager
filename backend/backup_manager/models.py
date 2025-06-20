@@ -112,12 +112,18 @@ class BackupHistory(models.Model):
     méthodes utilitaires pour le calcul automatique des durées et statistiques.
     """
     
+    BACKUP_TYPE_CHOICES = [
+        ('full', 'Complète'),
+        ('data', 'Données uniquement'),
+        ('metadata', 'Métadonnées uniquement'),
+    ]
+    
     STATUS_CHOICES = [
         ('pending', 'En attente'),
         ('running', 'En cours'),
         ('completed', 'Terminée'),
-        ('failed', 'Échouée'),
-        ('cancelled', 'Annulée'),
+        ('failed', 'Échec'),
+        ('file_missing', 'Fichier manquant'),
     ]
     
     configuration = models.ForeignKey(
@@ -136,7 +142,7 @@ class BackupHistory(models.Model):
     )
     backup_type = models.CharField(
         max_length=20, 
-        choices=BackupConfiguration.BACKUP_TYPES,
+        choices=BACKUP_TYPE_CHOICES,
         db_index=True
     )
     
@@ -248,11 +254,12 @@ class BackupHistory(models.Model):
         if not self.file_size:
             return "—"
         
+        size = self.file_size
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if self.file_size < 1024.0:
-                return f"{self.file_size:.1f} {unit}"
-            self.file_size /= 1024.0
-        return f"{self.file_size:.1f} PB"
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} PB"
     
     @property
     def is_expired(self):
@@ -413,3 +420,225 @@ class RestoreHistory(models.Model):
             return 0
         
         return (restored_total / source_total) * 100
+
+
+class UploadedBackup(models.Model):
+    """
+    🆕 NOUVEAU: Modèle isolé pour les sauvegardes uploadées depuis l'extérieur.
+    
+    Ce modèle est COMPLÈTEMENT SÉPARÉ de BackupHistory pour éviter toute
+    interférence lors des restaurations. Les uploads externes ne peuvent
+    jamais écraser l'historique principal du système.
+    """
+    
+    STATUS_CHOICES = [
+        ('processing', 'Traitement en cours'),
+        ('validated', 'Validée'),
+        ('ready', 'Prête pour restauration'),
+        ('failed_validation', 'Validation échouée'),
+        ('corrupted', 'Fichier corrompu'),
+    ]
+    
+    # Identification
+    original_filename = models.CharField(max_length=255, verbose_name="Nom du fichier original")
+    upload_name = models.CharField(max_length=200, verbose_name="Nom d'identification")
+    
+    # Métadonnées du fichier uploadé
+    file_path = models.CharField(max_length=500, verbose_name="Chemin du fichier uploadé")
+    file_size = models.BigIntegerField(verbose_name="Taille (bytes)")
+    file_checksum = models.CharField(max_length=64, verbose_name="Checksum SHA-256")
+    
+    # État et validation
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing', db_index=True)
+    validation_data = models.JSONField(default=dict, blank=True, verbose_name="Données de validation")
+    
+    # Contenu analysé (sans affecter le système principal)
+    backup_metadata = models.JSONField(default=dict, blank=True, verbose_name="Métadonnées extraites")
+    detected_backup_type = models.CharField(max_length=20, blank=True)
+    detected_source_system = models.CharField(max_length=100, blank=True)
+    
+    # Traçabilité
+    uploaded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        related_name='uploaded_backups'
+    )
+    
+    # Erreurs et logs (isolés)
+    error_message = models.TextField(blank=True)
+    processing_log = models.JSONField(default=list, blank=True)
+    
+    class Meta:
+        verbose_name = "Sauvegarde uploadée"
+        verbose_name_plural = "Sauvegardes uploadées"
+        ordering = ['-uploaded_at']
+        indexes = [
+            models.Index(fields=['status', 'uploaded_at'], name='upload_status_date'),
+            models.Index(fields=['uploaded_by', 'status'], name='upload_user_status'),
+        ]
+    
+    def __str__(self):
+        return f"Upload: {self.upload_name} ({self.get_status_display()})"
+    
+    @property
+    def file_size_formatted(self):
+        """Retourne la taille formatée"""
+        if not self.file_size:
+            return "—"
+        
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} PB"
+    
+    def mark_as_ready(self):
+        """Marque l'upload comme prêt pour restauration"""
+        self.status = 'ready'
+        self.save(update_fields=['status'])
+    
+    def mark_as_failed(self, error_message: str):
+        """Marque l'upload comme échoué"""
+        self.status = 'failed_validation'
+        self.error_message = error_message
+        self.save(update_fields=['status', 'error_message'])
+
+
+class ExternalRestoration(models.Model):
+    """
+    🆕 NOUVEAU: Modèle isolé pour les restaurations depuis uploads externes.
+    
+    Ce modèle trace les restaurations d'uploads externes sans jamais
+    créer de confusion avec RestoreHistory qui est réservé aux
+    sauvegardes internes du système.
+    """
+    
+    STATUS_CHOICES = [
+        ('pending', 'En attente'),
+        ('extracting', 'Extraction en cours'),
+        ('analyzing', 'Analyse du contenu'),
+        ('executing', 'Exécution de la restauration'),
+        ('finalizing', 'Finalisation'),
+        ('completed', 'Terminée'),
+        ('failed', 'Échouée'),
+        ('cancelled', 'Annulée'),
+    ]
+    
+    MERGE_STRATEGY_CHOICES = [
+        ('replace', 'Remplacement complet'),
+        ('merge', 'Fusion intelligente'),
+        ('preserve_system', 'Préserver les données système'),
+    ]
+    
+    # Source de la restauration
+    uploaded_backup = models.ForeignKey(
+        UploadedBackup, 
+        on_delete=models.CASCADE,
+        related_name='external_restorations'
+    )
+    
+    # Configuration de la restauration
+    restoration_name = models.CharField(max_length=200, verbose_name="Nom de la restauration")
+    merge_strategy = models.CharField(
+        max_length=20, 
+        choices=MERGE_STRATEGY_CHOICES, 
+        default='preserve_system',
+        verbose_name="Stratégie de fusion"
+    )
+    
+    # Options avancées (isolées du système principal)
+    restoration_options = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Options spécifiques pour cette restauration externe"
+    )
+    
+    # État et progression
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    progress_percentage = models.PositiveIntegerField(default=0)
+    current_step = models.CharField(max_length=100, blank=True)
+    
+    # Statistiques (isolées)
+    external_tables_processed = models.PositiveIntegerField(null=True, blank=True)
+    external_records_processed = models.PositiveIntegerField(null=True, blank=True)
+    external_files_processed = models.PositiveIntegerField(null=True, blank=True)
+    
+    # Résultats de la fusion
+    system_tables_preserved = models.PositiveIntegerField(null=True, blank=True)
+    conflicts_resolved = models.PositiveIntegerField(null=True, blank=True)
+    
+    # Timing
+    started_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    
+    # Logs et erreurs (isolés)
+    execution_log = models.JSONField(default=list, blank=True)
+    error_message = models.TextField(blank=True)
+    rollback_info = models.JSONField(default=dict, blank=True)
+    
+    # Traçabilité
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        related_name='external_restorations'
+    )
+    
+    class Meta:
+        verbose_name = "Restauration externe"
+        verbose_name_plural = "Restaurations externes"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'created_at'], name='ext_restore_status'),
+            models.Index(fields=['merge_strategy', 'status'], name='ext_merge_status'),
+        ]
+    
+    def __str__(self):
+        return f"Restauration externe: {self.restoration_name} ({self.get_status_display()})"
+    
+    def save(self, *args, **kwargs):
+        """Override save pour calculer automatiquement la durée"""
+        if self.started_at and self.completed_at and not self.duration_seconds:
+            delta = self.completed_at - self.started_at
+            self.duration_seconds = int(delta.total_seconds())
+        super().save(*args, **kwargs)
+    
+    def start_restoration(self):
+        """Démarre la restauration externe"""
+        self.status = 'extracting'
+        self.started_at = timezone.now()
+        self.save(update_fields=['status', 'started_at'])
+    
+    def complete_restoration(self, success=True, error_message=None):
+        """Termine la restauration externe"""
+        self.completed_at = timezone.now()
+        self.status = 'completed' if success else 'failed'
+        self.progress_percentage = 100 if success else self.progress_percentage
+        if error_message:
+            self.error_message = error_message
+        self.save(update_fields=['completed_at', 'status', 'progress_percentage', 'error_message', 'duration_seconds'])
+    
+    def update_progress(self, percentage: int, step: str = ""):
+        """Met à jour la progression"""
+        self.progress_percentage = min(max(percentage, 0), 100)
+        if step:
+            self.current_step = step
+        self.save(update_fields=['progress_percentage', 'current_step'])
+    
+    @property
+    def duration_formatted(self):
+        """Retourne la durée formatée"""
+        if self.duration_seconds:
+            hours = self.duration_seconds // 3600
+            minutes = (self.duration_seconds % 3600) // 60
+            seconds = self.duration_seconds % 60
+            if hours:
+                return f"{hours}h {minutes}m {seconds}s"
+            elif minutes:
+                return f"{minutes}m {seconds}s"
+            else:
+                return f"{seconds}s"
+        return "—"

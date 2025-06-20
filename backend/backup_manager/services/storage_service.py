@@ -59,11 +59,47 @@ class StorageService(BaseService):
         return storage_path
     
     def get_backup_file(self, backup_path: str) -> Optional[Path]:
-        """Récupère un fichier de sauvegarde"""
+        """
+        Récupère un fichier de sauvegarde
+        
+        Args:
+            backup_path: Chemin du fichier de sauvegarde
+            
+        Returns:
+            Path du fichier ou None si le fichier n'existe pas ou n'est pas valide
+        """
+        if not backup_path:
+            self.log_warning("⚠️ Chemin de sauvegarde vide ou None")
+            return None
+        
+        # Normaliser le chemin
         file_path = Path(backup_path)
-        if file_path.exists():
+        
+        # Si le chemin n'est pas absolu, le résoudre par rapport à BACKUP_ROOT
+        if not file_path.is_absolute():
+            backup_root = Path(getattr(settings, 'BACKUP_ROOT', 'backups'))
+            file_path = backup_root / file_path
+            self.log_info(f"🔍 Résolution du chemin relatif: {backup_path} -> {file_path}")
+        
+        # Vérifier que le chemin existe et est un fichier
+        if not file_path.exists():
+            self.log_warning(f"⚠️ Fichier de sauvegarde introuvable: {file_path}")
+            return None
+        
+        if not file_path.is_file():
+            self.log_warning(f"⚠️ Le chemin n'est pas un fichier valide: {file_path}")
+            return None
+            
+        # Vérifier que le fichier est accessible
+        try:
+            # Tester l'accès au fichier
+            with open(file_path, 'rb') as f:
+                f.seek(0)
+            self.log_info(f"✅ Fichier de sauvegarde trouvé: {file_path}")
             return file_path
-        return None
+        except (IOError, PermissionError) as e:
+            self.log_warning(f"⚠️ Erreur d'accès au fichier {file_path}: {str(e)}")
+            return None
     
     def calculate_storage_usage(self) -> Dict[str, Any]:
         """Calcule l'utilisation de l'espace de stockage"""

@@ -33,33 +33,21 @@ export const useToast = () => {
    * @param {Object} options - Options additionnelles
    * @returns {number} ID du toast créé
    */
-  const addToast = useCallback((message, type = 'info', options = {}) => {
-    if (!message || typeof message !== 'string') {
-      console.warn('useToast: Message invalide fourni');
-      return null;
-    }
+  const addToast = useCallback((message, type = 'info', duration = DEFAULT_DURATION) => {
+    const id = Math.random().toString(36).substr(2, 9);
 
-    const id = Date.now() + Math.random();
-    const toast = {
-      id,
-      message,
-      type,
-      duration: DEFAULT_DURATION,
-      autoClose: true,
-      ...options
-    };
-
-    setToasts(prev => {
-      const newToasts = [...prev, toast];
-      return newToasts.slice(-MAX_TOASTS); // Limite le nombre de toasts
-    });
-
-    if (toast.autoClose && toast.duration > 0) {
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+    
+    // Configuration du timer de suppression automatique
+    if (duration > 0) {
       const timer = setTimeout(() => {
         removeToast(id);
-      }, toast.duration + ANIMATION_DURATION);
+      }, duration);
       
+      // Stockage de la référence du timer pour nettoyage
+      if (timersRef.current) {
       timersRef.current.set(id, timer);
+      }
     }
 
     return id;

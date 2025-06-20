@@ -132,7 +132,7 @@ function Login() {
               
               <Button
                 type="submit"
-                variant="neutral"
+                variant="info"
                 isDisabled={isSubmitting || loginAttempts >= 5}
                 className="w-full transition-all duration-300"
               >
