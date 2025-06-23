@@ -27,7 +27,7 @@ version: '3.8'
 
 services:
   backend:
-    image: ronanjacques/cochin-project-manager-backend:latest
+    image: finnick5/cochin-project-manager-backend:latest
     container_name: cochin_backend
     restart: unless-stopped
     ports:
@@ -50,7 +50,7 @@ services:
       - cochin_network
 
   frontend:
-    image: ronanjacques/cochin-project-manager-frontend:latest
+    image: finnick5/cochin-project-manager-frontend:latest
     container_name: cochin_frontend
     restart: unless-stopped
     ports:

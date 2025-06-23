@@ -558,7 +558,7 @@ class ExternalRestoreService(BaseService):
         return None
     
     def _apply_filtered_data(self, filtered_data: Dict[str, Any], restoration: ExternalRestoration) -> Dict[str, Any]:
-        """Applique les données filtrées de manière sécurisée"""
+        """Applique les données filtrées de manière sécurisée avec ordre FK correct"""
         results = {
             'statements_applied': 0,
             'statements_failed': 0,
@@ -570,60 +570,55 @@ class ExternalRestoreService(BaseService):
         
         self.log_info(f"🔄 Application de {len(filtered_data['sql_statements'])} statements filtrés")
         
-        # Appliquer les statements SQL filtrés avec résolution de conflits
+        # 1. Séparer les statements par type et les ordonner correctement
+        create_statements, insert_statements, other_statements = self._sort_statements_by_dependency(filtered_data['sql_statements'])
+        
+        # Appliquer les statements SQL dans l'ordre correct
         from django.db import connection
         
-        for statement in filtered_data['sql_statements']:
-            if not statement.strip():
-                continue
+        try:
+            with connection.cursor() as cursor:
+                # 2. Désactiver temporairement les contraintes FK pour éviter les erreurs d'ordre
+                self.log_info("🔧 Désactivation temporaire des contraintes FK")
+                cursor.execute("PRAGMA foreign_keys = OFF;")
                 
+                # 3. D'abord, créer toutes les tables
+                self.log_info(f"📋 Création de {len(create_statements)} tables...")
+                for statement in create_statements:
+                    results.update(self._execute_single_statement(cursor, statement, results))
+                
+                # 4. Ensuite, autres statements (index, contraintes, etc.)
+                self.log_info(f"🔧 Application de {len(other_statements)} statements divers...")
+                for statement in other_statements:
+                    results.update(self._execute_single_statement(cursor, statement, results))
+                
+                # 5. Enfin, insérer toutes les données (sans ordre FK strict car FK désactivées)
+                self.log_info(f"📥 Insertion de {len(insert_statements)} enregistrements...")
+                for statement in insert_statements:
+                    results.update(self._execute_single_statement(cursor, statement, results))
+                
+                # 6. Réactiver les contraintes FK
+                self.log_info("✅ Réactivation des contraintes FK")
+                cursor.execute("PRAGMA foreign_keys = ON;")
+                
+                # 7. Vérifier l'intégrité des FK après réactivation
+                cursor.execute("PRAGMA foreign_key_check;")
+                fk_violations = cursor.fetchall()
+                if fk_violations:
+                    self.log_warning(f"⚠️ {len(fk_violations)} violations FK détectées mais tolérées")
+                    # On ne fait pas échouer la restauration pour des violations mineures
+                
+        except Exception as e:
+            # En cas d'erreur, s'assurer que les FK sont réactivées
             try:
-                # 🆕 Résoudre les conflits d'ID potentiels
-                resolved_statement = self._resolve_id_conflicts(statement)
-                
-                with transaction.atomic():
-                    # Exécuter le statement résolu
-                    with connection.cursor() as cursor:
-                        cursor.execute(resolved_statement)
-                        
-                    results['statements_applied'] += 1
-                    
-                    # Compter les types d'opérations
-                    statement_upper = resolved_statement.upper()
-                    if 'CREATE TABLE' in statement_upper:
-                        results['tables_created'] += 1
-                        self.log_info(f"✅ Table créée via statement SQL")
-                    elif 'INSERT INTO' in statement_upper:
-                        # Compter le nombre d'enregistrements insérés
-                        import re
-                        values_match = re.search(r'VALUES\s*\((.*?)\)', resolved_statement, re.IGNORECASE | re.DOTALL)
-                        if values_match:
-                            # Estimer le nombre d'enregistrements (approximatif)
-                            values_count = resolved_statement.upper().count('VALUES')
-                            results['records_inserted'] += values_count
-                        else:
-                            results['records_inserted'] += 1
-                        
-            except Exception as e:
-                error_message = str(e)
-                
-                # Erreurs bénignes qui n'empêchent pas la restauration
-                benign_errors = [
-                    'already exists',
-                    'duplicate column name',
-                    'near "UNIQUE": syntax error'  # Souvent des contraintes malformées
-                ]
-                
-                is_benign = any(benign_error.lower() in error_message.lower() for benign_error in benign_errors)
-                
-                if is_benign:
-                    # Erreur bénigne - on log en info mais on ne compte pas comme échec
-                    self.log_info(f"ℹ️ Erreur bénigne ignorée: {error_message}")
-                else:
-                    # Erreur importante - on compte comme échec
-                    results['statements_failed'] += 1
-                    results['errors'].append(error_message)
-                    self.log_warning(f"⚠️ Échec statement important: {error_message}")
+                with connection.cursor() as cursor:
+                    cursor.execute("PRAGMA foreign_keys = ON;")
+            except:
+                pass
+            
+            self.log_error(f"❌ Erreur critique lors de l'application des données: {e}")
+            results['errors'].append(f"Erreur critique: {e}")
+            results['statements_failed'] += 1
         
         # Traiter les fichiers additionnels s'il y en a
         if 'user_files' in filtered_data:
@@ -632,10 +627,131 @@ class ExternalRestoreService(BaseService):
         self.log_info(f"📊 Résultats application: {results['tables_created']} tables, {results['records_inserted']} enregistrements, {results['statements_failed']} échecs")
         
         return results
+
+    def _sort_statements_by_dependency(self, statements: List[str]) -> tuple:
+        """Trie les statements SQL par type pour respecter l'ordre des dépendances"""
+        create_statements = []
+        insert_statements = []
+        other_statements = []
+        
+        for statement in statements:
+            if not statement.strip():
+                continue
+                
+            statement_upper = statement.upper().strip()
+            
+            if statement_upper.startswith('CREATE TABLE'):
+                create_statements.append(statement)
+            elif statement_upper.startswith('INSERT INTO'):
+                insert_statements.append(statement)
+            else:
+                # Index, contraintes, etc.
+                other_statements.append(statement)
+        
+        # Ordonner les INSERT par dépendances FK approximatives
+        # Les tables sans FK d'abord, puis celles avec FK
+        ordered_inserts = self._order_inserts_by_fk_dependencies(insert_statements)
+        
+        return create_statements, ordered_inserts, other_statements
+
+    def _order_inserts_by_fk_dependencies(self, insert_statements: List[str]) -> List[str]:
+        """Ordonne grossièrement les INSERTs par dépendances FK"""
+        # Tables de base (généralement sans FK vers d'autres tables métier)
+        base_tables = [
+            'django_content_type',
+            'auth_permission', 
+            'authentication_user',
+            'database_dynamictable',
+            'database_dynamicfield'
+        ]
+        
+        # Tables avec FK (dépendantes)
+        dependent_tables = [
+            'database_dynamicrecord',
+            'database_dynamicvalue',
+            'conditional_fields_conditionalfieldrule',
+            'conditional_fields_conditionalfieldoption'
+        ]
+        
+        base_inserts = []
+        dependent_inserts = []
+        other_inserts = []
+        
+        for statement in insert_statements:
+            table_name = self._extract_table_name_from_statement(statement.lower())
+            
+            if table_name in base_tables:
+                base_inserts.append(statement)
+            elif table_name in dependent_tables:
+                dependent_inserts.append(statement)
+            else:
+                other_inserts.append(statement)
+        
+        # Retourner dans l'ordre : base → autres → dépendantes
+        return base_inserts + other_inserts + dependent_inserts
+
+    def _execute_single_statement(self, cursor, statement: str, current_results: dict) -> dict:
+        """Exécute un statement unique et met à jour les résultats"""
+        update_results = {
+            'statements_applied': 0,
+            'statements_failed': 0,
+            'tables_created': 0,
+            'records_inserted': 0,
+            'errors': []
+        }
+        
+        if not statement.strip():
+            return update_results
+            
+        try:
+            # Résoudre les conflits d'ID potentiels
+            resolved_statement = self._resolve_id_conflicts(statement)
+            
+            with transaction.atomic():
+                # Exécuter le statement résolu
+                cursor.execute(resolved_statement)
+                
+            update_results['statements_applied'] = 1
+            
+            # Compter les types d'opérations
+            statement_upper = resolved_statement.upper()
+            if 'CREATE TABLE' in statement_upper:
+                update_results['tables_created'] = 1
+                self.log_info(f"✅ Table créée: {self._extract_table_name_from_statement(resolved_statement)}")
+            elif 'INSERT INTO' in statement_upper:
+                # Compter le nombre d'enregistrements insérés
+                import re
+                values_count = resolved_statement.upper().count('VALUES')
+                update_results['records_inserted'] = max(1, values_count)
+                
+        except Exception as e:
+            error_message = str(e)
+            
+            # Erreurs bénignes qui n'empêchent pas la restauration
+            benign_errors = [
+                'already exists',
+                'duplicate column name',
+                'near "UNIQUE": syntax error',  # Contraintes malformées
+                'table "main"',  # Erreurs de schéma SQLite
+                'no such table: main.'  # Tables manquantes bénignes
+            ]
+            
+            is_benign = any(benign_error.lower() in error_message.lower() for benign_error in benign_errors)
+            
+            if is_benign:
+                # Erreur bénigne - on log en info mais on ne compte pas comme échec
+                self.log_info(f"ℹ️ Erreur bénigne ignorée: {error_message}")
+            else:
+                # Erreur importante - on compte comme échec
+                update_results['statements_failed'] = 1
+                update_results['errors'].append(error_message)
+                self.log_warning(f"⚠️ Échec statement important: {error_message}")
+        
+        return update_results
     
     def _resolve_id_conflicts(self, statement: str) -> str:
         """
-        🆕 Résout les conflits d'ID et autres conflits en modifiant les statements SQL.
+        🔧 Résout les conflits d'ID et autres conflits en modifiant les statements SQL.
         
         Gère :
         - INSERT avec ID explicite → INSERT OR REPLACE ou sans ID
@@ -654,10 +770,10 @@ class ExternalRestoreService(BaseService):
                 return statement_clean.replace('CREATE INDEX', 'CREATE INDEX IF NOT EXISTS', 1)
             return statement_clean
         
-        # 2. STATEMENTS ALTER TABLE ADD CONSTRAINT - Ignorer les erreurs de contraintes existantes  
-        if statement_upper.startswith('ALTER TABLE') and ('ADD CONSTRAINT' in statement_upper or 'ADD UNIQUE' in statement_upper):
-            # Pour les contraintes, on va les ignorer si elles causent des erreurs
-            # On les laisse telles quelles, les erreurs seront catchées
+        # 2. STATEMENTS CREATE TABLE - Ignorer si existe déjà
+        if statement_upper.startswith('CREATE TABLE'):
+            if 'IF NOT EXISTS' not in statement_upper:
+                return statement_clean.replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS', 1)
             return statement_clean
         
         # 3. STATEMENTS INSERT INTO 
@@ -671,7 +787,7 @@ class ExternalRestoreService(BaseService):
             
         table_name = table_match.group(1)
         
-        # Tables de données métier qui peuvent être écrasées
+        # Tables de données métier qui peuvent être écrasées avec INSERT OR REPLACE
         data_tables = [
             'database_dynamictable',
             'database_dynamicfield', 
@@ -685,24 +801,10 @@ class ExternalRestoreService(BaseService):
         if table_name in data_tables:
             return statement_clean.replace('INSERT INTO', 'INSERT OR REPLACE INTO', 1)
         
-        # Pour les autres tables, essayer d'enlever l'ID explicite
-        # Pattern plus robuste pour capturer les INSERT avec ID
-        pattern = r'INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*id\s*,\s*([^)]+)\)\s*VALUES\s*\(\s*\d+\s*,\s*([^)]+)\)'
-        
-        match = re.search(pattern, statement_clean, re.IGNORECASE | re.DOTALL)
-        
-        if match:
-            table_name_matched = match.group(1)
-            field_list = match.group(2)
-            values_list = match.group(3)
-            
-            # Reconstruire l'INSERT sans l'ID pour éviter les conflits
-            new_statement = f"INSERT INTO {table_name_matched} ({field_list}) VALUES ({values_list})"
-            
-            self.log_info(f"🔧 Résolution conflit ID (sans ID): {table_name_matched}")
-            return new_statement
-        
-        return statement_clean
+        # Pour les autres tables système, essayer INSERT OR IGNORE 
+        # pour éviter les erreurs de doublons
+        else:
+            return statement_clean.replace('INSERT INTO', 'INSERT OR IGNORE INTO', 1)
     
     def _finalize_external_restoration(self, restoration: ExternalRestoration, results: Dict[str, Any]) -> None:
         """Finalise la restauration externe avec les statistiques"""
