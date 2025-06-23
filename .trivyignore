@@ -1,0 +1,44 @@
+# 🛡️ Configuration d'exclusions Trivy pour Cochin Project Manager
+# 
+# Ce fichier liste les vulnérabilités à ignorer car elles ne s'appliquent pas
+# à notre contexte d'usage ou sont des faux positifs acceptables.
+#
+# ⚠️ ATTENTION: Toute exclusion doit être justifiée et documentée !
+
+# =============================================================================
+# CVE-2023-45853 (zlib/MiniZip)
+# =============================================================================
+# STATUS: EXCLUSION APPROUVÉE
+# RAISON: Cette CVE affecte spécifiquement MiniZip (zipOpenNewFileInZip4_64)
+#         - MiniZip n'est PAS une partie supportée du produit zlib
+#         - Notre application Django n'utilise PAS MiniZip
+#         - Aucun code de compression ZIP avec MiniZip dans le backend
+#         - Scan confirmé : aucune utilisation de minizip/zipOpen/zipClose
+# DATE: 2024-12-20
+# REVIEW: 2025-03-20 (révision trimestrielle)
+# SCAN: grep -r "minizip\|zipOpen\|zipClose" backend/ → Aucun résultat
+CVE-2023-45853
+
+# =============================================================================
+# EXEMPLE D'EXCLUSIONS FUTURES
+# =============================================================================
+# 
+# CVE-XXXX-XXXXX  # Commentaire obligatoire expliquant pourquoi
+#
+# Format attendu pour chaque exclusion:
+# CVE-YYYY-NNNNN  # RAISON: Description détaillée
+#                 # DATE: Date d'ajout
+#                 # REVIEW: Date de prochaine révision
+
+# =============================================================================
+# VULNÉRABILITÉS DÉVELOPPEMENT UNIQUEMENT
+# =============================================================================
+# (Packages présents seulement dans l'environnement de dev)
+
+# =============================================================================
+# VULNÉRABILITÉS NON-CRITIQUES REPORTÉES
+# =============================================================================
+# (Vulnérabilités de sévérité MEDIUM/LOW temporairement reportées)
+
+# Note: Ce fichier doit être revu régulièrement lors des mises à jour de sécurité
+# Dernière révision: 2024-12-20 

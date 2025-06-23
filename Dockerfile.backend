@@ -1,39 +1,53 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Variables d'environnement
+# Variables d'environnement de sécurité
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DJANGO_ENV=production
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Dépendances système
-RUN apt-get update && apt-get install -y \
+# Créer utilisateur non-root
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Mise à jour sécuritaire complète et dépendances système
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
     sqlite3 \
     cron \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get autoremove -y \
+    && apt-get autoclean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/* \
+    && rm -rf /root/.cache
 
 # Répertoire de travail
 WORKDIR /app
 
-# Installation des dépendances Python
+# Installation des dépendances Python avec vérification de sécurité
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install gunicorn
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn && \
+    pip check
 
-# Copie du code
-COPY backend/ .
+# Copie du code avec permissions appropriées
+COPY --chown=appuser:appuser backend/ .
+COPY --chown=appuser:appuser init-data/ ./init-data/
 
-# Script d'initialisation
-COPY init-data/ ./init-data/
-
-# Création des dossiers nécessaires
-RUN mkdir -p logs backups staticfiles media db
+# Création des dossiers nécessaires avec bonnes permissions
+RUN mkdir -p logs backups staticfiles media db && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app
 
 # Script de démarrage
 COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+RUN chmod +x entrypoint.sh && chown appuser:appuser entrypoint.sh
 
-# Permissions pour SQLite
-RUN chmod 755 /app/db
+# Basculer vers utilisateur non-root
+USER appuser
 
 # Commande par défaut
-ENTRYPOINT ["./entrypoint.sh"] 
+ENTRYPOINT ["./entrypoint.sh"]
