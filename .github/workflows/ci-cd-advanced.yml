@@ -170,7 +170,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: 🔐 Log in to Docker Hub
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.DOCKER_REGISTRY }}
@@ -178,7 +178,7 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: 📦 Log in to GitHub Container Registry
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.GHCR_REGISTRY }}
@@ -217,7 +217,14 @@ jobs:
         echo "Generated labels:"
         echo "${{ steps.meta.outputs.labels }}"
         echo ""
-        echo "Is push enabled: ${{ github.event_name != 'pull_request' }}"
+        echo "Is push enabled: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}"
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR"
+        else
+          echo "🔧 BUILD ONLY: Images construites mais pas publiées (attente tag v*)"
+        fi
 
     - name: 🏗️ Build and push to both registries
       id: build
@@ -225,7 +232,7 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.backend
-        push: ${{ github.event_name != 'pull_request' }}
+        push: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=backend
@@ -252,7 +259,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: 🔐 Log in to Docker Hub
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.DOCKER_REGISTRY }}
@@ -260,7 +267,7 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: 📦 Log in to GitHub Container Registry
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.GHCR_REGISTRY }}
@@ -299,7 +306,14 @@ jobs:
         echo "Generated labels:"
         echo "${{ steps.meta.outputs.labels }}"
         echo ""
-        echo "Is push enabled: ${{ github.event_name != 'pull_request' }}"
+        echo "Is push enabled: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}"
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR"
+        else
+          echo "🔧 BUILD ONLY: Images construites mais pas publiées (attente tag v*)"
+        fi
 
     - name: 🏗️ Build and push to both registries
       id: build
@@ -307,7 +321,7 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.frontend
-        push: ${{ github.event_name != 'pull_request' }}
+        push: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=frontend
@@ -328,7 +342,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: 🔍 Run Trivy vulnerability scanner (Backend)
-      if: needs.build-backend.result == 'success'
+      if: needs.build-backend.result == 'success' && startsWith(github.ref, 'refs/tags/v')
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend:${{ needs.build-backend.outputs.image-version }}'
@@ -337,12 +351,39 @@ jobs:
       continue-on-error: true
 
     - name: 🔍 Run Trivy vulnerability scanner (Frontend)
-      if: needs.build-frontend.result == 'success'
+      if: needs.build-frontend.result == 'success' && startsWith(github.ref, 'refs/tags/v')
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend:${{ needs.build-frontend.outputs.image-version }}'
         format: 'sarif'
         output: 'frontend-trivy-results.sarif'
+      continue-on-error: true
+
+    - name: 🔍 Scan local images (Build Only - Non-tag)
+      if: github.ref == 'refs/heads/main' && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+      run: |
+        echo "🔍 Scan de sécurité des images locales (build de validation)"
+        
+        # Installation de Trivy si nécessaire
+        if ! command -v trivy &> /dev/null; then
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+        fi
+        
+        # Scan des images locales construites 
+        if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+          echo "Scan backend..."
+          trivy image --format table --severity HIGH,CRITICAL docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend:dev || true
+        fi
+        
+        if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+          echo "Scan frontend..."
+          trivy image --format table --severity HIGH,CRITICAL docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend:dev || true
+        fi
       continue-on-error: true
 
     - name: 📤 Upload Backend Trivy scan results to GitHub Security tab
