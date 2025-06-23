@@ -42,3 +42,42 @@ CVE-2023-45853
 
 # Note: Ce fichier doit être revu régulièrement lors des mises à jour de sécurité
 # Dernière révision: 2024-12-20 
+
+# =====================================================
+# Exclusions de Vulnérabilités - Cochin Project Manager
+# =====================================================
+
+# CVE-2023-45853 - zlib: integer overflow dans zipOpenNewFileInZip4_6
+# JUSTIFICATION: Cette CVE affecte spécifiquement MiniZip, pas zlib.
+# Notre application Django n'utilise pas MiniZip (vérification: grep -r "minizip|zipOpen|zipClose" .)
+# Impact: Aucun sur notre stack Python/Django
+CVE-2023-45853
+
+# =====================================================
+# Vulnérabilités Système Non-Applicables à Django
+# =====================================================
+
+# CVE-2025-4802 - glibc: static setuid binary dlopen
+# JUSTIFICATION: Affecte uniquement les binaires setuid/setgid
+# Notre application Django conteneurisée n'utilise pas de binaires setuid
+# Impact: Aucun en contexte conteneurisé Django
+CVE-2025-4802
+
+# CVE-2025-6020 - linux-pam: Directory Traversal
+# JUSTIFICATION: Affecte l'authentification PAM du système
+# Django utilise son propre système d'authentification (django.contrib.auth)
+# Impact: Aucun car PAM n'est pas utilisé par Django
+CVE-2025-6020
+
+# CVE-2023-31484 - perl: CPAN.pm TLS certificate verification
+# JUSTIFICATION: Affecte les téléchargements de modules Perl via CPAN
+# Notre application est Python/Django, pas d'utilisation de CPAN
+# Impact: Aucun car pas d'utilisation de modules Perl CPAN
+CVE-2023-31484
+
+# =====================================================
+# Notes de Sécurité
+# =====================================================
+# Ces exclusions sont basées sur l'analyse du contexte d'usage
+# Application Django conteneurisée sans exposition aux vecteurs d'attaque concernés
+# Révision recommandée lors des mises à jour majeures du système de base 
