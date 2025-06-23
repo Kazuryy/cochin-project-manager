@@ -360,49 +360,116 @@ jobs:
         category: 'trivy-frontend'
 
   # =====================================================
-  # Job 4: Créer une release GitHub (pour les tags)
+  # Job 4: Création automatique de GitHub Release pour les tags
   # =====================================================
-  create-release:
-    name: 🏷️ Create GitHub Release
+  github-release:
+    name: 📋 Create GitHub Release
     runs-on: ubuntu-latest
     needs: [build-backend, build-frontend, security-scan]
-    if: startsWith(github.ref, 'refs/tags/v') && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
     
     steps:
     - name: 📥 Checkout code
       uses: actions/checkout@v4
-
-    - name: 🏷️ Create Release
+      with:
+        fetch-depth: 0
+    
+    - name: 🏷️ Extract version from tag
+      id: version
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+    
+    - name: 📝 Generate changelog since last release
+      id: changelog
+      run: |
+        # Récupérer le tag précédent
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ steps.version.outputs.tag_name }}^ 2>/dev/null || echo "")
+        
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "## 📋 Changements depuis $PREVIOUS_TAG" > release_notes.md
+          echo "" >> release_notes.md
+          
+          # Features
+          if git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(feat|feature|✨)" > /dev/null; then
+            echo "### ✨ Nouvelles fonctionnalités" >> release_notes.md
+            git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(feat|feature|✨)" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Fixes
+          if git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(fix|bug|🐛)" > /dev/null; then
+            echo "### 🐛 Corrections de bugs" >> release_notes.md
+            git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(fix|bug|🐛)" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Improvements
+          if git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(improve|enhance|update|🔧)" > /dev/null; then
+            echo "### 🔧 Améliorations" >> release_notes.md
+            git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(improve|enhance|update|🔧)" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Security
+          if git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(security|sec|🛡️)" > /dev/null; then
+            echo "### 🛡️ Sécurité" >> release_notes.md
+            git log ${PREVIOUS_TAG}..${{ steps.version.outputs.tag_name }} --oneline | grep -E "(security|sec|🛡️)" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+        else
+          echo "## 🎉 Version initiale" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "Première release officielle du Cochin Project Manager !" >> release_notes.md
+          echo "" >> release_notes.md
+        fi
+        
+        # Informations sur les images Docker
+        echo "## 🐳 Images Docker" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### Docker Hub" >> release_notes.md
+        echo "- **Backend**: \`${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend:${{ steps.version.outputs.version }}\`" >> release_notes.md
+        echo "- **Backend**: \`${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend:latest\`" >> release_notes.md
+        echo "- **Frontend**: \`${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend:${{ steps.version.outputs.version }}\`" >> release_notes.md
+        echo "- **Frontend**: \`${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend:latest\`" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### GitHub Container Registry" >> release_notes.md
+        echo "- **Backend**: \`ghcr.io/${{ github.repository }}/backend:${{ steps.version.outputs.version }}\`" >> release_notes.md
+        echo "- **Backend**: \`ghcr.io/${{ github.repository }}/backend:latest\`" >> release_notes.md
+        echo "- **Frontend**: \`ghcr.io/${{ github.repository }}/frontend:${{ steps.version.outputs.version }}\`" >> release_notes.md
+        echo "- **Frontend**: \`ghcr.io/${{ github.repository }}/frontend:latest\`" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## 🚀 Déploiement rapide" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "\`\`\`bash" >> release_notes.md
+        echo "# Avec Docker Hub" >> release_notes.md
+        echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} BACKEND_TAG=${{ steps.version.outputs.version }} FRONTEND_TAG=${{ steps.version.outputs.version }} ./deploy-prod.sh" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "# Ou avec GitHub Container Registry" >> release_notes.md
+        echo "GHCR_BACKEND_TAG=${{ steps.version.outputs.version }} GHCR_FRONTEND_TAG=${{ steps.version.outputs.version }} ./deploy-prod.sh" >> release_notes.md
+        echo "\`\`\`" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## 🔗 Liens utiles" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "- 📦 [Packages GitHub](${{ github.server_url }}/${{ github.repository }}/pkgs/container/backend)" >> release_notes.md
+        echo "- 🐳 [Docker Hub](${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend)" >> release_notes.md
+        echo "- 📋 [Documentation](README.md)" >> release_notes.md
+        echo "- 🚀 [Guide de déploiement](README_DEPLOYMENT_SIMPLE.md)" >> release_notes.md
+    
+    - name: 🎯 Create GitHub Release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
-        body: |
-          ## 🚀 Release ${{ github.ref_name }}
-          
-          ### 📦 Images Docker publiées:
-          
-          #### Docker Hub:
-          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.DOCKER_BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
-          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.DOCKER_FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
-          
-          #### GitHub Container Registry:
-          ${{ needs.build-backend.result == 'success' && format('- **Backend**: `{0}:{1}`', env.GHCR_BACKEND_IMAGE, needs.build-backend.outputs.image-version) || '' }}
-          ${{ needs.build-frontend.result == 'success' && format('- **Frontend**: `{0}:{1}`', env.GHCR_FRONTEND_IMAGE, needs.build-frontend.outputs.image-version) || '' }}
-          
-          ### 🚀 Commande de déploiement rapide:
-          ```bash
-          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} BACKEND_TAG=${{ github.ref_name }} FRONTEND_TAG=${{ github.ref_name }} ./deploy-prod.sh
-          ```
-          
-          ### 🔄 Commande de mise à jour:
-          ```bash
-          DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./check-updates.sh
-          ```
+        tag_name: ${{ steps.version.outputs.tag_name }}
+        release_name: 🚀 Release ${{ steps.version.outputs.tag_name }}
+        body_path: release_notes.md
         draft: false
-        prerelease: contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha')
+        prerelease: ${{ contains(steps.version.outputs.tag_name, '-') }}
 
   # =====================================================
   # Job 5: Notifications et résumé final
