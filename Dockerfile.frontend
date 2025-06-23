@@ -27,10 +27,12 @@ RUN npm run build
 # Stage de production avec serveur statique (Alpine 3.21.4+ pour corriger libxml2)
 FROM nginx:alpine3.21 AS runner
 
-# Installer dumb-init et mettre à jour les packages de sécurité (libxml2)
+# Installer dumb-init et forcer la mise à jour libxml2 pour corriger CVE-2025-32414/32415
 RUN apk update && \
     apk upgrade && \
-    apk add --no-cache dumb-init libxml2>=2.13.4-r6
+    apk add --no-cache dumb-init && \
+    apk del libxml2 && \
+    apk add --no-cache libxml2=2.13.4-r6
 
 # Créer utilisateur non-root (utiliser le groupe nginx existant)
 RUN adduser -S nginxuser -u 1001 -G nginx
