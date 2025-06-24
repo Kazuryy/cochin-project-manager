@@ -27,6 +27,12 @@ RUN apt-get update && \
 # Répertoire de travail
 WORKDIR /app
 
+# Créer le répertoire et définir les permissions avant le COPY et avant de changer d'utilisateur
+RUN mkdir -p /app/logs backups staticfiles media db && \
+    chmod 777 /app/logs && \
+    chmod -R 755 backups staticfiles media db && \
+    chown -R appuser:appuser /app
+
 # Installation des dépendances Python avec vérification de sécurité
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -37,12 +43,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Copie du code avec permissions appropriées
 COPY --chown=appuser:appuser backend/ .
 COPY --chown=appuser:appuser init-data/ ./init-data/
-
-# Création des dossiers nécessaires avec bonnes permissions
-RUN mkdir -p logs backups staticfiles media db && \
-    chown -R appuser:appuser /app && \
-    chmod -R 755 /app && \
-    chmod -R 777 logs  # Permissions d'écriture pour les logs
 
 # Script de démarrage
 COPY entrypoint.sh .
