@@ -7,8 +7,9 @@ ENV DJANGO_ENV=production
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Créer utilisateur non-root
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Créer utilisateur non-root avec UID 1000 (standard Ubuntu)
+RUN groupadd -r appuser -g 1000 && \
+    useradd -r -u 1000 -g appuser appuser
 
 # Mise à jour sécuritaire complète et dépendances système
 RUN apt-get update && \
