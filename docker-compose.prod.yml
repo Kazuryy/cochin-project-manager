@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     image: ${DOCKERHUB_USERNAME}/cochin-project-manager-backend:${BACKEND_TAG:-latest}

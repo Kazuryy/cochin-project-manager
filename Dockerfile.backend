@@ -41,7 +41,8 @@ COPY --chown=appuser:appuser init-data/ ./init-data/
 # Création des dossiers nécessaires avec bonnes permissions
 RUN mkdir -p logs backups staticfiles media db && \
     chown -R appuser:appuser /app && \
-    chmod -R 755 /app
+    chmod -R 755 /app && \
+    chmod -R 777 logs  # Permissions d'écriture pour les logs
 
 # Script de démarrage
 COPY entrypoint.sh .

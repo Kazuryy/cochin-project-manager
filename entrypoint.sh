@@ -6,6 +6,12 @@ echo "🚀 Démarrage de Cochin Project Manager..."
 # Attendre que les dossiers soient montés
 sleep 2
 
+# Corriger les permissions des dossiers critiques
+echo "🔧 Correction des permissions..."
+mkdir -p /app/logs /app/backups /app/staticfiles /app/media /app/db
+chmod -R 777 /app/logs
+chmod -R 755 /app/backups /app/staticfiles /app/media /app/db
+
 # Appliquer les migrations
 echo "📊 Application des migrations..."
 python manage.py migrate --noinput

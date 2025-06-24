@@ -278,10 +278,13 @@ def setup_logging():
     logs_dir = BASE_DIR / 'logs'
     
     try:
+        # Créer le dossier logs avec les bonnes permissions
         logs_dir.mkdir(exist_ok=True)
-    except PermissionError:
+        # S'assurer que le dossier est accessible en écriture
+        os.chmod(logs_dir, 0o777)
+    except (PermissionError, OSError) as e:
         # Fallback to console-only logging if we can't create log directory
-        print(f"⚠️  WARNING: Cannot create logs directory at {logs_dir}. Using console logging only.")
+        print(f"⚠️  WARNING: Cannot create logs directory at {logs_dir}: {e}. Using console logging only.")
         return {
             'version': 1,
             'disable_existing_loggers': False,
