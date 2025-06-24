@@ -114,39 +114,21 @@ else
 fi
 
 # Vérifier les permissions
-echo "🔒 Configuration des permissions pour Docker..."
+echo "🔒 Configuration des permissions..."
 mkdir -p data/{db,media,backups,logs,staticfiles}
 
-# Ajouter l'utilisateur au groupe Docker si nécessaire
-if ! groups $USER | grep -q '\bdocker\b'; then
-  echo "   ↳ Ajout de l'utilisateur au groupe docker..."
-  sudo usermod -aG docker $USER
-  echo "   ↳ IMPORTANT: Vous devrez vous déconnecter et vous reconnecter pour que les changements prennent effet!"
-fi
-
-# Option sécurisée - Donner les permissions uniquement au groupe docker
-echo "   ↳ Attribution des permissions au groupe docker..."
-# Obtenir le GID du groupe docker
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-
-if [ -n "$DOCKER_GID" ]; then
-  echo "   ↳ Configuration pour le groupe docker (GID: $DOCKER_GID)..."
-  # Donner la propriété à l'utilisateur courant et au groupe docker
-  sudo chown -R $USER:docker data/
-  # Permissions sécurisées pour le groupe docker (770 = user+groupe peuvent lire/écrire)
-  sudo chmod -R 770 data/
-  # Sticky bit pour que les nouveaux fichiers héritent du groupe
-  sudo chmod -R g+s data/
-  echo "   ↳ Permissions sécurisées appliquées uniquement pour docker ✅"
-else
-  echo "   ⚠️  Groupe docker introuvable - utilisation d'une méthode alternative..."
-  # Fallback - Donner les permissions à l'utilisateur du container (généralement UID 1000)
+# Option 1: Permissions simples compatibles partout (chmod 777)
+if [ "$1" = "--secure" ]; then
+  echo "   ↳ Application de permissions sécurisées (uniquement UID 1000)..."
   sudo chown -R 1000:1000 data/
   sudo chmod -R 755 data/
-  echo "   ↳ Permissions appliquées pour UID 1000 (utilisateur standard du container) ✅"
+  echo "   ✅ Permissions configurées pour l'utilisateur avec UID 1000 uniquement"
+else
+  echo "   ↳ Application de permissions universelles (chmod 777)..."
+  chmod -R 777 data/
+  echo "   ✅ Permissions 777 appliquées (tout le monde peut lire/écrire)"
 fi
 
-# Vérification des permissions
 echo "   ↳ Vérification des permissions actuelles:"
 ls -la data/
 

@@ -7,7 +7,8 @@ ENV DJANGO_ENV=production
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Créer utilisateur non-root avec UID 1000 (standard Ubuntu)
+# Créer utilisateur non-root avec UID 1000 (standard pour le premier utilisateur)
+# L'UID 1000 est généralement l'UID du premier utilisateur sur Ubuntu/Debian
 RUN groupadd -r appuser -g 1000 && \
     useradd -r -u 1000 -g appuser appuser
 
@@ -28,18 +29,18 @@ RUN apt-get update && \
 # Répertoire de travail
 WORKDIR /app
 
-# Créer le répertoire et définir les permissions avant le COPY et avant de changer d'utilisateur
-RUN mkdir -p /app/logs backups staticfiles media db && \
-    chmod 777 /app/logs && \
-    chmod -R 755 backups staticfiles media db && \
-    chown -R appuser:appuser /app
+# Créer les dossiers avec les bonnes permissions avant tout
+RUN mkdir -p /app/logs /app/backups /app/staticfiles /app/media /app/db /app/data/db && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app
 
 # Installation des dépendances Python avec vérification de sécurité
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir gunicorn && \
-    pip check
+    pip check && \
+    chown appuser:appuser -R /app
 
 # Copie du code avec permissions appropriées
 COPY --chown=appuser:appuser backend/ .
@@ -47,7 +48,8 @@ COPY --chown=appuser:appuser init-data/ ./init-data/
 
 # Script de démarrage
 COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh && chown appuser:appuser entrypoint.sh
+RUN chmod +x entrypoint.sh && \
+    chown appuser:appuser entrypoint.sh
 
 # Basculer vers utilisateur non-root
 USER appuser

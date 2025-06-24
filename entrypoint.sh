@@ -6,11 +6,19 @@ echo "🚀 Démarrage de Cochin Project Manager..."
 # Attendre que les dossiers soient montés
 sleep 2
 
-# Corriger les permissions des dossiers critiques
-echo "🔧 Correction des permissions..."
-mkdir -p /app/logs /app/backups /app/staticfiles /app/media /app/db
-chmod -R 777 /app/logs
-chmod -R 755 /app/backups /app/staticfiles /app/media /app/db
+# S'assurer que les dossiers existent et sont accessibles
+echo "🔧 Vérification des dossiers critiques..."
+mkdir -p /app/logs /app/backups /app/staticfiles /app/media /app/db /app/data/db
+
+# Test d'écriture - Vérifie que l'utilisateur a les droits d'écriture
+if touch /app/logs/startup_test.log 2>/dev/null; then
+    echo "✅ Permissions OK - L'application peut écrire dans les logs"
+    rm /app/logs/startup_test.log
+else
+    echo "⚠️  AVERTISSEMENT: Problème de permissions détecté dans /app/logs"
+    echo "   Le conteneur pourrait rencontrer des erreurs"
+    echo "   Pour résoudre: chmod 777 ./data/logs sur la machine hôte"
+fi
 
 # Appliquer les migrations
 echo "📊 Application des migrations..."
