@@ -170,7 +170,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: 🔐 Log in to Docker Hub
-      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+      if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.DOCKER_REGISTRY }}
@@ -178,7 +178,7 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: 📦 Log in to GitHub Container Registry
-      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+      if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.GHCR_REGISTRY }}
@@ -217,13 +217,15 @@ jobs:
         echo "Generated labels:"
         echo "${{ steps.meta.outputs.labels }}"
         echo ""
-        echo "Is push enabled: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}"
+        echo "Is push enabled: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}"
         echo "Event: ${{ github.event_name }}"
         echo "Ref: ${{ github.ref }}"
         if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
-          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR"
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR (TAG DE VERSION)"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR (BRANCHE MAIN -> TAG DEV)"
         else
-          echo "🔧 BUILD ONLY: Images construites mais pas publiées (attente tag v*)"
+          echo "🔧 BUILD ONLY: Images construites mais pas publiées"
         fi
 
     - name: 🏗️ Build and push to both registries
@@ -232,7 +234,7 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.backend
-        push: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
+        push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=backend
@@ -259,7 +261,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: 🔐 Log in to Docker Hub
-      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+      if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.DOCKER_REGISTRY }}
@@ -267,7 +269,7 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: 📦 Log in to GitHub Container Registry
-      if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+      if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
       uses: docker/login-action@v3
       with:
         registry: ${{ env.GHCR_REGISTRY }}
@@ -306,13 +308,15 @@ jobs:
         echo "Generated labels:"
         echo "${{ steps.meta.outputs.labels }}"
         echo ""
-        echo "Is push enabled: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}"
+        echo "Is push enabled: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}"
         echo "Event: ${{ github.event_name }}"
         echo "Ref: ${{ github.ref }}"
         if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
-          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR"
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR (TAG DE VERSION)"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "🚀 PUBLICATION: Images seront publiées sur Docker Hub & GHCR (BRANCHE MAIN -> TAG DEV)"
         else
-          echo "🔧 BUILD ONLY: Images construites mais pas publiées (attente tag v*)"
+          echo "🔧 BUILD ONLY: Images construites mais pas publiées"
         fi
 
     - name: 🏗️ Build and push to both registries
@@ -321,7 +325,7 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.frontend
-        push: ${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
+        push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=frontend
