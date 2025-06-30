@@ -14,6 +14,7 @@ function ProjectDetailsContent() {
   const [projectData, setProjectData] = useState(null);
   const [projectDetailsData, setProjectDetailsData] = useState(null);
   const [detailsTable, setDetailsTable] = useState(null);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -257,6 +258,31 @@ function ProjectDetailsContent() {
     }
   }, [tables, getFieldValue, fetchRecords, projectId]);
 
+  // Fonction pour charger tous les contacts pour récupérer l'équipe
+  const loadContacts = useCallback(async () => {
+    try {
+      // Trouver la table Contacts
+      const contactTable = tables.find(t => 
+        t.name.toLowerCase().includes('contact') || 
+        t.slug === 'contacts' ||
+        t.slug === 'contact'
+      );
+
+      if (!contactTable) {
+        console.warn('Table Contacts introuvable');
+        return;
+      }
+
+      // Charger tous les contacts
+      const contactsData = await fetchRecords(contactTable.id);
+      setContacts(contactsData || []);
+
+    } catch (err) {
+      console.error('Erreur lors du chargement des contacts:', err);
+      // Ne pas propager l'erreur car les contacts sont optionnels pour l'affichage
+    }
+  }, [tables, fetchRecords]);
+
   // Charger toutes les données au montage
   useEffect(() => {
     const loadAllData = async () => {
@@ -267,7 +293,10 @@ function ProjectDetailsContent() {
 
       try {
         const project = await loadProjectData();
-        await loadProjectDetails(project);
+        await Promise.all([
+          loadProjectDetails(project),
+          loadContacts()
+        ]);
       } catch (err) {
         setError(err.message || 'Erreur lors du chargement des données');
       } finally {
@@ -276,7 +305,7 @@ function ProjectDetailsContent() {
     };
 
     loadAllData();
-  }, [tables, projectId, loadProjectData, loadProjectDetails]);
+  }, [tables, projectId, loadProjectData, loadProjectDetails, loadContacts]);
 
   // Fonction pour rendre une section de données
   const renderDataSection = useCallback((data, fields, title) => {
@@ -314,6 +343,32 @@ function ProjectDetailsContent() {
       return dateString; // Retourner la valeur originale si erreur de formatage
     }
   };
+
+  // Fonction pour récupérer l'équipe du contact principal automatiquement
+  const getContactTeam = useCallback(() => {
+    if (!projectData || !contacts.length) {
+      return null;
+    }
+
+    // Récupérer l'ID du contact principal du projet
+    const contactPrincipalId = getFieldValue(projectData, 'contact_principal', 'contact', 'principal_contact');
+    
+    if (!contactPrincipalId) {
+      return null;
+    }
+
+    // Trouver le contact dans la liste
+    const selectedContact = contacts.find(c => c.id.toString() === contactPrincipalId.toString());
+    
+    if (!selectedContact) {
+      return null;
+    }
+
+    // Extraire l'équipe du contact
+    const contactEquipe = getFieldValue(selectedContact, 'equipe', 'team', 'groupe', 'group');
+    
+    return contactEquipe && contactEquipe.trim() !== '' ? contactEquipe : null;
+  }, [projectData, contacts, getFieldValue]);
 
   // Fonction helper pour les badges de statut
   const getStatusBadge = (statut) => {
@@ -529,7 +584,28 @@ function ProjectDetailsContent() {
                   </div>
                   
                   <div>
-                    <strong>Équipe :</strong> {getFieldValue(projectData, 'equipe', 'team', 'groupe') || 'Équipe non définie'}
+                    <strong>Équipe :</strong> {(() => {
+                      const contactEquipe = getContactTeam();
+                      const projetEquipe = getFieldValue(projectData, 'equipe', 'team', 'groupe');
+                      
+                      if (contactEquipe) {
+                        return (
+                          <>
+                            <span className="badge badge-primary">{contactEquipe}</span>
+                            <span className="text-xs text-base-content/60 ml-2">(du contact principal)</span>
+                          </>
+                        );
+                      } else if (projetEquipe) {
+                        return (
+                          <>
+                            <span className="badge badge-outline">{projetEquipe}</span>
+                            <span className="text-xs text-warning ml-2">(définie manuellement)</span>
+                          </>
+                        );
+                      } else {
+                        return <span className="text-warning">Équipe non définie</span>;
+                      }
+                    })()}
                   </div>
 
                   <div>
