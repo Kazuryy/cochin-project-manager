@@ -39,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        BUILD_ENV: development
     image: cochin-project-manager-frontend:local
     container_name: cochin_frontend
     restart: unless-stopped
