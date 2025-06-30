@@ -12,6 +12,7 @@ env/
 *.pyc
 *.pyo
 *.pyd
+test/
 
 # Django
 *.log
@@ -84,6 +85,7 @@ Thumbs.db
 .project
 .classpath
 .settings/
+test/
 
 # OS
 .directory

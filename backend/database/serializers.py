@@ -1,11 +1,12 @@
 # backend/database/serializers.py
 from rest_framework import serializers
-from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue
+from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue, ProjectPdfFile
 import json
 import logging
 from django.db import models, transaction
 from django.core.cache import cache
 from typing import Dict, Any, Optional
+from django.contrib.auth import get_user_model
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -507,3 +508,67 @@ class FlatDynamicRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = DynamicRecord
         fields = '__all__'
+
+class ProjectPdfFileSerializer(serializers.ModelSerializer):
+    """
+    Serializer pour les fichiers PDF des projets.
+    """
+    uploaded_by_username = serializers.CharField(
+        source='uploaded_by.username', 
+        read_only=True
+    )
+    file_size_formatted = serializers.ReadOnlyField()
+    file_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ProjectPdfFile
+        fields = [
+            'id', 'original_filename', 'display_name', 'file', 'file_url',
+            'file_size', 'file_size_formatted', 'description', 'uploaded_at',
+            'uploaded_by', 'uploaded_by_username', 'order', 'project_record'
+        ]
+        read_only_fields = ['uploaded_at', 'uploaded_by', 'file_size']
+        
+    def get_file_url(self, obj):
+        """Retourne l'URL du fichier"""
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+    
+    def validate_file(self, value):
+        """Validation du fichier PDF"""
+        if not value:
+            raise serializers.ValidationError("Aucun fichier fourni")
+            
+        # Vérifier l'extension
+        if not value.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError("Seuls les fichiers PDF sont autorisés")
+            
+        # Vérifier la taille (limite: 50 MB)
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if value.size > max_size:
+            raise serializers.ValidationError(
+                f"Fichier trop volumineux. Taille maximale: {max_size // (1024*1024)} MB"
+            )
+            
+        return value
+    
+    def validate_display_name(self, value):
+        """Validation du nom d'affichage"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le nom d'affichage est requis")
+        return value.strip()
+    
+    def create(self, validated_data):
+        """Création avec gestion automatique de certains champs"""
+        # Assigner l'utilisateur actuel
+        validated_data['uploaded_by'] = self.context['request'].user
+        
+        # Extraire le nom original du fichier
+        if 'file' in validated_data and not validated_data.get('original_filename'):
+            validated_data['original_filename'] = validated_data['file'].name
+            
+        return super().create(validated_data)

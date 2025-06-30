@@ -5,6 +5,12 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 import json
 from datetime import date, datetime, timedelta
+import os
+from pathlib import Path
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.files.storage import default_storage
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 User = get_user_model()
 
@@ -432,3 +438,103 @@ class DynamicValue(models.Model):
         # Pour les autres types (text, long_text, date, datetime, file, image),
         # on renvoie la valeur telle quelle
         return self.value
+
+class ProjectPdfFile(models.Model):
+    """
+    Modèle pour stocker les fichiers PDF associés aux projets.
+    """
+    # Relation avec le projet
+    project_record = models.ForeignKey(
+        'DynamicRecord',
+        on_delete=models.CASCADE,
+        related_name='pdf_files',
+        verbose_name=_('projet')
+    )
+    
+    # Métadonnées du fichier
+    original_filename = models.CharField(
+        _('nom du fichier original'),
+        max_length=255
+    )
+    display_name = models.CharField(
+        _('nom d\'affichage'),
+        max_length=255,
+        help_text=_('Nom personnalisé pour l\'affichage')
+    )
+    file = models.FileField(
+        _('fichier PDF'),
+        upload_to='project_pdfs/%Y/%m/',
+        help_text=_('Fichier PDF du projet')
+    )
+    file_size = models.BigIntegerField(
+        _('taille du fichier'),
+        help_text=_('Taille en bytes')
+    )
+    
+    # Métadonnées
+    description = models.TextField(
+        _('description'),
+        blank=True,
+        help_text=_('Description optionnelle du document')
+    )
+    
+    # Traçabilité
+    uploaded_at = models.DateTimeField(
+        _('uploadé le'),
+        auto_now_add=True
+    )
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name=_('uploadé par')
+    )
+    
+    # Ordre d'affichage
+    order = models.PositiveIntegerField(
+        _('ordre'),
+        default=0,
+        help_text=_('Ordre d\'affichage des fichiers')
+    )
+    
+    class Meta:
+        verbose_name = _('fichier PDF de projet')
+        verbose_name_plural = _('fichiers PDF de projet')
+        ordering = ['order', 'uploaded_at']
+        
+    def __str__(self):
+        return f"{self.display_name} - {self.project_record}"
+    
+    @property
+    def file_size_formatted(self):
+        """Retourne la taille formatée du fichier"""
+        if not self.file_size:
+            return "—"
+        
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+    
+    def save(self, *args, **kwargs):
+        # Calculer la taille du fichier
+        if self.file and hasattr(self.file, 'size'):
+            self.file_size = self.file.size
+            
+        # Assigner un nom d'affichage par défaut si non fourni
+        if not self.display_name and self.original_filename:
+            self.display_name = self.original_filename
+            
+        super().save(*args, **kwargs)
+
+
+@receiver(post_delete, sender=ProjectPdfFile)
+def delete_pdf_file(sender, instance, **kwargs):
+    """
+    Supprime le fichier physique lorsque l'objet est supprimé.
+    """
+    if instance.file:
+        if default_storage.exists(instance.file.name):
+            default_storage.delete(instance.file.name)

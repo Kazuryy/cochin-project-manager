@@ -1,6 +1,6 @@
 services:
   backend:
-    image: finnick5/cochin-project-manager-backend:${BACKEND_TAG:-latest}
+    image: finnick5/cochin-project-manager-backend:dev
     container_name: cochin_backend
     restart: unless-stopped
     ports:
@@ -30,7 +30,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: finnick5/cochin-project-manager-frontend:${FRONTEND_TAG:-latest}
+    image: finnick5/cochin-project-manager-frontend:dev
     container_name: cochin_frontend
     restart: unless-stopped
     ports:

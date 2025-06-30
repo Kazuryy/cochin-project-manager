@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.db import models
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse, Http404
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
@@ -17,15 +17,20 @@ import os
 from django.conf import settings
 import subprocess
 from datetime import datetime
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.exceptions import ValidationError
+from django.utils.decorators import method_decorator
+import mimetypes
 
-from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue
+from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue, ProjectPdfFile
 from .serializers import (
     DynamicTableSerializer,
     DynamicFieldSerializer,
     DynamicRecordSerializer,
     DynamicValueSerializer,
     DynamicRecordCreateSerializer,
-    FlatDynamicRecordSerializer
+    FlatDynamicRecordSerializer,
+    ProjectPdfFileSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -1252,3 +1257,154 @@ class ProjectManager(TableFinderMixin):
         
         # Mettre à jour les champs conditionnels
         self._populate_conditional_fields(details_record, details_table, conditional_fields)
+
+class ProjectPdfFileViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet pour gérer les fichiers PDF des projets.
+    """
+    serializer_class = ProjectPdfFileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get_queryset(self):
+        """Filtrer les PDFs par projet si fourni"""
+        queryset = ProjectPdfFile.objects.all()
+        project_id = self.request.query_params.get('project_id')
+        
+        if project_id:
+            queryset = queryset.filter(project_record_id=project_id)
+            
+        return queryset.select_related('uploaded_by', 'project_record')
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Upload d'un nouveau fichier PDF pour un projet.
+        """
+        try:
+            # Vérifier que le projet existe
+            project_id = request.data.get('project_record')
+            if not project_id:
+                return Response({
+                    'error': 'ID du projet requis'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                project = DynamicRecord.objects.get(
+                    id=project_id, 
+                    is_active=True
+                )
+            except DynamicRecord.DoesNotExist:
+                return Response({
+                    'error': 'Projet introuvable'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Vérifier que l'utilisateur a accès au projet
+            # (pour l'instant, tout utilisateur authentifié peut uploader)
+            
+            serializer = self.get_serializer(data=request.data)
+            if serializer.is_valid():
+                pdf_file = serializer.save()
+                
+                return Response({
+                    'success': True,
+                    'message': f'Fichier "{pdf_file.display_name}" uploadé avec succès',
+                    'data': ProjectPdfFileSerializer(pdf_file, context={'request': request}).data
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    'error': 'Données invalides',
+                    'details': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"Erreur upload PDF: {e}", exc_info=True)
+            return Response({
+                'error': 'Erreur lors de l\'upload',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Suppression d'un fichier PDF.
+        """
+        try:
+            pdf_file = self.get_object()
+            filename = pdf_file.display_name
+            
+            # Supprimer le fichier (le signal s'occupe du fichier physique)
+            pdf_file.delete()
+            
+            return Response({
+                'success': True,
+                'message': f'Fichier "{filename}" supprimé avec succès'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Erreur suppression PDF: {e}", exc_info=True)
+            return Response({
+                'error': 'Erreur lors de la suppression',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['patch'])
+    def update_order(self, request, pk=None):
+        """
+        Mettre à jour l'ordre d'affichage d'un fichier PDF.
+        """
+        try:
+            pdf_file = self.get_object()
+            new_order = request.data.get('order')
+            
+            if new_order is None:
+                return Response({
+                    'error': 'Ordre manquant'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            pdf_file.order = new_order
+            pdf_file.save(update_fields=['order'])
+            
+            return Response({
+                'success': True,
+                'message': 'Ordre mis à jour',
+                'data': ProjectPdfFileSerializer(pdf_file, context={'request': request}).data
+            })
+            
+        except Exception as e:
+            logger.error(f"Erreur mise à jour ordre PDF: {e}", exc_info=True)
+            return Response({
+                'error': 'Erreur lors de la mise à jour',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """
+        Réorganiser l'ordre de plusieurs fichiers PDF.
+        """
+        try:
+            pdf_orders = request.data.get('pdf_orders', [])
+            
+            if not pdf_orders:
+                return Response({
+                    'error': 'Liste des ordres manquante'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                for item in pdf_orders:
+                    pdf_id = item.get('id')
+                    new_order = item.get('order')
+                    
+                    if pdf_id and new_order is not None:
+                        ProjectPdfFile.objects.filter(id=pdf_id).update(order=new_order)
+            
+            return Response({
+                'success': True,
+                'message': 'Ordre mis à jour pour tous les fichiers'
+            })
+            
+        except Exception as e:
+            logger.error(f"Erreur réorganisation PDFs: {e}", exc_info=True)
+            return Response({
+                'error': 'Erreur lors de la réorganisation',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

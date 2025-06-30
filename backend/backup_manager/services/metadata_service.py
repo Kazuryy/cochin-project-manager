@@ -101,8 +101,9 @@ class MetadataService(BaseService):
                 verbosity=0
             )
             
-            # Déplacement vers le chemin final
-            tmp_path.rename(export_path)
+            # Déplacement vers le chemin final (shutil.move gère les cross-device links)
+            import shutil
+            shutil.move(str(tmp_path), str(export_path))
             tmp_path = None  # Éviter le nettoyage car déplacé
             
             # Statistiques (analyse une seule fois)

@@ -11,6 +11,14 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/auth': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/auth/, '/api/auth')
+      }
     },
+    // Force HTTP et désactive HTTPS
+    https: false,
+    host: 'localhost'
   },
 })

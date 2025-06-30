@@ -113,20 +113,32 @@ else
     fi
 fi
 
-# Vérifier les permissions
-echo "🔒 Configuration des permissions..."
+# Configuration sécurisée des permissions
+echo "🔒 Configuration sécurisée des permissions..."
 mkdir -p data/{db,media,backups,logs,staticfiles}
 
-# Option 1: Permissions simples compatibles partout (chmod 777)
+# Obtenir l'UID/GID de l'utilisateur actuel
+CURRENT_UID=$(id -u)
+CURRENT_GID=$(id -g)
+echo "   ↳ Utilisateur hôte: $(whoami) (UID: $CURRENT_UID, GID: $CURRENT_GID)"
+
+# Appliquer les permissions appropriées
 if [ "$1" = "--secure" ]; then
-  echo "   ↳ Application de permissions sécurisées (uniquement UID 1000)..."
-  sudo chown -R 1000:1000 data/
-  sudo chmod -R 755 data/
-  echo "   ✅ Permissions configurées pour l'utilisateur avec UID 1000 uniquement"
+    echo "   ↳ Application de permissions sécurisées strictes..."
+    # Permissions strictes : seul l'utilisateur propriétaire peut écrire
+    sudo chown -R $CURRENT_UID:$CURRENT_GID data/
+    chmod -R 755 data/
+    # Permissions d'écriture pour les dossiers critiques (propriétaire seulement)
+    chmod -R 755 data/{logs,backups,db,media}
+    echo "   ✅ Permissions sécurisées strictes appliquées"
 else
-  echo "   ↳ Application de permissions universelles (chmod 777)..."
-  chmod -R 777 data/
-  echo "   ✅ Permissions 777 appliquées (tout le monde peut lire/écrire)"
+    echo "   ↳ Application de permissions sécurisées avec flexibilité..."
+    # Permissions plus flexibles mais toujours sécurisées
+    sudo chown -R $CURRENT_UID:$CURRENT_GID data/
+    chmod -R 755 data/
+    # Permissions d'écriture pour le propriétaire et le groupe
+    chmod -R 775 data/{logs,backups,db,media}
+    echo "   ✅ Permissions sécurisées flexibles appliquées"
 fi
 
 echo "   ↳ Vérification des permissions actuelles:"
@@ -217,6 +229,29 @@ fi
 echo "🏥 Vérification de la santé des services..."
 docker-compose -f $COMPOSE_FILE ps --filter "health=healthy" --quiet | wc -l | xargs -I {} echo "Services en bonne santé: {}"
 
+# Diagnostic des permissions si des erreurs sont détectées
+echo "🔍 Diagnostic des permissions des containers..."
+BACKEND_CONTAINER=$(docker-compose -f $COMPOSE_FILE ps -q backend)
+if [ ! -z "$BACKEND_CONTAINER" ]; then
+    echo "   ↳ Utilisateur dans le container backend:"
+    docker exec $BACKEND_CONTAINER whoami 2>/dev/null || echo "   ❌ Container backend non accessible"
+    docker exec $BACKEND_CONTAINER id 2>/dev/null || echo "   ❌ Container backend non accessible"
+    
+    # Vérifier si il y a des erreurs de permissions dans les logs
+    if docker logs $BACKEND_CONTAINER 2>&1 | grep -i "permission\|denied" > /dev/null; then
+        echo "   ⚠️  Erreurs de permissions détectées dans les logs du backend"
+        echo "   ↳ Logs récents:"
+        docker logs $BACKEND_CONTAINER 2>&1 | tail -10
+        echo ""
+        echo "   🔧 Solutions possibles:"
+        echo "      1. Relancer avec permissions strictes: ./deploy-prod.sh --secure"
+        echo "      2. Vérifier les permissions: ls -la data/"
+        echo "      3. Forcer les permissions: sudo chown -R $CURRENT_UID:$CURRENT_GID data/"
+    else
+        echo "   ✅ Aucune erreur de permissions détectée"
+    fi
+fi
+
 echo ""
 echo "🎉 Déploiement PRODUCTION terminé !"
 echo "============================================================"
@@ -234,15 +269,28 @@ elif [ "$MODE" = "local" ]; then
     echo "  - Frontend: cochin-project-manager-frontend:local"
 fi
 echo ""
+echo "🔒 Sécurité :"
+echo "  - Container backend : Utilisateur non-privilégié (UID: 1000)"
+echo "  - Permissions data/ : Propriétaire $(whoami) (UID: $CURRENT_UID)"
+if [ "$1" = "--secure" ]; then
+    echo "  - Mode              : Permissions strictes (755)"
+else
+    echo "  - Mode              : Permissions flexibles (775)"
+fi
+echo ""
 echo "📋 Commandes utiles :"
 echo "  Voir les logs       : docker-compose -f $COMPOSE_FILE logs -f"
+echo "  Logs backend seul   : docker-compose -f $COMPOSE_FILE logs -f backend"
 echo "  Redémarrer          : docker-compose -f $COMPOSE_FILE restart"
 echo "  Arrêter             : docker-compose -f $COMPOSE_FILE down"
+echo "  Diagnostic perms    : docker exec -it cochin_backend ls -la /app/"
 if [ "$MODE" = "dockerhub" ]; then
     echo "  Mettre à jour       : BACKEND_TAG=v1.1.0 FRONTEND_TAG=v1.1.0 ./deploy-prod.sh"
     echo "  Changer pour local  : MODE=local ./deploy-prod.sh"
+    echo "  Permissions strictes: ./deploy-prod.sh --secure"
 elif [ "$MODE" = "local" ]; then
     echo "  Reconstruire        : ./build-local.sh && MODE=local ./deploy-prod.sh"
     echo "  Changer pour Docker : MODE=dockerhub DOCKERHUB_USERNAME=username ./deploy-prod.sh"
+    echo "  Permissions strictes: MODE=local ./deploy-prod.sh --secure"
 fi
-echo "" 
+echo ""

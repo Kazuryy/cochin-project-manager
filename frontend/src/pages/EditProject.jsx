@@ -6,6 +6,7 @@ import SelectWithAddOption from '../components/SelectWithAddOption';
 import { typeService } from '../services/typeService';
 import api from '../services/api';
 import DevisManager from '../components/devis/DevisManager';
+import PdfManager from '../components/pdf/PdfManager';
 
 function EditProjectContent() {
   const { projectId } = useParams();
@@ -1348,6 +1349,14 @@ function EditProjectContent() {
         {/* Section Devis */}
         <div className="mt-8">
           <DevisManager 
+            projectId={projectId}
+            readonly={false}
+          />
+        </div>
+
+        {/* Section PDF */}
+        <div className="mt-8">
+          <PdfManager 
             projectId={projectId}
             readonly={false}
           />

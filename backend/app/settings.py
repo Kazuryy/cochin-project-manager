@@ -100,14 +100,20 @@ MIDDLEWARE = [
 # CORS CONFIGURATION
 # =============================================================================
 
-if IS_DEVELOPMENT:
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
-else:
-    cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+# CORS configuration - flexible selon l'environnement
+cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if cors_origins_str:
+    # Utiliser les origines définies dans les variables d'environnement
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+else:
+    # Fallback pour le développement local sans Docker
+    if IS_DEVELOPMENT:
+        CORS_ALLOWED_ORIGINS = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    else:
+        CORS_ALLOWED_ORIGINS = []
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -194,7 +200,7 @@ USE_TZ = True
 # =============================================================================
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles' if IS_PRODUCTION else None
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # =============================================================================
 # FORMS CONFIGURATION
@@ -207,18 +213,25 @@ CRISPY_TEMPLATE_PACK = "tailwind"
 # SECURITY SETTINGS
 # =============================================================================
 
-# CSRF and Session configuration
-if IS_DEVELOPMENT:
+# CSRF and Session configuration - flexible selon l'environnement
+csrf_origins_str = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+if csrf_origins_str:
+    # Utiliser les origines définies dans les variables d'environnement
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_str.split(",") if origin.strip()]
+elif IS_DEVELOPMENT:
+    # Fallback pour le développement local sans Docker
     CSRF_TRUSTED_ORIGINS = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+else:
+    CSRF_TRUSTED_ORIGINS = []
+
+# Sécurité des cookies selon l'environnement
+if IS_DEVELOPMENT:
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
 else:
-    # Production security settings
-    csrf_origins_str = os.getenv("CSRF_TRUSTED_ORIGINS", "")
-    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_str.split(",") if origin.strip()]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
@@ -233,12 +246,17 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
-# Additional security settings for production
-if IS_PRODUCTION:
+# SSL configuration - contrôlable via variable d'environnement
+FORCE_SSL = os.getenv("FORCE_SSL", "false").lower() == "true"
+
+# Additional security settings 
+if FORCE_SSL:
     SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+else:
+    SECURE_SSL_REDIRECT = False
 
 # =============================================================================
 # AUTHENTICATION SETTINGS

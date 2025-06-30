@@ -4,6 +4,7 @@ import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import SelectWithAddOption from '../components/SelectWithAddOption';
 import DevisManager from '../components/devis/DevisManager';
+import PdfManager from '../components/pdf/PdfManager';
 import { typeService } from '../services/typeService';
 
 import api from '../services/api';
@@ -1445,6 +1446,11 @@ function CreateProjectContent() {
             </div>
             
             <DevisManager 
+              projectId={createdProject.id}
+              readonly={false}
+            />
+            
+            <PdfManager 
               projectId={createdProject.id}
               readonly={false}
             />

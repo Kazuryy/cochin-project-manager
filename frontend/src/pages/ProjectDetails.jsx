@@ -4,6 +4,7 @@ import { useDynamicTables } from '../contexts/hooks/useDynamicTables';
 import { DynamicTableProvider } from '../contexts/DynamicTableProvider';
 import api from '../services/api';
 import DevisManager from '../components/devis/DevisManager';
+import PdfManager from '../components/pdf/PdfManager';
 
 function ProjectDetailsContent() {
   const { projectId } = useParams();
@@ -480,6 +481,12 @@ function ProjectDetailsContent() {
 
           {/* Section: Devis du projet */}
           <DevisManager 
+            projectId={projectId}
+            readonly={true}
+          />
+
+          {/* Section: Documents PDF du projet */}
+          <PdfManager 
             projectId={projectId}
             readonly={true}
           />
