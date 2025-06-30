@@ -761,14 +761,21 @@ function CreateProjectContent() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Protection anti-double-clic
+    if (isSubmitting) {
+      console.log('⚠️ Soumission déjà en cours, abandon...');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setFormErrors({});
+    
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
+      setIsSubmitting(false); // Remettre à false en cas d'erreur
       return;
     }
-
-    setIsSubmitting(true);
-    setFormErrors({});
 
     try {
       // Préparer les données du projet principal
@@ -1345,17 +1352,6 @@ function CreateProjectContent() {
                 </div>
               </div>
 
-              {/* Section: Documents PDF */}
-              {createdProject && (
-                <div className="mt-8">
-                  <div className="divider"></div>
-                  <PdfManager 
-                    projectId={createdProject.id}
-                    readonly={false}
-                  />
-                </div>
-              )}
-
               {/* Actions */}
               <div className="card-actions justify-between pt-6">
                 <button
@@ -1375,6 +1371,20 @@ function CreateProjectContent() {
                 </button>
               </div>
             </form>
+
+            {/* Section: Documents PDF - EN DEHORS du formulaire pour éviter les conflits */}
+            {createdProject && (
+              <div className="mt-8">
+                <div className="divider"></div>
+                <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
+                  📄 Documents PDF
+                </h2>
+                <PdfManager 
+                  projectId={createdProject.id}
+                  readonly={false}
+                />
+              </div>
+            )}
           </div>
         </div>
 
