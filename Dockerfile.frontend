@@ -40,17 +40,17 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Modifications conditionnelles selon l'environnement
 RUN if [ "$BUILD_ENV" = "development" ]; then \
         echo "🔧 Configuration pour développement local" && \
-        sed -i 's/listen 80;/listen 1337;/' /etc/nginx/nginx.conf && \
+        sed -i 's/listen 5050;/listen 1337;/' /etc/nginx/nginx.conf && \
         sed -i 's/server backend:8000;/server host.docker.internal:8000;/' /etc/nginx/nginx.conf && \
         echo "expose 1337" > /tmp/expose_port; \
     else \
         echo "🚀 Configuration pour production" && \
-        echo "expose 80" > /tmp/expose_port; \
+        echo "expose 5050" > /tmp/expose_port; \
     fi
 
-# Port exposé selon l'environnement
-EXPOSE 80
+# Port exposé selon l'environnement  
+EXPOSE 5050
 EXPOSE 1337
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "echo '🚀 Starting nginx debug...' && echo '📁 Files:' && ls -la /usr/share/nginx/html/ && echo '⚙️ Config test:' && nginx -t && echo '🌐 Testing localhost:' && (curl -s http://localhost:80/ > /dev/null && echo '✅ Local curl OK' || echo '❌ Local curl failed') && echo '🚀 Starting nginx...' && nginx -g 'daemon off; error_log /dev/stderr debug;'"]
+CMD ["sh", "-c", "echo '🚀 Starting nginx debug...' && echo '📁 Files:' && ls -la /usr/share/nginx/html/ && echo '⚙️ Config test:' && nginx -t && echo '🚀 Starting nginx...' && nginx -g 'daemon off; error_log /dev/stderr info;'"]
