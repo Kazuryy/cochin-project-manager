@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { pdfService } from '../../services/pdfService';
-import { useAuthErrorHandler } from '../../hooks/authContext';
 
 function PdfManager({ projectId, readonly = false }) {
   const [pdfFiles, setPdfFiles] = useState([]);
@@ -17,7 +16,6 @@ function PdfManager({ projectId, readonly = false }) {
   });
   const [uploadErrors, setUploadErrors] = useState({});
   const [toast, setToast] = useState(null);
-  const { handleError } = useAuthErrorHandler();
 
   // Fonction pour afficher les toasts
   const showToast = (message, type = 'info') => {
@@ -36,18 +34,16 @@ function PdfManager({ projectId, readonly = false }) {
       console.log(`✅ ${files.length} fichiers PDF chargés pour le projet ${projectId}`);
     } catch (error) {
       console.error('Erreur lors du chargement des PDFs:', error);
-      if (!handleError(error)) {
-        showToast('Erreur lors du chargement des fichiers PDF', 'error');
-      }
+      showToast('Erreur lors du chargement des fichiers PDF', 'error');
     } finally {
       setLoading(false);
     }
-  }, [projectId, handleError]);
+  }, [projectId]);
 
   // Charger les PDFs au montage du composant
   useEffect(() => {
     loadPdfFiles();
-  }, [loadPdfFiles]);
+  }, [projectId]); // Simplifier les dépendances
 
   // Réinitialiser le formulaire d'upload
   const resetUploadForm = () => {
@@ -117,14 +113,10 @@ function PdfManager({ projectId, readonly = false }) {
 
       showToast('Fichier PDF uploadé avec succès!', 'success');
       resetUploadForm();
-      loadPdfFiles(); // Recharger la liste
+      await loadPdfFiles(); // Recharger la liste
 
     } catch (error) {
       console.error('Erreur lors de l\'upload:', error);
-      
-      if (handleError(error)) {
-        return;
-      }
       
       // Gérer les erreurs spécifiques
       if (error.response?.data?.details) {
@@ -148,12 +140,10 @@ function PdfManager({ projectId, readonly = false }) {
     try {
       await pdfService.deletePdf(pdfFile.id);
       showToast('Fichier supprimé avec succès', 'success');
-      loadPdfFiles();
+      await loadPdfFiles();
     } catch (error) {
       console.error('Erreur lors de la suppression:', error);
-      if (!handleError(error)) {
-        showToast('Erreur lors de la suppression', 'error');
-      }
+      showToast('Erreur lors de la suppression', 'error');
     } finally {
       setLoading(false);
     }
