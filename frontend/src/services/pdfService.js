@@ -36,11 +36,9 @@ export const pdfService = {
         formData.append('description', description);
       }
 
-      const response = await api.post('/api/database/project-pdfs/', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      // Ne pas définir Content-Type manuellement pour FormData
+      // Le navigateur le fera automatiquement avec le bon boundary
+      const response = await api.post('/api/database/project-pdfs/', formData);
 
       return response.data || response;
     } catch (error) {
