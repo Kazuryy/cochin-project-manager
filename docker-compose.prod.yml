@@ -21,7 +21,7 @@ services:
       - ALLOWED_HOSTS=project-manager.local,localhost,127.0.0.1
       - CORS_ALLOWED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050
       - CSRF_TRUSTED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050
-      - FORCE_SSL=true
+      - FORCE_SSL=false
       - DEBUG=False
     networks:
       - cochin_network
@@ -41,6 +41,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
     networks:
       - cochin_network
 
