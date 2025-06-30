@@ -48,6 +48,10 @@ credentials.json
 
 # Logs et données
 backend/logs/
+data/logs/
+data/backups/
+data/media/
+data/db/
 *.log
 *.out
 *.err
@@ -55,6 +59,8 @@ backend/logs/
 *.error
 debug.log
 error.log
+cookies.txt
+session.txt
 
 # Backups et tests
 backups/
