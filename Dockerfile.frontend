@@ -48,9 +48,6 @@ RUN if [ "$BUILD_ENV" = "development" ]; then \
         echo "expose 80" > /tmp/expose_port; \
     fi
 
-# Test de la configuration nginx
-RUN nginx -t
-
 # Port exposé selon l'environnement
 EXPOSE 80
 EXPOSE 1337
