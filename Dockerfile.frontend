@@ -53,4 +53,4 @@ EXPOSE 80
 EXPOSE 1337
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["sh", "-c", "echo '🚀 Starting nginx debug...' && echo '📁 Files:' && ls -la /usr/share/nginx/html/ && echo '⚙️ Config test:' && nginx -t && echo '🌐 Testing localhost:' && (curl -s http://localhost:80/ > /dev/null && echo '✅ Local curl OK' || echo '❌ Local curl failed') && echo '🚀 Starting nginx...' && nginx -g 'daemon off; error_log /dev/stderr debug;'"]
