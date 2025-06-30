@@ -1345,6 +1345,17 @@ function CreateProjectContent() {
                 </div>
               </div>
 
+              {/* Section: Documents PDF */}
+              {createdProject && (
+                <div className="mt-8">
+                  <div className="divider"></div>
+                  <PdfManager 
+                    projectId={createdProject.id}
+                    readonly={false}
+                  />
+                </div>
+              )}
+
               {/* Actions */}
               <div className="card-actions justify-between pt-6">
                 <button
@@ -1446,11 +1457,6 @@ function CreateProjectContent() {
             </div>
             
             <DevisManager 
-              projectId={createdProject.id}
-              readonly={false}
-            />
-            
-            <PdfManager 
               projectId={createdProject.id}
               readonly={false}
             />

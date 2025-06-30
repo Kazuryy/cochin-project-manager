@@ -479,14 +479,14 @@ function ProjectDetailsContent() {
             </div>
           )}
 
-          {/* Section: Devis du projet */}
-          <DevisManager 
+          {/* Section: Documents PDF du projet */}
+          <PdfManager 
             projectId={projectId}
             readonly={true}
           />
 
-          {/* Section: Documents PDF du projet */}
-          <PdfManager 
+          {/* Section: Devis du projet */}
+          <DevisManager 
             projectId={projectId}
             readonly={true}
           />

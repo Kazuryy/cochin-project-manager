@@ -1254,6 +1254,16 @@ function EditProjectContent() {
 
               <div className="divider"></div>
 
+              {/* Section: Documents PDF */}
+              <div className="mt-8">
+                <PdfManager 
+                  projectId={projectId}
+                  readonly={false}
+                />
+              </div>
+
+              <div className="divider"></div>
+
               {/* Section: Classification */}
               <div>
                 <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
@@ -1349,14 +1359,6 @@ function EditProjectContent() {
         {/* Section Devis */}
         <div className="mt-8">
           <DevisManager 
-            projectId={projectId}
-            readonly={false}
-          />
-        </div>
-
-        {/* Section PDF */}
-        <div className="mt-8">
-          <PdfManager 
             projectId={projectId}
             readonly={false}
           />
