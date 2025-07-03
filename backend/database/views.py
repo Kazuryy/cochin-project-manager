@@ -21,6 +21,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.exceptions import ValidationError
 from django.utils.decorators import method_decorator
 import mimetypes
+from django.utils import timezone
+from django.db.models import F, Q
+from django.urls import reverse
+from django.core.files.storage import default_storage
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 from .models import DynamicTable, DynamicField, DynamicRecord, DynamicValue, ProjectPdfFile
 from .serializers import (
@@ -1100,9 +1105,122 @@ class ProjectManager(TableFinderMixin):
                     self.field_manager.create_or_update_value(project_record, field, field_value)
                     processed_fields.add(field.id)
         
+        # Auto-compléter l'équipe à partir du contact principal
+        contact_principal_id = project_data.get('contact_principal')
+        if contact_principal_id:
+            self._auto_populate_team_from_contact(project_record, project_table, contact_principal_id, processed_fields)
+        
         # Traiter séparément le type de projet
         if project_type_id:
             self._set_project_type(project_record, project_table, project_type_id, processed_fields)
+    
+    def _auto_populate_team_from_contact(self, project_record, project_table, contact_principal_id, processed_fields):
+        """
+        Récupère automatiquement l'équipe du contact principal et l'associe au projet.
+        """
+        # Trouver la table des contacts
+        contact_table = DynamicTable.objects.filter(
+            Q(name__icontains='Contact') | Q(slug__in=['contact', 'contacts'])
+        ).first()
+        
+        if not contact_table:
+            return
+        
+        # Essayer de récupérer le contact selon différentes méthodes
+        contact = None
+        
+        # Méthode 1: Recherche par ID numérique
+        try:
+            contact_id = int(contact_principal_id)
+            contact = DynamicRecord.objects.get(id=contact_id, table=contact_table)
+            logger.info(f"Contact trouvé par ID: {contact_id}")
+        except (ValueError, DynamicRecord.DoesNotExist):
+            pass
+        
+        # Méthode 2: Recherche par nom/prénom si pas trouvé par ID
+        if not contact and isinstance(contact_principal_id, str):
+            logger.info(f"Recherche du contact par nom: '{contact_principal_id}'")
+            
+            # Chercher tous les contacts et leurs valeurs
+            contacts = DynamicRecord.objects.filter(table=contact_table, is_active=True)
+            
+            for potential_contact in contacts:
+                # Récupérer nom et prénom
+                nom_field = self.field_manager.find_field_by_name(contact_table, 'nom')
+                prenom_field = self.field_manager.find_field_by_name(contact_table, 'prenom')
+                
+                nom_value = ""
+                prenom_value = ""
+                
+                if nom_field:
+                    nom_obj = DynamicValue.objects.filter(record=potential_contact, field=nom_field).first()
+                    if nom_obj:
+                        nom_value = nom_obj.value
+                
+                if prenom_field:
+                    prenom_obj = DynamicValue.objects.filter(record=potential_contact, field=prenom_field).first()
+                    if prenom_obj:
+                        prenom_value = prenom_obj.value
+                
+                # Construire le nom complet et comparer
+                full_name = f"{prenom_value} {nom_value}".strip() if prenom_value and nom_value else (nom_value or prenom_value or "")
+                
+                if (full_name.lower() == contact_principal_id.lower() or 
+                    nom_value.lower() == contact_principal_id.lower() or 
+                    prenom_value.lower() == contact_principal_id.lower()):
+                    contact = potential_contact
+                    logger.info(f"Contact trouvé par nom: {full_name} (ID: {contact.id})")
+                    break
+        
+        if not contact:
+            logger.warning(f"Contact avec valeur '{contact_principal_id}' non trouvé")
+            return
+        
+        # Chercher le champ équipe dans le contact
+        equipe_field_contact = None
+        for field_name in ['equipe', 'team', 'groupe', 'group']:
+            equipe_field_contact = self.field_manager.find_field_by_name(contact_table, field_name)
+            if equipe_field_contact:
+                break
+        
+        if not equipe_field_contact:
+            logger.info(f"Aucun champ équipe trouvé dans la table Contact")
+            return
+        
+        # Récupérer la valeur de l'équipe
+        equipe_value = None
+        try:
+            equipe_value_obj = DynamicValue.objects.filter(
+                record=contact,
+                field=equipe_field_contact
+            ).first()
+            
+            if equipe_value_obj:
+                equipe_value = equipe_value_obj.value
+        except Exception as e:
+            logger.warning(f"Erreur lors de la récupération de l'équipe du contact: {e}")
+            return
+        
+        if not equipe_value or not equipe_value.strip():
+            logger.info(f"Le contact {contact.id} n'a pas d'équipe définie")
+            return
+        
+        # Chercher le champ équipe dans le projet
+        equipe_field_projet = None
+        for field_name in ['equipe', 'team', 'groupe', 'group']:
+            equipe_field_projet = self.field_manager.find_field_by_name(project_table, field_name)
+            if equipe_field_projet:
+                break
+        
+        if not equipe_field_projet or equipe_field_projet.id in processed_fields:
+            logger.info(f"Champ équipe non trouvé ou déjà traité dans le projet")
+            return
+        
+        # Associer l'équipe au projet
+        self.field_manager.create_or_update_value(project_record, equipe_field_projet, equipe_value)
+        processed_fields.add(equipe_field_projet.id)
+        
+        logger.info(f"Équipe '{equipe_value}' du contact {contact.id} associée au projet {project_record.id}")
     
     def _set_project_type(self, project_record, project_table, project_type_id, processed_fields):
         """Configure le type de projet."""

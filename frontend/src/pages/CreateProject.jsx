@@ -6,6 +6,8 @@ import SelectWithAddOption from '../components/SelectWithAddOption';
 import DevisManager from '../components/devis/DevisManager';
 import PdfManager from '../components/pdf/PdfManager';
 import { typeService } from '../services/typeService';
+import { useToast } from '../hooks/useToast';
+import { ToastContainer } from '../components/common/Toast';
 
 import api from '../services/api';
 
@@ -59,7 +61,7 @@ function CreateProjectContent() {
   const [contactTableId, setContactTableId] = useState(null);
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState(null);
+  const { toasts, addToast, removeToast } = useToast();
   
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
@@ -852,8 +854,7 @@ function CreateProjectContent() {
   };
 
   const showToast = (message, type = 'info', duration = TOAST_DURATION) => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), duration);
+    addToast(message, type, duration);
   };
 
   if (isLoading) {
@@ -1376,9 +1377,6 @@ function CreateProjectContent() {
             {createdProject && (
               <div className="mt-8">
                 <div className="divider"></div>
-                <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
-                  📄 Documents PDF
-                </h2>
                 <PdfManager 
                   projectId={createdProject.id}
                   readonly={false}
@@ -1491,11 +1489,8 @@ function CreateProjectContent() {
           </div>
         </div>
 
-        {toast && (
-          <div className={`toast toast-${toast.type} fixed top-4 right-4 z-50`}>
-            <div>{toast.message}</div>
-          </div>
-        )}
+        {/* Toast Container */}
+        <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
         {/* Modal personnalisée pour ajouter un contact */}
         {showAddContactModal && (

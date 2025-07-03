@@ -347,25 +347,57 @@ function ProjectDetailsContent() {
   // Fonction pour récupérer l'équipe du contact principal automatiquement
   const getContactTeam = useCallback(() => {
     if (!projectData || !contacts.length) {
+      console.log('📊 getContactTeam: Aucun projet ou contact chargé');
       return null;
     }
 
     // Récupérer l'ID du contact principal du projet
     const contactPrincipalId = getFieldValue(projectData, 'contact_principal', 'contact', 'principal_contact');
     
+    console.log('📊 getContactTeam: ID du contact principal récupéré:', contactPrincipalId);
+    console.log('📊 getContactTeam: Type de contactPrincipalId:', typeof contactPrincipalId);
+    
     if (!contactPrincipalId) {
+      console.log('📊 getContactTeam: Aucun contact principal défini');
       return null;
     }
 
-    // Trouver le contact dans la liste
-    const selectedContact = contacts.find(c => c.id.toString() === contactPrincipalId.toString());
+    // Trouver le contact dans la liste - gérer différents types de stockage
+    let selectedContact = null;
+    
+    // Méthode 1: Comparaison directe par ID
+    selectedContact = contacts.find(c => {
+      return c.id.toString() === contactPrincipalId.toString();
+    });
+    
+    // Méthode 2: Si pas trouvé, chercher par nom/prénom (cas des anciennes données)
+    if (!selectedContact && typeof contactPrincipalId === 'string') {
+      selectedContact = contacts.find(c => {
+        const prenom = getFieldValue(c, 'prenom', 'first_name', 'firstname');
+        const nom = getFieldValue(c, 'nom', 'last_name', 'lastname', 'name');
+        const fullName = prenom && nom ? `${prenom} ${nom}` : (nom || prenom || '');
+        
+        // Comparer avec le nom complet ou ses parties
+        return fullName.toLowerCase() === contactPrincipalId.toLowerCase() ||
+               nom.toLowerCase() === contactPrincipalId.toLowerCase() ||
+               prenom.toLowerCase() === contactPrincipalId.toLowerCase();
+      });
+    }
+    
+    console.log('📊 getContactTeam: Contact trouvé:', selectedContact ? selectedContact.id : 'non trouvé');
     
     if (!selectedContact) {
+      console.log('📊 getContactTeam: Liste des contacts disponibles:', contacts.map(c => ({
+        id: c.id,
+        nom: getFieldValue(c, 'nom', 'name'),
+        prenom: getFieldValue(c, 'prenom', 'first_name')
+      })));
       return null;
     }
 
     // Extraire l'équipe du contact
     const contactEquipe = getFieldValue(selectedContact, 'equipe', 'team', 'groupe', 'group');
+    console.log('📊 getContactTeam: Équipe du contact:', contactEquipe);
     
     return contactEquipe && contactEquipe.trim() !== '' ? contactEquipe : null;
   }, [projectData, contacts, getFieldValue]);

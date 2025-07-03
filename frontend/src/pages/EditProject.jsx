@@ -7,6 +7,8 @@ import { typeService } from '../services/typeService';
 import api from '../services/api';
 import DevisManager from '../components/devis/DevisManager';
 import PdfManager from '../components/pdf/PdfManager';
+import { useToast } from '../hooks/useToast';
+import { ToastContainer } from '../components/common/Toast';
 
 function EditProjectContent() {
   const { projectId } = useParams();
@@ -35,7 +37,7 @@ function EditProjectContent() {
   const [projectTableId, setProjectTableId] = useState(null);
   const [contactTableId, setContactTableId] = useState(null);
   const [tableNamesTableId, setTableNamesTableId] = useState(null);
-  const [toast, setToast] = useState(null);
+  const { toasts, addToast, removeToast } = useToast();
 
   // États pour les champs conditionnels
   const [conditionalFields, setConditionalFields] = useState([]);
@@ -49,11 +51,10 @@ function EditProjectContent() {
     equipe: ''
   });
 
-  // Fonction pour afficher les toasts
+  // Fonction pour afficher les toasts - utilise maintenant le nouveau système
   const showToast = useCallback((message, type = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
+    addToast(message, type);
+  }, [addToast]);
 
   // Fonction utilitaire pour extraire les valeurs des champs dynamiques
   const getFieldValue = useCallback((record, ...possibleFields) => {
@@ -1027,18 +1028,8 @@ function EditProjectContent() {
     <div className="min-h-screen bg-base-100">
       <div className="container mx-auto p-6 max-w-4xl">
         
-        {/* Toast */}
-        {toast && (
-          <div className={`toast toast-top toast-end z-50`}>
-            <div className={`alert ${
-              toast.type === 'success' ? 'alert-success' : 
-              toast.type === 'error' ? 'alert-error' : 
-              'alert-info'
-            }`}>
-              <span>{toast.message}</span>
-            </div>
-          </div>
-        )}
+        {/* Toast Container */}
+        <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
         {/* Header */}
         <div className="mb-8">
@@ -1347,9 +1338,6 @@ function EditProjectContent() {
             {/* Section: Documents PDF - EN DEHORS du formulaire pour éviter les conflits */}
             <div className="mt-8">
               <div className="divider"></div>
-              <h2 className="card-title text-2xl mb-6 flex items-center gap-2">
-                📄 Documents PDF
-              </h2>
               <PdfManager 
                 projectId={projectId}
                 readonly={false}

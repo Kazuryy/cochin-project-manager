@@ -153,11 +153,21 @@ if IS_PRODUCTION and os.getenv("DATABASE_URL"):
         'default': dj_database_url.parse(os.getenv("DATABASE_URL"))
     }
 else:
-    # Development SQLite database
+    # SQLite database with flexible path configuration
+    # Allow override via environment variable for Docker persistence
+    db_name = os.getenv('DATABASE_PATH', str(BASE_DIR / 'db.sqlite3'))
+    db_path = Path(db_name)
+    
+    # Create parent directory if it doesn't exist (for Docker volumes)
+    if not db_path.is_absolute():
+        db_path = BASE_DIR / db_path
+    
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': db_path,
         }
     }
 
@@ -201,6 +211,13 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# =============================================================================
+# MEDIA FILES CONFIGURATION
+# =============================================================================
+
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # =============================================================================
 # FORMS CONFIGURATION

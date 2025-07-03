@@ -23,6 +23,7 @@ services:
       - CSRF_TRUSTED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050
       - FORCE_SSL=false
       - DEBUG=False
+      - DATABASE_PATH=/app/data/db/db.sqlite3
     networks:
       - cochin_network
 
@@ -39,8 +40,7 @@ services:
       - ./data/media:/usr/share/nginx/html/media:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
 
     networks:
       - cochin_network

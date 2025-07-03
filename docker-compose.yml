@@ -11,6 +11,7 @@ services:
       - CSRF_TRUSTED_ORIGINS=http://project-manager.local,https://project-manager.local
       - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-dev-backup-encryption-key}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - DATABASE_PATH=/app/db/db.sqlite3
     volumes:
       - ./data/db:/app/db              # Base SQLite persistante
       - ./data/media:/app/media        # Fichiers média

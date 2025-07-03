@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { devisService } from '../../services/devisService';
+import { useToast } from '../../hooks/useToast';
+import { ToastContainer } from '../common/Toast';
 import { useAuthErrorHandler } from '../../hooks/authContext';
 
 function DevisManager({ projectId, readonly = false }) {
@@ -18,7 +20,7 @@ function DevisManager({ projectId, readonly = false }) {
     agent_plateforme: ''
   });
   const [formErrors, setFormErrors] = useState({});
-  const [toast, setToast] = useState(null);
+  const { toasts, addToast, removeToast } = useToast();
   const { handleError } = useAuthErrorHandler();
 
   // Fonction utilitaire pour extraire les valeurs (version globale)
@@ -61,11 +63,10 @@ function DevisManager({ projectId, readonly = false }) {
     return false;
   };
 
-  // Fonction pour afficher les toasts
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  // Fonction pour afficher les toasts - utilise maintenant le nouveau système
+  const showToast = useCallback((message, type = 'info') => {
+    addToast(message, type);
+  }, [addToast]);
 
   // Charger les devis du projet
   const loadDevis = useCallback(async () => {
@@ -82,7 +83,7 @@ function DevisManager({ projectId, readonly = false }) {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, showToast]);
 
   // Charger les devis au montage du composant
   useEffect(() => {
@@ -330,12 +331,7 @@ function DevisManager({ projectId, readonly = false }) {
     }
   };
 
-  // Déterminer la classe CSS du toast
-  const getToastClass = (type) => {
-    if (type === 'success') return 'alert-success';
-    if (type === 'error') return 'alert-error';
-    return 'alert-info';
-  };
+
 
   // Déterminer le texte du bouton de soumission
   const getSubmitButtonText = () => {
@@ -468,14 +464,8 @@ function DevisManager({ projectId, readonly = false }) {
 
   return (
     <div className="card bg-base-100 shadow-lg">
-      {/* Toast */}
-      {toast && (
-        <div className="toast toast-top toast-end z-50">
-          <div className={`alert ${getToastClass(toast.type)}`}>
-            <span>{toast.message}</span>
-          </div>
-        </div>
-      )}
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
       <div className="card-body">
         {/* Header */}

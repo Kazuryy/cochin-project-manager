@@ -26,6 +26,7 @@ services:
       - CSRF_TRUSTED_ORIGINS=http://project-manager.local,https://project-manager.local,http://localhost:1337
       - FORCE_SSL=false
       - DEBUG=True
+      - DATABASE_PATH=/app/data/db/db.sqlite3
     networks:
       - cochin_network
     # healthcheck:

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { pdfService } from '../../services/pdfService';
+import { useToast } from '../../hooks/useToast';
+import { ToastContainer } from '../common/Toast';
 
 function PdfManager({ projectId, readonly = false }) {
   const [pdfFiles, setPdfFiles] = useState([]);
@@ -15,13 +17,12 @@ function PdfManager({ projectId, readonly = false }) {
     file: null
   });
   const [uploadErrors, setUploadErrors] = useState({});
-  const [toast, setToast] = useState(null);
+  const { toasts, addToast, removeToast } = useToast();
 
-  // Fonction pour afficher les toasts
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  // Fonction pour afficher les toasts - utilise maintenant le nouveau système
+  const showToast = useCallback((message, type = 'info') => {
+    addToast(message, type);
+  }, [addToast]);
 
   // Charger les fichiers PDF du projet
   const loadPdfFiles = useCallback(async () => {
@@ -38,12 +39,12 @@ function PdfManager({ projectId, readonly = false }) {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, showToast]);
 
   // Charger les PDFs au montage du composant
   useEffect(() => {
     loadPdfFiles();
-  }, [projectId]); // Simplifier les dépendances
+  }, [projectId, loadPdfFiles]); // Simplifier les dépendances
 
   // Réinitialiser le formulaire d'upload
   const resetUploadForm = () => {
@@ -353,34 +354,32 @@ function PdfManager({ projectId, readonly = false }) {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-base-100 rounded-lg w-full h-full max-w-6xl max-h-[90vh] flex flex-col">
+        <div className="bg-base-100 rounded-lg w-full max-w-md p-6">
           {/* Header du modal */}
-          <div className="flex items-center justify-between p-4 border-b border-base-300">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">📄 {viewingPdf.display_name}</h3>
-            <div className="flex gap-2">
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => handleDownloadPdf(viewingPdf)}
-                title="Télécharger"
-              >
-                ⬇️ Télécharger
-              </button>
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => setViewingPdf(null)}
-              >
-                ✕ Fermer
-              </button>
-            </div>
+            <button
+              className="btn btn-sm btn-circle"
+              onClick={() => setViewingPdf(null)}
+            >
+              ✕
+            </button>
           </div>
-
-          {/* Visualiseur PDF */}
-          <div className="flex-1 p-4">
-            <iframe
-              src={pdfUrl}
-              className="w-full h-full border rounded"
-              title={`PDF - ${viewingPdf.display_name}`}
-            />
+          
+          <p className="mb-4 text-base-content/70">
+            Le PDF ne peut pas être affiché directement dans l'application pour des raisons de sécurité.
+          </p>
+          
+          <div className="flex justify-center">
+            <a 
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary"
+              download={viewingPdf.original_filename || viewingPdf.display_name}
+            >
+              ⬇️ Télécharger le PDF
+            </a>
           </div>
         </div>
       </div>
@@ -389,14 +388,8 @@ function PdfManager({ projectId, readonly = false }) {
 
   return (
     <div className="space-y-6">
-      {/* Toast */}
-      {toast && (
-        <div className={`toast toast-top toast-end z-40`}>
-          <div className={`alert alert-${toast.type === 'error' ? 'error' : toast.type === 'success' ? 'success' : 'info'}`}>
-            <span>{toast.message}</span>
-          </div>
-        </div>
-      )}
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
 
       {/* Header */}
       <div className="flex items-center justify-between">

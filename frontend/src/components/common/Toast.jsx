@@ -36,36 +36,36 @@ const Toast = ({ message, type = 'info', duration = 3000, onClose, autoClose = t
 
   // Mémorisation des icônes pour éviter les re-calculs
   const icon = useMemo(() => {
-    const iconProps = { className: "text-lg" };
+    const baseIconProps = { className: "w-5 h-5" };
     switch (type) {
       case 'success':
-        return <FiCheckCircle {...iconProps} />;
+        return <FiCheckCircle {...baseIconProps} className="w-5 h-5 text-green-600" />;
       case 'error':
-        return <FiAlertCircle {...iconProps} />;
+        return <FiAlertCircle {...baseIconProps} className="w-5 h-5 text-red-600" />;
       case 'warning':
-        return <FiAlertTriangle {...iconProps} />;
+        return <FiAlertTriangle {...baseIconProps} className="w-5 h-5 text-amber-600" />;
       default:
-        return <FiInfo {...iconProps} />;
+        return <FiInfo {...baseIconProps} className="w-5 h-5 text-blue-600" />;
     }
   }, [type]);
 
   // Mémorisation de la classe CSS pour optimiser les re-renders
   const alertClass = useMemo(() => {
-    const baseClasses = 'alert fixed top-4 right-4 z-50 w-auto max-w-2xl shadow-2xl transition-all duration-300';
+    const baseClasses = 'fixed top-4 right-4 z-50 w-auto max-w-md shadow-lg transition-all duration-300 rounded-lg border min-w-64';
     let typeClass = '';
     
     switch (type) {
       case 'success':
-        typeClass = 'alert-success text-lg font-bold border-4 border-green-400 shadow-green-500/50';
+        typeClass = 'bg-green-50 text-green-800 border-green-200';
         break;
       case 'error':
-        typeClass = 'alert-error text-lg font-bold border-4 border-red-400 shadow-red-500/50';
+        typeClass = 'bg-red-50 text-red-800 border-red-200';
         break;
       case 'warning':
-        typeClass = 'alert-warning text-lg font-bold border-4 border-yellow-400 shadow-yellow-500/50';
+        typeClass = 'bg-amber-50 text-amber-800 border-amber-200';
         break;
       default:
-        typeClass = 'alert-info text-base font-medium';
+        typeClass = 'bg-blue-50 text-blue-800 border-blue-200';
     }
 
     // Animation optimisée : utilisation d'états séparés pour un meilleur contrôle
@@ -83,21 +83,28 @@ const Toast = ({ message, type = 'info', duration = 3000, onClose, autoClose = t
 
   return (
     <div className={alertClass}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          {icon}
-          <div className="flex-1">
-            <div className="whitespace-pre-line leading-relaxed">
+      <div className="flex items-start justify-between p-4">
+        <div className="flex items-center space-x-3 flex-1">
+          <div className="flex-shrink-0">
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium whitespace-pre-line leading-relaxed">
               {message}
             </div>
           </div>
         </div>
         <button
           onClick={handleClose}
-          className="btn btn-ghost btn-sm btn-circle ml-3"
+          className={`flex-shrink-0 ml-3 rounded-md p-1 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            type === 'success' ? 'hover:bg-green-200 focus:ring-green-400' :
+            type === 'error' ? 'hover:bg-red-200 focus:ring-red-400' :
+            type === 'warning' ? 'hover:bg-amber-200 focus:ring-amber-400' :
+            'hover:bg-blue-200 focus:ring-blue-400'
+          }`}
           aria-label="Fermer la notification"
         >
-          <FiX />
+          <FiX className="w-4 h-4" />
         </button>
       </div>
     </div>

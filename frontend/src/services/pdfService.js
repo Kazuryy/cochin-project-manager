@@ -119,7 +119,14 @@ export const pdfService = {
    * @returns {string} URL du fichier
    */
   getPdfUrl(pdfFile) {
-    return pdfFile.file_url || pdfFile.file;
+    let url = pdfFile.file_url || pdfFile.file;
+    
+    // Corriger l'URL si elle utilise localhost sans port
+    if (url && url.startsWith('http://localhost/')) {
+      url = url.replace('http://localhost/', 'http://localhost:8000/');
+    }
+    
+    return url;
   },
 
   /**
