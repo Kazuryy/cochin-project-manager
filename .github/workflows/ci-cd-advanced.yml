@@ -64,11 +64,11 @@ jobs:
         filters: |
           backend:
             - 'backend/**'
-            - 'Dockerfile.backend'
+            - 'docker/dockerfiles/Dockerfile.backend'
             - 'requirements.txt'
           frontend:
             - 'frontend/**'
-            - 'Dockerfile.frontend'
+            - 'docker/dockerfiles/Dockerfile.frontend'
             - 'package.json'
             - 'package-lock.json'
 
@@ -233,7 +233,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile.backend
+        file: ./docker/dockerfiles/Dockerfile.backend
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
         tags: ${{ steps.meta.outputs.tags }}
@@ -325,7 +325,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile.frontend
+        file: ./docker/dockerfiles/Dockerfile.frontend
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
         tags: ${{ steps.meta.outputs.tags }}
@@ -494,10 +494,10 @@ jobs:
         echo "" >> release_notes.md
         echo "\`\`\`bash" >> release_notes.md
         echo "# Avec Docker Hub" >> release_notes.md
-        echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} BACKEND_TAG=${{ steps.version.outputs.version }} FRONTEND_TAG=${{ steps.version.outputs.version }} ./deploy-prod.sh" >> release_notes.md
+        echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} BACKEND_TAG=${{ steps.version.outputs.version }} FRONTEND_TAG=${{ steps.version.outputs.version }} ./docker/scripts/deploy-prod.sh" >> release_notes.md
         echo "" >> release_notes.md
         echo "# Ou avec GitHub Container Registry" >> release_notes.md
-        echo "GHCR_BACKEND_TAG=${{ steps.version.outputs.version }} GHCR_FRONTEND_TAG=${{ steps.version.outputs.version }} ./deploy-prod.sh" >> release_notes.md
+        echo "GHCR_BACKEND_TAG=${{ steps.version.outputs.version }} GHCR_FRONTEND_TAG=${{ steps.version.outputs.version }} ./docker/scripts/deploy-prod.sh" >> release_notes.md
         echo "\`\`\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 🔗 Liens utiles" >> release_notes.md
@@ -505,7 +505,7 @@ jobs:
         echo "- 📦 [Packages GitHub](${{ github.server_url }}/${{ github.repository }}/pkgs/container/backend)" >> release_notes.md
         echo "- 🐳 [Docker Hub](${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend)" >> release_notes.md
         echo "- 📋 [Documentation](README.md)" >> release_notes.md
-        echo "- 🚀 [Guide de déploiement](README_DEPLOYMENT_SIMPLE.md)" >> release_notes.md
+        echo "- 🚀 [Guide de déploiement](docs/deployment/README_DEPLOYMENT_SIMPLE.md)" >> release_notes.md
     
     - name: 🎯 Create GitHub Release
       uses: actions/create-release@v1
@@ -556,10 +556,10 @@ jobs:
           echo "### 🚀 Commandes de déploiement:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Déploiement rapide" >> $GITHUB_STEP_SUMMARY
-          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./deploy-prod.sh" >> $GITHUB_STEP_SUMMARY
+          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./docker/scripts/deploy-prod.sh" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Vérification des mises à jour" >> $GITHUB_STEP_SUMMARY
-          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./check-updates.sh" >> $GITHUB_STEP_SUMMARY
+          echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }} ./docker/scripts/check-updates.sh" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         fi
 
