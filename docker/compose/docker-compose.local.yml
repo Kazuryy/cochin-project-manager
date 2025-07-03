@@ -1,19 +1,19 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ../..
+      dockerfile: docker/dockerfiles/Dockerfile.backend
     image: cochin-project-manager-backend:local
     container_name: cochin_backend
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./data/db:/app/data/db
-      - ./data/media:/app/media
-      - ./data/backups:/app/backups
-      - ./data/logs:/app/logs
-      - ./data/staticfiles:/app/staticfiles
+      - ../../data/db:/app/data/db
+      - ../../data/media:/app/media
+      - ../../data/backups:/app/backups
+      - ../../data/logs:/app/logs
+      - ../../data/staticfiles:/app/staticfiles
       - /etc/localtime:/etc/localtime:ro
     environment:
       - DJANGO_ENV=development
@@ -38,8 +38,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ../..
+      dockerfile: docker/dockerfiles/Dockerfile.frontend
       args:
         BUILD_ENV: development
     image: cochin-project-manager-frontend:local
@@ -48,8 +48,8 @@ services:
     ports:
       - "1337:1337"
     volumes:
-      - ./data/staticfiles:/usr/share/nginx/html/static:ro
-      - ./data/media:/usr/share/nginx/html/media:ro
+      - ../../data/staticfiles:/usr/share/nginx/html/static:ro
+      - ../../data/media:/usr/share/nginx/html/media:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - backend

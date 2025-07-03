@@ -39,55 +39,127 @@ Un outil de gestion de projet moderne permettant d'indexer et d'archiver vos dif
 - **Python 3.x**
 - Architecture sécurisée avec middleware CORS
 
-## 📦 Installation
+## 📚 Documentation
 
-### Prérequis
-- Python 3.8+
-- Node.js 16+
-- npm ou yarn
+Ce projet dispose d'une documentation complète organisée par catégories :
 
-### Backend (Django)
+### 📖 **[Documentation Technique](./docs/)**
+- **[🚀 Démarrage rapide](./docs/deployment/README_DEPLOYMENT_SIMPLE.md)** - Guide pour débuter
+- **[📦 Déploiement](./docs/deployment/)** - Configuration et mise en production
+- **[🛠️ Développement](./docs/development/)** - Guides pour contribuer au projet
+- **[🔒 Sécurité](./docs/security/)** - Politique et audits de sécurité
+- **[🔧 Maintenance](./docs/maintenance/)** - Administration système
+
+### 📖 **[Wiki Fonctionnel](./wiki/)**
+- **[Création de Types](./wiki/FONCTIONNALITE_CREATION_TYPES.md)** - Guide utilisateur
+- **[Gestion des Tables](./wiki/table_list.md)** - Liste et usage des tables
+- **[Gestion Utilisateurs](./wiki/user_management.md)** - Administration des comptes
+
+## 📦 Installation rapide
+
+### 🐳 **Docker (Recommandé)**
 
 ```bash
-# Cloner le repository
+# Cloner et démarrer
 git clone https://github.com/Kazuryy/cochin-project-manager.git
 cd cochin-project-manager
 
-# Créer un environnement virtuel
-python -m venv venv
-source venv/bin/activate  # Sur Windows: venv\Scripts\activate
+# Méthode 1: Script helper (recommandé)
+./docker-helper.sh dev
 
-# Installer les dépendances
-cd backend
-pip install -r requirements.txt
+# Méthode 2: Docker Compose classique
+docker-compose -f docker/compose/docker-compose.local.yml up --build
+# Ou simplement (raccourci)
+docker-compose up --build
 
-# Configuration de la base de données
-python manage.py makemigrations
-python manage.py migrate
-
-# Créer un superutilisateur
-python manage.py createsuperuser
-
-# Démarrer le serveur de développement
-python manage.py runserver
+# Accès : http://localhost:1337
 ```
 
-### Frontend (React)
+### 🔧 **Installation manuelle**
 
 ```bash
-# Dans un nouveau terminal
+# Backend (Django)
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+
+# Frontend (React) - nouveau terminal
 cd frontend
-
-# Installer les dépendances
 npm install
-
-# Démarrer le serveur de développement
 npm run dev
+```
+
+## 📁 Structure du projet
+
+```
+cochin-project-manager/
+├── 📁 backend/              # 🔧 API Django + DRF
+│   ├── app/                 # Configuration principale
+│   ├── authentication/     # Système d'authentification sécurisé
+│   ├── database/           # Tables dynamiques et gestion des données
+│   ├── backup_manager/     # Système de sauvegarde automatisé
+│   └── conditional_fields/ # Champs conditionnels
+├── 📁 frontend/             # 🎨 Interface React + Vite
+│   ├── src/
+│   │   ├── components/     # Composants réutilisables (UI, forms, etc.)
+│   │   ├── contexts/       # Contextes React globaux
+│   │   ├── hooks/          # Hooks personnalisés
+│   │   ├── pages/          # Pages de l'application
+│   │   └── services/       # Services API et utilitaires
+│   └── public/             # Assets statiques
+├── 📁 data/                 # 💾 Données persistantes
+│   ├── db/                 # Base de données SQLite
+│   ├── media/              # Fichiers uploadés (PDFs, images)
+│   ├── logs/               # Logs système
+│   └── backups/            # Sauvegardes automatiques
+├── 📁 docs/                 # 📚 Documentation technique organisée
+│   ├── deployment/         # Guides de déploiement
+│   ├── development/        # Configuration développement
+│   ├── security/           # Politique de sécurité
+│   └── maintenance/        # Administration système
+├── 📁 wiki/                 # 📖 Documentation fonctionnelle
+├── 🐳 docker/               # 🔧 Configuration Docker organisée
+│   ├── compose/             # Fichiers docker-compose par environnement
+│   ├── dockerfiles/         # Images Docker (backend/frontend)
+│   ├── config/              # Configuration (nginx, entrypoint)
+│   └── scripts/             # Scripts de déploiement et maintenance
+├── 🐳 docker-compose.yml    # Raccourci vers la config de développement
+└── 📋 README.md             # Ce fichier
 ```
 
 ## 🚀 Utilisation
 
-1. **Accéder à l'application** : Ouvrez `http://localhost:5173`
+### Script Helper Docker
+
+Le script `./docker-helper.sh` simplifie la gestion des différents environnements :
+
+```bash
+# Développement local
+./docker-helper.sh dev
+
+# Production 
+./docker-helper.sh prod
+
+# Arrêter tous les conteneurs
+./docker-helper.sh stop
+
+# Voir les logs en temps réel
+./docker-helper.sh logs -f
+
+# Statut des conteneurs
+./docker-helper.sh status
+
+# Aide complète
+./docker-helper.sh --help
+```
+
+### Navigation de l'application
+
+1. **Accéder à l'application** : Ouvrez `http://localhost:1337`
 2. **Se connecter** : Utilisez les identifiants du superutilisateur créé
 3. **Tableau de bord** : Vue d'ensemble de vos projets et données
 4. **Administration** : Gérer les tables dynamiques et la structure des données
@@ -108,26 +180,6 @@ npm run dev
    - Utiliser les filtres et la recherche
    - Exporter vos données en CSV
 
-## 📁 Structure du projet
-
-```
-cochin-project-manager/
-├── backend/                 # Application Django
-│   ├── app/                # Configuration principale
-│   ├── authentication/     # Système d'authentification
-│   ├── database/          # Gestion des tables dynamiques
-│   └── manage.py
-├── frontend/               # Application React
-│   ├── src/
-│   │   ├── components/    # Composants réutilisables
-│   │   ├── contexts/      # Contextes React
-│   │   ├── hooks/         # Hooks personnalisés
-│   │   ├── pages/         # Pages de l'application
-│   │   └── services/      # Services API
-│   └── public/
-└── README.md
-```
-
 ## ⚙️ Configuration
 
 ### Variables d'environnement
@@ -137,15 +189,10 @@ Créer un fichier `.env` dans le dossier `backend/` :
 ```env
 SECRET_KEY=votre_clé_secrète_django
 DEBUG=True
-DATABASE_URL=sqlite:///db.sqlite3
+DATABASE_PATH=/app/data/db/db.sqlite3
 ```
 
-### Personnalisation
-
-Le projet est conçu pour être facilement personnalisable :
-- **Thèmes** : Modifiez les couleurs dans `tailwind.config.js`
-- **Types de champs** : Ajoutez de nouveaux types dans `models.py`
-- **Interface** : Personnalisez les composants dans `src/components/`
+Pour plus de détails, consultez la [documentation de déploiement](./docs/deployment/).
 
 ## 🧪 Tests
 
@@ -170,7 +217,7 @@ npm run test
 
 ## 🤝 Contribution
 
-Les contributions sont les bienvenues ! Voici comment participer :
+Les contributions sont les bienvenues ! Consultez le [guide de développement](./docs/development/) pour commencer.
 
 1. Fork le projet
 2. Créer une branche feature (`git checkout -b feature/AmazingFeature`)
@@ -187,7 +234,8 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 Si vous rencontrez des problèmes :
 
 1. Vérifiez les [Issues existantes](https://github.com/Kazuryy/cochin-project-manager/issues)
-2. Créez une nouvelle issue avec :
+2. Consultez la [documentation](./docs/)
+3. Créez une nouvelle issue avec :
    - Description du problème
    - Étapes pour reproduire
    - Environnement (OS, versions, etc.)

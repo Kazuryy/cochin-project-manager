@@ -8,11 +8,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data/db:/app/data/db
-      - ./data/media:/app/media
-      - ./data/backups:/app/backups
-      - ./data/logs:/app/logs
-      - ./data/staticfiles:/app/staticfiles
+      - ../../data/db:/app/data/db
+      - ../../data/media:/app/media
+      - ../../data/backups:/app/backups
+      - ../../data/logs:/app/logs
+      - ../../data/staticfiles:/app/staticfiles
     environment:
       - DJANGO_SETTINGS_MODULE=app.settings
       - SECRET_KEY=${SECRET_KEY:-django-insecure-change-this-in-production-12345}
@@ -38,8 +38,8 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./data/staticfiles:/usr/share/nginx/html/static:ro
-      - ./data/media:/usr/share/nginx/html/media:ro
+      - ../../data/staticfiles:/usr/share/nginx/html/static:ro
+      - ../../data/media:/usr/share/nginx/html/media:ro
     depends_on:
       backend:
         condition: service_healthy

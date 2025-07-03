@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Copie du code en tant que root pour éviter les problèmes de permissions
 COPY backend/ .
 COPY init-data/ ./init-data/
-COPY entrypoint.sh .
+COPY docker/config/entrypoint.sh .
 
 # Créer les dossiers nécessaires et définir les permissions
 RUN mkdir -p /app/logs /app/backups /app/staticfiles /app/media /app/db /app/data/db && \
