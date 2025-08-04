@@ -24,6 +24,7 @@ services:
       - FORCE_SSL=false
       - DEBUG=False
       - DATABASE_PATH=/app/data/db/db.sqlite3
+      - ADAPTIVE_PERMISSIONS=true
     networks:
       - cochin_network
 

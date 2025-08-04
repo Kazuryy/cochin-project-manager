@@ -12,27 +12,86 @@ echo "   ↳ Utilisateur: $CURRENT_USER (UID: $CURRENT_UID, GID: $CURRENT_GID)"
 # Attendre que les volumes soient montés
 sleep 2
 
-# Vérification des permissions critiques
+# Vérification et adaptation des permissions critiques
 echo "🔧 Vérification des dossiers critiques..."
 CRITICAL_DIRS=("/app/logs" "/app/backups" "/app/staticfiles" "/app/media" "/app/db" "/app/data/db")
 
-for dir in "${CRITICAL_DIRS[@]}"; do
+adapt_permissions() {
+    local dir="$1"
+    local dir_name=$(basename "$dir")
+    
+    echo "🔍 Analyse de $dir_name ($dir)..."
+    
+    # Créer le dossier s'il n'existe pas
     if [ ! -d "$dir" ]; then
         echo "   ↳ Création du dossier: $dir"
-        mkdir -p "$dir"
+        mkdir -p "$dir" 2>/dev/null || {
+            echo "   ⚠️ Impossible de créer $dir, tentative avec permissions sudo..."
+            return 1
+        }
     fi
     
     # Vérifier si on peut écrire
     if touch "$dir/.write_test" 2>/dev/null; then
         rm "$dir/.write_test"
         echo "   ✅ $dir - Permissions OK"
+        return 0
     else
         echo "   ❌ $dir - Permissions insuffisantes"
-        echo "      Détails: $(ls -ld $dir)"
-        echo "      SOLUTION: Sur l'hôte, exécutez: sudo chown -R $CURRENT_UID:$CURRENT_GID ./data/"
-        exit 1
+        echo "      Détails: $(ls -ld $dir 2>/dev/null || echo 'Dossier inaccessible')"
+        
+        # Si ADAPTIVE_PERMISSIONS est activé, tenter de corriger
+        if [ "$ADAPTIVE_PERMISSIONS" = "true" ]; then
+            echo "   🔧 Mode adaptatif activé - Tentative de correction..."
+            
+            # Essayer de changer les permissions
+            if chmod 755 "$dir" 2>/dev/null; then
+                echo "   ↳ chmod 755 appliqué"
+                
+                # Re-tester l'écriture
+                if touch "$dir/.write_test" 2>/dev/null; then
+                    rm "$dir/.write_test"
+                    echo "   ✅ $dir - Permissions corrigées !"
+                    return 0
+                fi
+            fi
+            
+            echo "   ⚠️ Correction automatique impossible"
+            echo "      SOLUTION: Sur l'hôte, exécutez: sudo chown -R $CURRENT_UID:$CURRENT_GID ./data/"
+            echo "                Ou: sudo chmod -R 755 ./data/"
+            return 1
+        else
+            echo "      SOLUTION: Sur l'hôte, exécutez: sudo chown -R $CURRENT_UID:$CURRENT_GID ./data/"
+            echo "      OU: Activez le mode adaptatif avec ADAPTIVE_PERMISSIONS=true"
+            return 1
+        fi
+    fi
+}
+
+# Vérification de tous les dossiers
+failed_dirs=()
+for dir in "${CRITICAL_DIRS[@]}"; do
+    if ! adapt_permissions "$dir"; then
+        failed_dirs+=("$dir")
     fi
 done
+
+# Si des dossiers ont échoué et qu'on n'est pas en mode adaptatif, arrêter
+if [ ${#failed_dirs[@]} -gt 0 ] && [ "$ADAPTIVE_PERMISSIONS" != "true" ]; then
+    echo ""
+    echo "❌ ${#failed_dirs[@]} dossier(s) avec des problèmes de permissions:"
+    printf '   - %s\n' "${failed_dirs[@]}"
+    echo ""
+    echo "💡 Solutions:"
+    echo "   1. Corriger les permissions: sudo chown -R $CURRENT_UID:$CURRENT_GID ./data/"
+    echo "   2. Activer le mode adaptatif: ADAPTIVE_PERMISSIONS=true"
+    exit 1
+elif [ ${#failed_dirs[@]} -gt 0 ]; then
+    echo ""
+    echo "⚠️ ${#failed_dirs[@]} dossier(s) avec des problèmes persistants:"
+    printf '   - %s\n' "${failed_dirs[@]}"
+    echo "   ↳ Démarrage en mode dégradé..."
+fi
 
 # Réparation de l'intégrité de la base de données
 echo "🔧 Vérification de l'intégrité de la base de données..."
