@@ -106,9 +106,17 @@ function EditProjectContent() {
               if (selectedType) {
                 const typeName = getFieldValue(selectedType, 'nom', 'name', 'title', 'titre', 'label');
                 if (typeName) {
-                  const dynamicColumnName = `sous_type_${typeName.toLowerCase()}`;
-                  console.log(`🎯 Colonne dynamique pour sous type: ${dynamicColumnName}`);
-                  extractedValue = getFieldValue(record, dynamicColumnName, 'sous_type', 'soustype');
+                  // Normaliser le nom du type pour correspondre aux slugs de la table Choix
+                  const normalizedTypeName = typeName.toLowerCase().trim();
+                  const dynamicColumnSlug = `sous_type_${normalizedTypeName}`;
+                  const dynamicColumnName = `Sous type ${typeName}`;
+                  
+                  console.log(`🎯 Filtrage sous-type pour: ${typeName}`);
+                  console.log(`   - Slug recherché: ${dynamicColumnSlug}`);
+                  console.log(`   - Nom recherché: ${dynamicColumnName}`);
+                  
+                  // Essayer d'abord par slug, puis par nom, puis fallback
+                  extractedValue = getFieldValue(record, dynamicColumnSlug, dynamicColumnName, 'sous_type', 'soustype');
                 }
               }
             } else if (fieldNameLower.includes('espece') || fieldNameLower.includes('espèce')) {

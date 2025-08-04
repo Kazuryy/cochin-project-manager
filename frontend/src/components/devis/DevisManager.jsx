@@ -488,6 +488,113 @@ function DevisManager({ projectId, readonly = false }) {
           )}
         </div>
 
+        {/* Résumé financier des devis */}
+        {devisList.length > 0 && (
+          <div className="bg-base-200 rounded-lg p-4 mb-6">
+            <h4 className="font-semibold text-lg mb-3 flex items-center gap-2">
+              💰 Résumé financier
+            </h4>
+            
+            {(() => {
+              // Calculs détaillés
+              const stats = devisList.reduce((acc, devis) => {
+                const montant = parseFloat(getFieldValue(devis, 'montant', 'amount')) || 0;
+                const progress = getDevisProgress(devis);
+                
+                acc.total += montant;
+                acc.count += 1;
+                
+                // Répartition par statut
+                if (progress.status === 'OFF') {
+                  acc.inactifs.count += 1;
+                  acc.inactifs.montant += montant;
+                } else if (progress.status === 'Terminé') {
+                  acc.termines.count += 1;
+                  acc.termines.montant += montant;
+                } else if (progress.status === 'En cours') {
+                  acc.enCours.count += 1;
+                  acc.enCours.montant += montant;
+                } else {
+                  acc.autres.count += 1;
+                  acc.autres.montant += montant;
+                }
+                
+                return acc;
+              }, {
+                total: 0,
+                count: 0,
+                termines: { count: 0, montant: 0 },
+                enCours: { count: 0, montant: 0 },
+                inactifs: { count: 0, montant: 0 },
+                autres: { count: 0, montant: 0 }
+              });
+              
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Total global */}
+                  <div className="col-span-1 md:col-span-4 bg-primary/10 rounded-lg p-3 border-l-4 border-primary">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="text-sm font-medium opacity-70">Montant total du projet</div>
+                        <div className="text-2xl font-bold text-primary">
+                          {stats.total.toLocaleString('fr-FR')} €
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm opacity-70">{stats.count} devis</div>
+                        <div className="text-sm opacity-70">
+                          Moyenne: {(stats.total / stats.count).toLocaleString('fr-FR')} €
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Répartition par statut */}
+                  {stats.termines.count > 0 && (
+                    <div className="bg-success/10 rounded-lg p-3 border-l-4 border-success">
+                      <div className="text-xs font-medium text-success opacity-70">TERMINÉS</div>
+                      <div className="font-bold text-success">
+                        {stats.termines.montant.toLocaleString('fr-FR')} €
+                      </div>
+                      <div className="text-xs opacity-60">{stats.termines.count} devis</div>
+                    </div>
+                  )}
+                  
+                  {stats.enCours.count > 0 && (
+                    <div className="bg-info/10 rounded-lg p-3 border-l-4 border-info">
+                      <div className="text-xs font-medium text-info opacity-70">EN COURS</div>
+                      <div className="font-bold text-info">
+                        {stats.enCours.montant.toLocaleString('fr-FR')} €
+                      </div>
+                      <div className="text-xs opacity-60">{stats.enCours.count} devis</div>
+                    </div>
+                  )}
+                  
+                  {stats.autres.count > 0 && (
+                    <div className="bg-warning/10 rounded-lg p-3 border-l-4 border-warning">
+                      <div className="text-xs font-medium text-warning opacity-70">PLANIFIÉS</div>
+                      <div className="font-bold text-warning">
+                        {stats.autres.montant.toLocaleString('fr-FR')} €
+                      </div>
+                      <div className="text-xs opacity-60">{stats.autres.count} devis</div>
+                    </div>
+                  )}
+                  
+                  {stats.inactifs.count > 0 && (
+                    <div className="bg-base-300 rounded-lg p-3 border-l-4 border-base-300">
+                      <div className="text-xs font-medium opacity-50">INACTIFS</div>
+                      <div className="font-bold opacity-60">
+                        {stats.inactifs.montant.toLocaleString('fr-FR')} €
+                      </div>
+                      <div className="text-xs opacity-40">{stats.inactifs.count} devis</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Liste des devis */}
         {renderDevisContent()}
 

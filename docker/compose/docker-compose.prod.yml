@@ -27,24 +27,20 @@ services:
     networks:
       - cochin_network
 
-
   frontend:
     image: finnick5/cochin-project-manager-frontend:dev
     container_name: cochin_frontend
     restart: unless-stopped
     ports:
       - "5050:5050"
-
     volumes:
       - ./data/staticfiles:/usr/share/nginx/html/static:ro
       - ./data/media:/usr/share/nginx/html/media:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - backend
-
     networks:
       - cochin_network
-
 
 networks:
   cochin_network:

@@ -290,8 +290,21 @@ function RecordForm({ tableId, recordId }) {
     
     if (fieldNameLower.includes('sous_type') || fieldNameLower.includes('soustype') || fieldNameLower.includes('sous type')) {
       const tableName = table?.name || '';
+      
+      // Extraire le type depuis le nom de la table (ex: "DetailsCollaboration" → "collaboration")
       const typeFromTable = tableName.replace('Details', '').toLowerCase();
-      return typeFromTable ? `sous_type_${typeFromTable}` : '';
+      
+      // Retourner le slug normalisé pour correspondre à la table Choix
+      if (typeFromTable) {
+        const targetSlug = `sous_type_${typeFromTable}`;
+        console.log(`🎯 RecordForm - Champ sous-type détecté: ${field.name}`);
+        console.log(`   - Table: ${tableName}`);
+        console.log(`   - Type extrait: ${typeFromTable}`);
+        console.log(`   - Slug cible: ${targetSlug}`);
+        return targetSlug;
+      }
+      
+      return 'sous_type'; // Fallback
     }
     
     return fieldNameLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');

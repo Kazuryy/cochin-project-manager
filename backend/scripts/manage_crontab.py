@@ -54,6 +54,12 @@ def add_cronjobs():
         print(out)
     else:
         print(f"❌ Erreur lors de l'ajout : {err}")
+        if "Operation not permitted" in err:
+            print("")
+            print("🍎 SOLUTION MACOS:")
+            print("   Ce problème est courant sur macOS due aux restrictions de sécurité.")
+            print("   Utilisez le script spécialisé :")
+            print("   python scripts/manage_crontab_macos.py install")
     return ret == 0
 
 def remove_cronjobs():
@@ -119,6 +125,9 @@ def main():
         print("  show    - Afficher les tâches cron configurées")
         print("  status  - Vérifier le statut du système cron")
         print("  test    - Tester une tâche cron manuellement")
+        print("")
+        print("🍎 MACOS: Si vous rencontrez des erreurs 'Operation not permitted',")
+        print("   utilisez: python scripts/manage_crontab_macos.py install")
         sys.exit(1)
     
     command = sys.argv[1].lower()
