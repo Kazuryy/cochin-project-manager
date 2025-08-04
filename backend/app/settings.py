@@ -249,8 +249,9 @@ if IS_DEVELOPMENT:
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
 else:
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    # En production, permettre de contrôler via les variables d'environnement
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
+    CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "true").lower() == "true"
 
 # Common security settings
 SESSION_COOKIE_HTTPONLY = True

@@ -18,13 +18,16 @@ services:
       - SECRET_KEY=django_secure_key
       - BACKUP_ENCRYPTION_KEY=backup_key_to_set
       - DISCORD_WEBHOOK_URL=url_webhook
-      - ALLOWED_HOSTS=project-manager.local,localhost,127.0.0.1
-      - CORS_ALLOWED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050
-      - CSRF_TRUSTED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050
+      - ALLOWED_HOSTS=project-manager.local,localhost,127.0.0.1,100.75.151.14,backend,192.168.1.46
+      - CORS_ALLOWED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050,http://100.75.151.14:5050,http://100.75.151.14:8000
+      - CSRF_TRUSTED_ORIGINS=http://project-manager.local:5050,https://project-manager.local,http://localhost:5050,http://100.75.151.14:5050,http://100.75.151.14:8000
       - FORCE_SSL=false
       - DEBUG=False
+      - CSRF_COOKIE_SECURE=false
+      - SESSION_COOKIE_SECURE=false
       - DATABASE_PATH=/app/data/db/db.sqlite3
       - ADAPTIVE_PERMISSIONS=true
+      
     networks:
       - cochin_network
 

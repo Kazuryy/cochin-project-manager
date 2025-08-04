@@ -259,6 +259,15 @@ export function AuthProvider({ children }) {
           setIsLoading(true);
         }
         
+        // D'abord récupérer le token CSRF pour définir le cookie
+        try {
+          await fetch('/api/auth/csrf/', {
+            credentials: 'include',
+          });
+        } catch (csrfError) {
+          console.warn('Failed to get CSRF token:', csrfError);
+        }
+        
         const response = await fetch('/api/auth/check/', {
           credentials: 'include',
         });
@@ -306,7 +315,11 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     
     try {
-      const csrfToken = await getCsrfToken();
+      // Récupérer le token CSRF depuis les cookies (comme api.js)
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
       
       if (!csrfToken) {
         throw new AuthError('Impossible d\'obtenir un token CSRF', 'CSRF_ERROR');
@@ -339,7 +352,7 @@ export function AuthProvider({ children }) {
       setAuthError(error.message || 'Une erreur est survenue lors de la connexion');
       throw error;
     }
-  }, [getCsrfToken, initializeSession]);
+  }, [initializeSession]);
   
   // Fonction de déconnexion
   const logout = useCallback(async () => {
