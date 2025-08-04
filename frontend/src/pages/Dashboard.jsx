@@ -956,7 +956,7 @@ function DashboardContent() {
     setShowExportModal(true);
   }, [finalFilteredProjects.length]);
 
-  // Fonction pour exporter les données en TSV avec colonnes sélectionnées
+  // Fonction pour exporter les données en TSV avec une ligne par devis
   const exportToTSV = useCallback(async (selectedColumns) => {
     setIsExporting(true);
     trackActivity('export_tsv');
@@ -967,28 +967,29 @@ function DashboardContent() {
       
       // Mappage des colonnes vers les en-têtes et extracteurs de données
       const columnConfig = {
+        // Colonnes du projet
         'nom_projet': {
           header: 'Nom du projet',
-          extract: (project) => getFieldValue(project, 'nom_projet') || 'Projet sans nom'
+          extract: (project, devis) => getFieldValue(project, 'nom_projet') || 'Projet sans nom'
         },
         'description': {
           header: 'Description',
-          extract: (project) => getFieldValue(project, 'description') || ''
+          extract: (project, devis) => getFieldValue(project, 'description') || ''
         },
         'numero_projet': {
           header: 'Numéro projet',
-          extract: (project) => getFieldValue(project, 'numero_projet') || ''
+          extract: (project, devis) => getFieldValue(project, 'numero_projet') || ''
         },
         'type_projet': {
           header: 'Type de projet',
-          extract: (project) => {
+          extract: (project, devis) => {
             const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
             return getProjectType(typeId);
           }
         },
         'sous_type_projet': {
           header: 'Sous-type',
-          extract: (project) => {
+          extract: (project, devis) => {
             const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
             const projectType = getProjectType(typeId);
             return getProjectSubtype(project, projectType);
@@ -996,11 +997,11 @@ function DashboardContent() {
         },
         'equipe': {
           header: 'Équipe',
-          extract: (project) => getFieldValue(project, 'equipe') || ''
+          extract: (project, devis) => getFieldValue(project, 'equipe') || ''
         },
         'contact_principal': {
           header: 'Contact principal',
-          extract: (project) => {
+          extract: (project, devis) => {
             const contactValue = getFieldValue(project, 'contact_principal');
             if (!contactValue || contactValue === 'Contact non défini') return '';
             
@@ -1026,7 +1027,7 @@ function DashboardContent() {
         },
         'email_contact': {
           header: 'Email contact',
-          extract: (project) => {
+          extract: (project, devis) => {
             const contactValue = getFieldValue(project, 'contact_principal');
             if (!contactValue || contactValue === 'Contact non défini') return '';
             
@@ -1047,25 +1048,25 @@ function DashboardContent() {
         },
         'devis_actifs': {
           header: 'Devis actifs',
-          extract: (project) => {
+          extract: (project, devis) => {
             const progressInfo = projectProgress[project.id];
             return progressInfo?.activeDevisNumbers?.join(', ') || '';
           }
         },
         'statut': {
           header: 'Statut',
-          extract: (project) => getFieldValue(project, 'statut') || ''
+          extract: (project, devis) => getFieldValue(project, 'statut') || ''
         },
         'progression': {
           header: 'Progression (%)',
-          extract: (project) => {
+          extract: (project, devis) => {
             const progressInfo = projectProgress[project.id];
             return progressInfo?.progress || 0;
           }
         },
         'echeance_prochaine': {
           header: 'Échéance prochaine',
-          extract: (project) => {
+          extract: (project, devis) => {
             const progressInfo = projectProgress[project.id];
             if (progressInfo?.nearestDeadline && progressInfo?.nearestDeadlineDevis) {
               const dateStr = progressInfo.nearestDeadline.toLocaleDateString('fr-FR');
@@ -1076,7 +1077,7 @@ function DashboardContent() {
         },
         'date_creation': {
           header: 'Date création',
-          extract: (project) => {
+          extract: (project, devis) => {
             const dateValue = getFieldValue(project, 'date_creation');
             if (!dateValue) return '';
             try {
@@ -1085,23 +1086,114 @@ function DashboardContent() {
               return dateValue;
             }
           }
+        },
+        // Colonnes spécifiques aux devis
+        'numero_devis': {
+          header: 'Numéro devis',
+          extract: (project, devis) => {
+            return getFieldValue(devis, 'numero_devis', 'Numero_Devis', 'numero', 'code') || '';
+          }
+        },
+        'montant_devis': {
+          header: 'Montant devis (€)',
+          extract: (project, devis) => {
+            const montant = getFieldValue(devis, 'montant', 'Montant', 'amount', 'price');
+            return montant ? parseFloat(montant).toLocaleString('fr-FR') : '';
+          }
+        },
+        'statut_devis': {
+          header: 'Statut devis',
+          extract: (project, devis) => {
+            const statut = getFieldValue(devis, 'statut', 'Statut', 'status', 'active');
+            if (typeof statut === 'boolean') return statut ? 'Actif' : 'Inactif';
+            if (typeof statut === 'string') {
+              const lower = statut.toLowerCase();
+              return (lower === 'true' || lower === '1' || lower === 'oui') ? 'Actif' : 'Inactif';
+            }
+            return statut === 1 ? 'Actif' : 'Inactif';
+          }
+        },
+        'date_debut_devis': {
+          header: 'Date début devis',
+          extract: (project, devis) => {
+            const dateValue = getFieldValue(devis, 'date_debut', 'Date_Debut', 'start_date', 'debut');
+            if (!dateValue) return '';
+            try {
+              return new Date(dateValue).toLocaleDateString('fr-FR');
+            } catch {
+              return dateValue;
+            }
+          }
+        },
+        'date_rendu_devis': {
+          header: 'Date rendu devis',
+          extract: (project, devis) => {
+            const dateValue = getFieldValue(devis, 'date_rendu', 'Date_Rendu', 'end_date', 'rendu');
+            if (!dateValue) return '';
+            try {
+              return new Date(dateValue).toLocaleDateString('fr-FR');
+            } catch {
+              return dateValue;
+            }
+          }
+        },
+        'agent_plateforme': {
+          header: 'Agent plateforme',
+          extract: (project, devis) => {
+            return getFieldValue(devis, 'agent_plateforme', 'Agent_Plateforme', 'agent', 'plateforme') || '';
+          }
         }
       };
       
       // Construire les en-têtes pour les colonnes sélectionnées
       const headers = selectedColumns.map(colId => columnConfig[colId]?.header || colId);
       
-      // Préparer les données pour l'export
-      const tsvData = finalFilteredProjects.map(project => {
-        return selectedColumns.map(colId => {
-          const config = columnConfig[colId];
-          if (!config) return '';
+      // Préparer les données pour l'export - UNE LIGNE PAR DEVIS
+      const tsvData = [];
+      let totalDevisCount = 0;
+      
+      for (const project of finalFilteredProjects) {
+        try {
+          // Récupérer les devis du projet
+          const projectDevis = await devisService.getDevisByProject(project.id);
           
-          const value = config.extract(project);
-          // Pour TSV, remplacer les tabulations et retours à la ligne par des espaces
-          return String(value || '').replace(/[\t\n\r]/g, ' ');
-        });
-      });
+          if (projectDevis.length === 0) {
+            // Si pas de devis, créer une ligne avec les données projet seulement
+            const row = selectedColumns.map(colId => {
+              const config = columnConfig[colId];
+              if (!config) return '';
+              
+              const value = config.extract(project, null); // null pour devis
+              return String(value || '').replace(/[\t\n\r]/g, ' ');
+            });
+            tsvData.push(row);
+          } else {
+            // Créer une ligne par devis
+            projectDevis.forEach(devis => {
+              const row = selectedColumns.map(colId => {
+                const config = columnConfig[colId];
+                if (!config) return '';
+                
+                const value = config.extract(project, devis);
+                return String(value || '').replace(/[\t\n\r]/g, ' ');
+              });
+              tsvData.push(row);
+              totalDevisCount++;
+            });
+          }
+        } catch (error) {
+          console.error(`Erreur lors de la récupération des devis pour le projet ${project.id}:`, error);
+          // En cas d'erreur, créer une ligne avec les données projet seulement
+          const row = selectedColumns.map(colId => {
+            const config = columnConfig[colId];
+            if (!config) return '';
+            
+            const value = config.extract(project, null);
+            return String(value || '').replace(/[\t\n\r]/g, ' ');
+          });
+          tsvData.push(row);
+        }
+      }
       
       // Construire le contenu TSV
       const tsvContent = [
@@ -1117,9 +1209,9 @@ function DashboardContent() {
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
         
-        // Nom du fichier avec date et nombre de projets
+        // Nom du fichier avec date et nombre de devis
         const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const filename = `projets_export_${finalFilteredProjects.length}_${timestamp}.tsv`;
+        const filename = `devis_export_${tsvData.length}_lignes_${timestamp}.tsv`;
         link.setAttribute('download', filename);
         
         link.style.visibility = 'hidden';
@@ -1128,14 +1220,14 @@ function DashboardContent() {
         document.body.removeChild(link);
         
         // Message de succès
-        console.log(`✅ Export TSV réussi: ${finalFilteredProjects.length} projets exportés vers ${filename}`);
+        console.log(`✅ Export TSV réussi: ${tsvData.length} lignes (${totalDevisCount} devis) de ${finalFilteredProjects.length} projets exportées vers ${filename}`);
         
         // Feedback visuel temporaire
         const successMsg = document.createElement('div');
         successMsg.className = 'toast toast-top toast-end';
         successMsg.innerHTML = `
           <div class="alert alert-success">
-            <span>📥 Export réussi: ${finalFilteredProjects.length} projets</span>
+            <span>📥 Export réussi: ${tsvData.length} lignes (${totalDevisCount} devis)</span>
           </div>
         `;
         document.body.appendChild(successMsg);

@@ -5,19 +5,28 @@ import { FiX, FiDownload, FiDatabase, FiCheck } from 'react-icons/fi';
 const ExportConfigModal = ({ isOpen, onClose, onExport, projectCount }) => {
   // ✅ OPTIMISATION : Colonnes disponibles mémorisées pour éviter les recréations
   const availableColumns = useMemo(() => [
-    { id: 'nom_projet', label: 'Nom du projet', description: 'Titre du projet' },
-    { id: 'description', label: 'Description', description: 'Description complète' },
-    { id: 'numero_projet', label: 'Numéro projet', description: 'Référence unique' },
-    { id: 'type_projet', label: 'Type de projet', description: 'Catégorie' },
-    { id: 'sous_type_projet', label: 'Sous-type', description: 'Sous-catégorie' },
-    { id: 'equipe', label: 'Équipe', description: 'Équipe assignée', default: true },
-    { id: 'contact_principal', label: 'Contact principal', description: 'Responsable du projet', default: true },
-    { id: 'email_contact', label: 'Email contact', description: 'Email du contact' },
-    { id: 'devis_actifs', label: 'Devis actifs', description: 'Numéros des devis en cours', default: true },
-    { id: 'statut', label: 'Statut', description: 'État actuel' },
-    { id: 'progression', label: 'Progression (%)', description: 'Pourcentage d\'avancement' },
-    { id: 'echeance_prochaine', label: 'Échéance prochaine', description: 'Prochaine deadline' },
-    { id: 'date_creation', label: 'Date création', description: 'Date de création du projet' }
+    // Colonnes du projet
+    { id: 'nom_projet', label: 'Nom du projet', description: 'Titre du projet', category: 'Projet' },
+    { id: 'description', label: 'Description', description: 'Description complète', category: 'Projet' },
+    { id: 'numero_projet', label: 'Numéro projet', description: 'Référence unique', category: 'Projet' },
+    { id: 'type_projet', label: 'Type de projet', description: 'Catégorie', category: 'Projet' },
+    { id: 'sous_type_projet', label: 'Sous-type', description: 'Sous-catégorie', category: 'Projet' },
+    { id: 'equipe', label: 'Équipe', description: 'Équipe assignée', default: true, category: 'Projet' },
+    { id: 'contact_principal', label: 'Contact principal', description: 'Responsable du projet', default: true, category: 'Projet' },
+    { id: 'email_contact', label: 'Email contact', description: 'Email du contact', category: 'Projet' },
+    { id: 'devis_actifs', label: 'Devis actifs', description: 'Numéros des devis en cours', category: 'Projet' },
+    { id: 'statut', label: 'Statut', description: 'État actuel', category: 'Projet' },
+    { id: 'progression', label: 'Progression (%)', description: 'Pourcentage d\'avancement', category: 'Projet' },
+    { id: 'echeance_prochaine', label: 'Échéance prochaine', description: 'Prochaine deadline', category: 'Projet' },
+    { id: 'date_creation', label: 'Date création', description: 'Date de création du projet', category: 'Projet' },
+    
+    // Colonnes spécifiques aux devis
+    { id: 'numero_devis', label: 'Numéro devis', description: 'Référence du devis', default: true, category: 'Devis' },
+    { id: 'montant_devis', label: 'Montant devis (€)', description: 'Montant financier du devis', default: true, category: 'Devis' },
+    { id: 'statut_devis', label: 'Statut devis', description: 'Actif/Inactif', default: true, category: 'Devis' },
+    { id: 'date_debut_devis', label: 'Date début devis', description: 'Date de début du devis', category: 'Devis' },
+    { id: 'date_rendu_devis', label: 'Date rendu devis', description: 'Date de rendu prévue', category: 'Devis' },
+    { id: 'agent_plateforme', label: 'Agent plateforme', description: 'Agent responsable du devis', category: 'Devis' }
   ], []);
 
   // ✅ OPTIMISATION : Colonnes par défaut mémorisées
@@ -149,66 +158,141 @@ const ExportConfigModal = ({ isOpen, onClose, onExport, projectCount }) => {
           </div>
         </div>
 
-        {/* Liste des colonnes */}
+        {/* Liste des colonnes groupées par catégorie */}
         <div className="p-6">
           <fieldset>
             <legend className="sr-only">Sélection des colonnes à exporter</legend>
-            <div className="space-y-3">
-              {availableColumns.map((column) => {
-                const isSelected = selectedColumns.includes(column.id);
-                const isDefault = column.default;
-                
-                return (
-                  <div 
-                    key={column.id}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                      isSelected 
-                        ? 'border-primary bg-primary/10' 
-                        : 'border-base-300 hover:border-base-400'
-                    }`}
-                    onClick={() => toggleColumn(column.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleColumn(column.id);
-                      }
-                    }}
-                    aria-pressed={isSelected}
-                    aria-describedby={`${column.id}-description`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div 
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                            isSelected 
-                              ? 'border-primary bg-primary text-white' 
-                              : 'border-base-300'
-                          }`}
-                          aria-hidden="true"
-                        >
-                          {isSelected && <FiCheck className="w-3 h-3" />}
-                        </div>
-                        <div>
-                          <div className="font-medium flex items-center gap-2">
-                            {column.label}
-                            {isDefault && (
-                              <span className="badge badge-primary badge-xs">Par défaut</span>
-                            )}
-                          </div>
+            
+            {/* Groupe Projet */}
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3 text-primary flex items-center">
+                📁 Colonnes du projet
+              </h3>
+              <div className="space-y-3">
+                {availableColumns.filter(col => col.category === 'Projet').map((column) => {
+                  const isSelected = selectedColumns.includes(column.id);
+                  const isDefault = column.default;
+                  
+                  return (
+                    <div 
+                      key={column.id}
+                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                        isSelected 
+                          ? 'border-primary bg-primary/10' 
+                          : 'border-base-300 hover:border-base-400'
+                      }`}
+                      onClick={() => toggleColumn(column.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleColumn(column.id);
+                        }
+                      }}
+                      aria-pressed={isSelected}
+                      aria-describedby={`${column.id}-description`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
                           <div 
-                            id={`${column.id}-description`}
-                            className="text-sm text-base-content/60"
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              isSelected 
+                                ? 'border-primary bg-primary text-white' 
+                                : 'border-base-300'
+                            }`}
+                            aria-hidden="true"
                           >
-                            {column.description}
+                            {isSelected && <FiCheck className="w-3 h-3" />}
+                          </div>
+                          <div>
+                            <div className="font-medium text-base-content">
+                              {column.label}
+                              {isDefault && (
+                                <span className="ml-2 text-xs px-2 py-0.5 bg-primary/20 text-primary rounded">
+                                  par défaut
+                                </span>
+                              )}
+                            </div>
+                            <div 
+                              id={`${column.id}-description`} 
+                              className="text-sm text-base-content/60"
+                            >
+                              {column.description}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Groupe Devis */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3 text-secondary flex items-center">
+                💰 Colonnes des devis (UNE LIGNE PAR DEVIS)
+              </h3>
+              <div className="space-y-3">
+                {availableColumns.filter(col => col.category === 'Devis').map((column) => {
+                  const isSelected = selectedColumns.includes(column.id);
+                  const isDefault = column.default;
+                  
+                  return (
+                    <div 
+                      key={column.id}
+                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                        isSelected 
+                          ? 'border-secondary bg-secondary/10' 
+                          : 'border-base-300 hover:border-base-400'
+                      }`}
+                      onClick={() => toggleColumn(column.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleColumn(column.id);
+                        }
+                      }}
+                      aria-pressed={isSelected}
+                      aria-describedby={`${column.id}-description`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div 
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              isSelected 
+                                ? 'border-secondary bg-secondary text-white' 
+                                : 'border-base-300'
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {isSelected && <FiCheck className="w-3 h-3" />}
+                        </div>
+                          <div>
+                            <div className="font-medium text-base-content">
+                              {column.label}
+                              {isDefault && (
+                                <span className="ml-2 text-xs px-2 py-0.5 bg-secondary/20 text-secondary rounded">
+                                  par défaut
+                                </span>
+                              )}
+                            </div>
+                            <div 
+                              id={`${column.id}-description`} 
+                              className="text-sm text-base-content/60"
+                            >
+                              {column.description}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </fieldset>
         </div>
@@ -216,7 +300,7 @@ const ExportConfigModal = ({ isOpen, onClose, onExport, projectCount }) => {
         {/* Footer */}
         <div className="flex justify-between items-center p-6 border-t border-base-300">
           <div className="text-sm text-base-content/60">
-            📋 Format TSV avec tabulations comme séparateurs
+            📋 Format TSV avec tabulations • Une ligne par devis
           </div>
           <div className="flex space-x-3">
             <button
