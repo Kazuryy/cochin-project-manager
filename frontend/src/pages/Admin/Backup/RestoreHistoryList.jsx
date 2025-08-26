@@ -18,6 +18,7 @@ import backupService from '../../../services/backupService';
 import { useToast } from '../../../hooks/useToast';
 import { ToastContainer } from '../../../components/common/Toast';
 import SecureUploadModal from '../../../components/backup/SecureUploadModal';
+import { useDynamicTables } from '../../../contexts/hooks/useDynamicTables';
 
 const DetailsModal = React.memo(({ restore, onClose, getTypeLabel, getStatusBadge }) => {
   if (!restore) return null;
@@ -216,6 +217,9 @@ const RestoreHistoryList = () => {
   
   // Hook pour les toasts
   const { toasts, error, success, removeToast } = useToast();
+  
+  // Hook pour rafraîchir les données après restauration
+  const { refreshAllData } = useDynamicTables();
 
   const loadRestores = useCallback(async () => {
     // Empêcher le refresh si on a des résultats de restauration affichés dans le modal
@@ -307,6 +311,17 @@ const RestoreHistoryList = () => {
       const successMessage = `Restauration terminée avec succès ! ${tablesRestored} tables, ${recordsRestored} enregistrements, ${filesRestored} fichiers restaurés.`;
       success(successMessage, 5000);
       
+      // 🔄 Rafraîchir TOUTES les données de l'application après restauration
+      setTimeout(async () => {
+        console.log('🔄 Début du rafraîchissement global après restauration...');
+        try {
+          await refreshAllData();
+          console.log('✅ Données globales rafraîchies avec succès');
+        } catch (err) {
+          console.error('❌ Erreur lors du rafraîchissement global:', err);
+        }
+      }, 1000); // 1 seconde pour laisser le temps à la restauration de finaliser
+      
       // Rafraîchir la liste des restaurations SEULEMENT si le modal est fermé
       // Évite le "flash" désagréable pendant que l'utilisateur voit les résultats
       setTimeout(() => {
@@ -319,7 +334,7 @@ const RestoreHistoryList = () => {
       console.error('❌ Erreur dans handleUploadSuccess:', err);
       error('Erreur lors du traitement du résultat d\'upload', 5000);
     }
-  }, [success, error, loadRestores, showUploadModal]);
+  }, [success, error, loadRestores, showUploadModal, refreshAllData]);
 
   // 🆕 Fonction pour supprimer une restauration
   const handleDeleteRestoration = useCallback(async (restoration) => {

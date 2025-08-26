@@ -33,6 +33,7 @@ function DashboardContent() {
   const [isFullyStabilized, setIsFullyStabilized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Pour forcer le rafraîchissement global
   const [loadingStates, setLoadingStates] = useState({
     tables: true,
     projects: true,

@@ -399,6 +399,19 @@ export function DynamicTableProvider({ children }) {
     }
   }, []);
 
+  // Fonction pour vider le cache et recharger toutes les données (utile après restauration)
+  const refreshAllData = useCallback(async () => {
+    console.log('🔄 Rafraîchissement complet des données après restauration...');
+    
+    // Vider le cache complètement
+    setCache(new Map());
+    
+    // Recharger toutes les tables
+    await fetchTables();
+    
+    console.log('✅ Rafraîchissement terminé');
+  }, [fetchTables]);
+
   // Charger les tables au montage du composant
   useEffect(() => {
     fetchTables();
@@ -423,6 +436,7 @@ export function DynamicTableProvider({ children }) {
     updateRecord,
     deleteRecord,
     saveFieldOrder,
+    refreshAllData,
   }), [
     tables,
     isLoading,

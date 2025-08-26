@@ -585,17 +585,38 @@ class ExternalRestoreService(BaseService):
                 # 3. D'abord, créer toutes les tables
                 self.log_info(f"📋 Création de {len(create_statements)} tables...")
                 for statement in create_statements:
-                    results.update(self._execute_single_statement(cursor, statement, results))
+                    stmt_results = self._execute_single_statement(cursor, statement, results)
+                    # Accumulation correcte des statistiques
+                    results['statements_applied'] += stmt_results.get('statements_applied', 0)
+                    results['statements_failed'] += stmt_results.get('statements_failed', 0)
+                    results['tables_created'] += stmt_results.get('tables_created', 0)
+                    results['records_inserted'] += stmt_results.get('records_inserted', 0)
+                    if stmt_results.get('errors'):
+                        results['errors'].extend(stmt_results['errors'])
                 
                 # 4. Ensuite, autres statements (index, contraintes, etc.)
                 self.log_info(f"🔧 Application de {len(other_statements)} statements divers...")
                 for statement in other_statements:
-                    results.update(self._execute_single_statement(cursor, statement, results))
+                    stmt_results = self._execute_single_statement(cursor, statement, results)
+                    # Accumulation correcte des statistiques
+                    results['statements_applied'] += stmt_results.get('statements_applied', 0)
+                    results['statements_failed'] += stmt_results.get('statements_failed', 0)
+                    results['tables_created'] += stmt_results.get('tables_created', 0)
+                    results['records_inserted'] += stmt_results.get('records_inserted', 0)
+                    if stmt_results.get('errors'):
+                        results['errors'].extend(stmt_results['errors'])
                 
                 # 5. Enfin, insérer toutes les données (sans ordre FK strict car FK désactivées)
                 self.log_info(f"📥 Insertion de {len(insert_statements)} enregistrements...")
                 for statement in insert_statements:
-                    results.update(self._execute_single_statement(cursor, statement, results))
+                    stmt_results = self._execute_single_statement(cursor, statement, results)
+                    # Accumulation correcte des statistiques
+                    results['statements_applied'] += stmt_results.get('statements_applied', 0)
+                    results['statements_failed'] += stmt_results.get('statements_failed', 0)
+                    results['tables_created'] += stmt_results.get('tables_created', 0)
+                    results['records_inserted'] += stmt_results.get('records_inserted', 0)
+                    if stmt_results.get('errors'):
+                        results['errors'].extend(stmt_results['errors'])
                 
                 # 6. Réactiver les contraintes FK
                 self.log_info("✅ Réactivation des contraintes FK")
