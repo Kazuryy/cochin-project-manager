@@ -10,7 +10,6 @@ function PdfManager({ projectId, readonly = false }) {
   const [uploading, setUploading] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [viewingPdf, setViewingPdf] = useState(null);
   const [uploadForm, setUploadForm] = useState({
     displayName: '',
     description: '',
@@ -35,7 +34,13 @@ function PdfManager({ projectId, readonly = false }) {
       console.log(`✅ ${files.length} fichiers PDF chargés pour le projet ${projectId}`);
     } catch (error) {
       console.error('Erreur lors du chargement des PDFs:', error);
-      showToast('Erreur lors du chargement des fichiers PDF', 'error');
+      
+      // Gérer les erreurs d'authentification
+      if (error.message?.includes('403') || error.message?.includes('401')) {
+        showToast('Session expirée. Veuillez vous reconnecter.', 'warning');
+      } else {
+        showToast('Erreur lors du chargement des fichiers PDF', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -150,20 +155,22 @@ function PdfManager({ projectId, readonly = false }) {
     }
   };
 
-  // Ouvrir le visualiseur PDF
-  const handleViewPdf = (pdfFile) => {
-    setViewingPdf(pdfFile);
-  };
-
   // Télécharger un fichier PDF
-  const handleDownloadPdf = (pdfFile) => {
-    const url = pdfService.getPdfUrl(pdfFile);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = pdfFile.original_filename || pdfFile.display_name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadPdf = async (pdfFile) => {
+    try {
+      const url = pdfService.getPdfUrl(pdfFile);
+      
+      // Ouvrir dans un nouvel onglet avec gestion d'erreur
+      const newWindow = window.open(url, '_blank');
+      
+      // Vérifier si la fenêtre a pu s'ouvrir (popup bloqué)
+      if (!newWindow) {
+        showToast('Téléchargement bloqué. Autorisez les pop-ups pour ce site.', 'warning');
+      }
+    } catch (error) {
+      console.error('Erreur lors du téléchargement PDF:', error);
+      showToast('Erreur lors du téléchargement du fichier', 'error');
+    }
   };
 
   // Rendu du formulaire d'upload
@@ -316,13 +323,6 @@ function PdfManager({ projectId, readonly = false }) {
                 <div className="flex gap-2">
                   <button
                     className="btn btn-sm btn-outline"
-                    onClick={() => handleViewPdf(pdfFile)}
-                    title="Visualiser le PDF"
-                  >
-                    👁️
-                  </button>
-                  <button
-                    className="btn btn-sm btn-outline"
                     onClick={() => handleDownloadPdf(pdfFile)}
                     title="Télécharger le PDF"
                   >
@@ -342,46 +342,6 @@ function PdfManager({ projectId, readonly = false }) {
             </div>
           </div>
         ))}
-      </div>
-    );
-  };
-
-  // Rendu du visualiseur PDF
-  const renderPdfViewer = () => {
-    if (!viewingPdf) return null;
-
-    const pdfUrl = pdfService.getPdfUrl(viewingPdf);
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-base-100 rounded-lg w-full max-w-md p-6">
-          {/* Header du modal */}
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">📄 {viewingPdf.display_name}</h3>
-            <button
-              className="btn btn-sm btn-circle"
-              onClick={() => setViewingPdf(null)}
-            >
-              ✕
-            </button>
-          </div>
-          
-          <p className="mb-4 text-base-content/70">
-            Le PDF ne peut pas être affiché directement dans l'application pour des raisons de sécurité.
-          </p>
-          
-          <div className="flex justify-center">
-            <a 
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-primary"
-              download={viewingPdf.original_filename || viewingPdf.display_name}
-            >
-              ⬇️ Télécharger le PDF
-            </a>
-          </div>
-        </div>
       </div>
     );
   };
@@ -415,9 +375,6 @@ function PdfManager({ projectId, readonly = false }) {
           {renderPdfList()}
         </div>
       </div>
-
-      {/* Visualiseur PDF */}
-      {renderPdfViewer()}
     </div>
   );
 }

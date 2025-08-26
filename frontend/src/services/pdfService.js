@@ -114,19 +114,13 @@ export const pdfService = {
   },
 
   /**
-   * Obtenir l'URL de téléchargement d'un fichier PDF
+   * Obtenir l'URL sécurisée de téléchargement d'un fichier PDF
    * @param {Object} pdfFile - Objet fichier PDF
-   * @returns {string} URL du fichier
+   * @returns {string} URL sécurisée du fichier
    */
   getPdfUrl(pdfFile) {
-    let url = pdfFile.file_url || pdfFile.file;
-    
-    // Corriger l'URL si elle utilise localhost sans port
-    if (url && url.startsWith('http://localhost/')) {
-      url = url.replace('http://localhost/', 'http://localhost:8000/');
-    }
-    
-    return url;
+    // Utiliser la nouvelle route sécurisée avec proxy Vite (URL relative)
+    return `/api/database/project-pdfs/${pdfFile.id}/download/`;
   },
 
   /**

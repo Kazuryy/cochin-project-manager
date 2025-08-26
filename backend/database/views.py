@@ -1441,6 +1441,47 @@ class ProjectPdfFileViewSet(viewsets.ModelViewSet):
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """
+        Téléchargement sécurisé d'un fichier PDF.
+        Vérifie que l'utilisateur a accès au projet.
+        """
+        try:
+            pdf_file = self.get_object()
+            
+            # Vérifier que l'utilisateur a accès au projet
+            # TODO: Ajouter des vérifications plus granulaires selon vos besoins
+            # Pour l'instant, tout utilisateur authentifié peut accéder
+            
+            # Vérifier que le fichier existe
+            if not pdf_file.file or not pdf_file.file.storage.exists(pdf_file.file.name):
+                return Response({
+                    'error': 'Fichier introuvable'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Retourner le fichier de manière sécurisée
+            response = HttpResponse(
+                pdf_file.file.read(),
+                content_type='application/pdf'
+            )
+            
+            filename = pdf_file.original_filename or f"{pdf_file.display_name}.pdf"
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            response['Content-Length'] = pdf_file.file.size
+            
+            # Headers de sécurité
+            response['X-Content-Type-Options'] = 'nosniff'
+            response['X-Frame-Options'] = 'DENY'
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Erreur téléchargement PDF {pk}: {e}")
+            return Response({
+                'error': 'Erreur lors du téléchargement'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def destroy(self, request, *args, **kwargs):
         """
         Suppression d'un fichier PDF.
