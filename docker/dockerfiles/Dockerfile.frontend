@@ -8,11 +8,16 @@ RUN apk update && \
 
 WORKDIR /app
 
-# Copier les fichiers de dépendances
-COPY frontend/package.json ./
+# Copier les fichiers de dépendances (lock inclus pour stabilité)
+COPY frontend/package.json frontend/package-lock.json ./
 
-# Supprimer le lock et réinstaller pour éviter les problèmes ARM64
-RUN npm install && npm cache clean --force
+# Configuration npm pour ARM64 et cache optimisé
+RUN npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm config set maxsockets 3 && \
+    npm ci --only=production=false --no-audit --prefer-offline && \
+    npm cache clean --force
 
 # Copier le code source
 COPY frontend/ .
