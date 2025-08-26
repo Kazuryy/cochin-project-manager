@@ -71,7 +71,7 @@ jobs:
             - 'docker/dockerfiles/Dockerfile.frontend'
             - 'package.json'
             - 'package-lock.json'
-
+ 
     - name: 🐍 Setup Python
       if: steps.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
       uses: actions/setup-python@v4
