@@ -1,0 +1,233 @@
+name: 🐳 Docker Build Sequential (ARM64 Fallback)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_image:
+        description: 'Image to build'
+        required: true
+        type: choice
+        options:
+          - backend
+          - frontend
+          - both
+      push_images:
+        description: 'Push images to registries'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-backend
+  DOCKER_FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/cochin-project-manager-frontend
+  GHCR_REGISTRY: ghcr.io
+  GHCR_BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
+  GHCR_FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+
+jobs:
+  # =====================================================
+  # AMD64 builds (rapides)
+  # =====================================================
+  build-amd64:
+    name: 🏗️ Build AMD64 Images
+    runs-on: ubuntu-latest
+    if: github.event.inputs.target_image == 'backend' || github.event.inputs.target_image == 'frontend' || github.event.inputs.target_image == 'both'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 Log in to Docker Hub
+      if: github.event.inputs.push_images == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 📦 Log in to GitHub Container Registry
+      if: github.event.inputs.push_images == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🐳 Build Backend AMD64
+      if: github.event.inputs.target_image == 'backend' || github.event.inputs.target_image == 'both'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/Dockerfile.backend
+        platforms: linux/amd64
+        push: ${{ github.event.inputs.push_images == 'true' }}
+        tags: |
+          ${{ env.DOCKER_BACKEND_IMAGE }}:amd64-latest
+          ${{ env.GHCR_BACKEND_IMAGE }}:amd64-latest
+        cache-from: type=gha,scope=backend-amd64
+        cache-to: type=gha,mode=max,scope=backend-amd64
+
+    - name: 🎨 Build Frontend AMD64
+      if: github.event.inputs.target_image == 'frontend' || github.event.inputs.target_image == 'both'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/Dockerfile.frontend
+        platforms: linux/amd64
+        push: ${{ github.event.inputs.push_images == 'true' }}
+        tags: |
+          ${{ env.DOCKER_FRONTEND_IMAGE }}:amd64-latest
+          ${{ env.GHCR_FRONTEND_IMAGE }}:amd64-latest
+        cache-from: type=gha,scope=frontend-amd64
+        cache-to: type=gha,mode=max,scope=frontend-amd64
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+  # =====================================================
+  # ARM64 builds (séquentiels pour éviter rate limiting)
+  # =====================================================
+  build-arm64:
+    name: 🏗️ Build ARM64 Images (Sequential)
+    runs-on: ubuntu-latest
+    needs: build-amd64
+    if: github.event.inputs.target_image == 'backend' || github.event.inputs.target_image == 'frontend' || github.event.inputs.target_image == 'both'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 Log in to Docker Hub
+      if: github.event.inputs.push_images == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 📦 Log in to GitHub Container Registry
+      if: github.event.inputs.push_images == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🐳 Build Backend ARM64 (avec délai anti-rate-limit)
+      if: github.event.inputs.target_image == 'backend' || github.event.inputs.target_image == 'both'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/Dockerfile.backend
+        platforms: linux/arm64
+        push: ${{ github.event.inputs.push_images == 'true' }}
+        tags: |
+          ${{ env.DOCKER_BACKEND_IMAGE }}:arm64-latest
+          ${{ env.GHCR_BACKEND_IMAGE }}:arm64-latest
+        cache-from: type=gha,scope=backend-arm64
+        cache-to: type=gha,mode=max,scope=backend-arm64
+
+    - name: ⏱️ Délai anti-rate-limit npm
+      if: github.event.inputs.target_image == 'both'
+      run: |
+        echo "🕐 Attente de 60 secondes pour éviter le rate limiting npm..."
+        sleep 60
+
+    - name: 🎨 Build Frontend ARM64 (avec configuration anti-rate-limit)
+      if: github.event.inputs.target_image == 'frontend' || github.event.inputs.target_image == 'both'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/dockerfiles/Dockerfile.frontend
+        platforms: linux/arm64
+        push: ${{ github.event.inputs.push_images == 'true' }}
+        tags: |
+          ${{ env.DOCKER_FRONTEND_IMAGE }}:arm64-latest
+          ${{ env.GHCR_FRONTEND_IMAGE }}:arm64-latest
+        cache-from: type=gha,scope=frontend-arm64
+        cache-to: type=gha,mode=max,scope=frontend-arm64
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+  # =====================================================
+  # Création des manifests multi-arch
+  # =====================================================
+  create-manifests:
+    name: 📦 Create Multi-arch Manifests
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+    if: github.event.inputs.push_images == 'true'
+    
+    steps:
+    - name: 🔐 Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 📦 Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GHCR_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🔗 Create Backend Multi-arch Manifest
+      if: github.event.inputs.target_image == 'backend' || github.event.inputs.target_image == 'both'
+      run: |
+        # Docker Hub
+        docker manifest create ${{ env.DOCKER_BACKEND_IMAGE }}:sequential-latest \
+          ${{ env.DOCKER_BACKEND_IMAGE }}:amd64-latest \
+          ${{ env.DOCKER_BACKEND_IMAGE }}:arm64-latest
+        docker manifest push ${{ env.DOCKER_BACKEND_IMAGE }}:sequential-latest
+        
+        # GitHub Container Registry
+        docker manifest create ${{ env.GHCR_BACKEND_IMAGE }}:sequential-latest \
+          ${{ env.GHCR_BACKEND_IMAGE }}:amd64-latest \
+          ${{ env.GHCR_BACKEND_IMAGE }}:arm64-latest
+        docker manifest push ${{ env.GHCR_BACKEND_IMAGE }}:sequential-latest
+
+    - name: 🔗 Create Frontend Multi-arch Manifest
+      if: github.event.inputs.target_image == 'frontend' || github.event.inputs.target_image == 'both'
+      run: |
+        # Docker Hub
+        docker manifest create ${{ env.DOCKER_FRONTEND_IMAGE }}:sequential-latest \
+          ${{ env.DOCKER_FRONTEND_IMAGE }}:amd64-latest \
+          ${{ env.DOCKER_FRONTEND_IMAGE }}:arm64-latest
+        docker manifest push ${{ env.DOCKER_FRONTEND_IMAGE }}:sequential-latest
+        
+        # GitHub Container Registry
+        docker manifest create ${{ env.GHCR_FRONTEND_IMAGE }}:sequential-latest \
+          ${{ env.GHCR_FRONTEND_IMAGE }}:amd64-latest \
+          ${{ env.GHCR_FRONTEND_IMAGE }}:arm64-latest
+        docker manifest push ${{ env.GHCR_FRONTEND_IMAGE }}:sequential-latest
+
+    - name: 📋 Summary
+      run: |
+        echo "## 🎉 Build séquentiel terminé !" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Images créées :" >> $GITHUB_STEP_SUMMARY
+        echo "- **Architecture AMD64** : Construite en premier (rapide)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Architecture ARM64** : Construite ensuite (avec délai anti-rate-limit)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Manifest multi-arch** : Combiné les deux architectures" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Tags disponibles :" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ github.event.inputs.target_image }}" == "backend" || "${{ github.event.inputs.target_image }}" == "both" ]]; then
+          echo "- \`${{ env.DOCKER_BACKEND_IMAGE }}:sequential-latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.GHCR_BACKEND_IMAGE }}:sequential-latest\`" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [[ "${{ github.event.inputs.target_image }}" == "frontend" || "${{ github.event.inputs.target_image }}" == "both" ]]; then
+          echo "- \`${{ env.DOCKER_FRONTEND_IMAGE }}:sequential-latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.GHCR_FRONTEND_IMAGE }}:sequential-latest\`" >> $GITHUB_STEP_SUMMARY
+        fi
