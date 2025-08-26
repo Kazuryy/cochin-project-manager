@@ -519,7 +519,12 @@ function ProjectDetailsContent() {
           {/* Section: Informations générales du projet */}
           {projectTable && renderDataSection(
             projectData, 
-            projectTable.fields || [], 
+            projectTable.fields?.filter(field => {
+              // Filtrer le champ "Sous Type Prestation" qui s'affiche mal ici
+              // Il sera affiché correctement dans la section dédiée plus bas
+              const fieldName = field.name.toLowerCase();
+              return !(fieldName.includes('sous') && fieldName.includes('type'));
+            }) || [], 
             "📋 Informations générales"
           )}
 
@@ -612,7 +617,16 @@ function ProjectDetailsContent() {
                   </div>
                   
                   <div>
-                    <strong>Sous-type :</strong> {getFieldValue(projectData, 'sous_type', 'sous_type') || 'Sous-type non défini'}
+                    <strong>Sous-type :</strong> {(() => {
+                      // Chercher d'abord dans les données de détails spécifiques
+                      const sousTypeFromDetails = projectDetailsData ? 
+                        getFieldValue(projectDetailsData, 'sous_type', 'subtype', 'sub_type', `sous_type_${projectType?.toLowerCase()}`) : null;
+                      
+                      // Sinon, chercher dans les données du projet principal
+                      const sousTypeFromProject = getFieldValue(projectData, 'sous_type', 'subtype', 'sub_type', 'sous_type_projet');
+                      
+                      return sousTypeFromDetails || sousTypeFromProject || 'Sous-type non défini';
+                    })()}
                   </div>
                   
                   <div>

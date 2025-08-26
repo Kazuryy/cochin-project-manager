@@ -970,26 +970,26 @@ function DashboardContent() {
         // Colonnes du projet
         'nom_projet': {
           header: 'Nom du projet',
-          extract: (project, devis) => getFieldValue(project, 'nom_projet') || 'Projet sans nom'
+          extract: (project) => getFieldValue(project, 'nom_projet') || 'Projet sans nom'
         },
         'description': {
           header: 'Description',
-          extract: (project, devis) => getFieldValue(project, 'description') || ''
+          extract: (project) => getFieldValue(project, 'description') || ''
         },
         'numero_projet': {
           header: 'Numéro projet',
-          extract: (project, devis) => getFieldValue(project, 'numero_projet') || ''
+          extract: (project) => getFieldValue(project, 'numero_projet') || ''
         },
         'type_projet': {
           header: 'Type de projet',
-          extract: (project, devis) => {
+          extract: (project) => {
             const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
             return getProjectType(typeId);
           }
         },
         'sous_type_projet': {
           header: 'Sous-type',
-          extract: (project, devis) => {
+          extract: (project) => {
             const typeId = getFieldValueLegacy(project, 'type_projet', 'type_id', 'type', 'category_id');
             const projectType = getProjectType(typeId);
             return getProjectSubtype(project, projectType);
@@ -997,11 +997,11 @@ function DashboardContent() {
         },
         'equipe': {
           header: 'Équipe',
-          extract: (project, devis) => getFieldValue(project, 'equipe') || ''
+          extract: (project) => getFieldValue(project, 'equipe') || ''
         },
         'contact_principal': {
           header: 'Contact principal',
-          extract: (project, devis) => {
+          extract: (project) => {
             const contactValue = getFieldValue(project, 'contact_principal');
             if (!contactValue || contactValue === 'Contact non défini') return '';
             
@@ -1027,7 +1027,7 @@ function DashboardContent() {
         },
         'email_contact': {
           header: 'Email contact',
-          extract: (project, devis) => {
+          extract: (project) => {
             const contactValue = getFieldValue(project, 'contact_principal');
             if (!contactValue || contactValue === 'Contact non défini') return '';
             
@@ -1048,25 +1048,25 @@ function DashboardContent() {
         },
         'devis_actifs': {
           header: 'Devis actifs',
-          extract: (project, devis) => {
+          extract: (project) => {
             const progressInfo = projectProgress[project.id];
             return progressInfo?.activeDevisNumbers?.join(', ') || '';
           }
         },
         'statut': {
           header: 'Statut',
-          extract: (project, devis) => getFieldValue(project, 'statut') || ''
+          extract: (project) => getFieldValue(project, 'statut') || ''
         },
         'progression': {
           header: 'Progression (%)',
-          extract: (project, devis) => {
+          extract: (project) => {
             const progressInfo = projectProgress[project.id];
             return progressInfo?.progress || 0;
           }
         },
         'echeance_prochaine': {
           header: 'Échéance prochaine',
-          extract: (project, devis) => {
+          extract: (project) => {
             const progressInfo = projectProgress[project.id];
             if (progressInfo?.nearestDeadline && progressInfo?.nearestDeadlineDevis) {
               const dateStr = progressInfo.nearestDeadline.toLocaleDateString('fr-FR');
@@ -1077,7 +1077,7 @@ function DashboardContent() {
         },
         'date_creation': {
           header: 'Date création',
-          extract: (project, devis) => {
+          extract: (project) => {
             const dateValue = getFieldValue(project, 'date_creation');
             if (!dateValue) return '';
             try {
