@@ -455,6 +455,7 @@ export function DynamicTableProvider({ children }) {
     updateRecord,
     deleteRecord,
     saveFieldOrder,
+    refreshAllData,
   ]);
 
   return (
